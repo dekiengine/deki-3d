@@ -72,13 +72,40 @@ void Mesh3DPass::BeginFrame(RenderContext& ctx)
     const Deki::Mat4 view = LookAt(eye, eye + forward, up);
     m_ViewProjection = Mul(projection, view);
 
-    RasterConfig cfg;
-    cfg.tileSize = cam3d->tileSize;
-    cfg.perspectiveCorrect = cam3d->perspectiveCorrect;
-    cfg.vertexSnap = cam3d->vertexSnap;
+    m_Config = RasterConfig{};
+    m_Config.tileSize = cam3d->tileSize;
+    m_Config.perspectiveCorrect = cam3d->perspectiveCorrect;
+    m_Config.vertexSnap = cam3d->vertexSnap;
 
-    m_Raster.BeginFrame(ctx.buffer, ctx.width, ctx.height, ctx.format, cfg);
+    m_Buffer = ctx.buffer;
+    m_Width = ctx.width;
+    m_Height = ctx.height;
+    m_Format = ctx.format;
+
+    m_Raster.BeginFrame(m_Buffer, m_Width, m_Height, m_Format, m_Config);
     m_Active = true;
+    m_Pending = false;
+}
+
+void Mesh3DPass::Flush()
+{
+    if (!m_Pending)
+        return;
+    m_Raster.EndFrame();
+    m_Raster.BeginFrame(m_Buffer, m_Width, m_Height, m_Format, m_Config);
+    m_Pending = false;
+}
+
+void Mesh3DPass::PreExecute(Deki::Object* obj, RenderContext& ctx)
+{
+    (void)ctx;
+    // A 2D object is about to draw. Anything binned so far sorts before it,
+    // so it has to reach the framebuffer first.
+    if (!m_Active || !m_Pending || !obj)
+        return;
+    if (obj->GetComponent<MeshComponent>())
+        return;  // still in a run of meshes: keep batching
+    Flush();
 }
 
 void Mesh3DPass::Execute(Deki::Object* obj, RenderContext& ctx)
@@ -124,6 +151,7 @@ void Mesh3DPass::Execute(Deki::Object* obj, RenderContext& ctx)
 #endif
 
     m_Raster.DrawMesh(*geometry, &material, 1, Mul(m_ViewProjection, model), normalMatrix);
+    m_Pending = true;
 }
 
 void Mesh3DPass::EndFrame(RenderContext& ctx)
@@ -131,8 +159,9 @@ void Mesh3DPass::EndFrame(RenderContext& ctx)
     (void)ctx;
     if (!m_Active)
         return;
-    m_Raster.EndFrame();
+    m_Raster.EndFrame();  // whatever the last run of meshes left binned
     m_Active = false;
+    m_Pending = false;
 }
 
 }  // namespace Deki3D
