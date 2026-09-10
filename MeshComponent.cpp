@@ -1,5 +1,7 @@
 #include "MeshComponent.h"
 
+#include <deki/LogSystem.h>
+
 #include <vector>
 
 namespace
@@ -103,6 +105,28 @@ MeshComponent::~MeshComponent()
 
 const Deki3D::Mesh3D* MeshComponent::Resolve() const
 {
+    // An assigned asset wins. AssetRef loads lazily, so this returns null for
+    // the frames between the scene opening and the asset arriving; the pass
+    // simply draws nothing until then.
+    if (mesh.HasGuid())
+    {
+        const Deki3D::MeshAsset* asset = mesh.Get();
+        if (!asset)
+        {
+            // Said once: a mesh that never arrives would otherwise say nothing
+            // at all, and an object silently missing from a scene is a long
+            // hunt. Repeating it every frame would drown the log.
+            static bool reported = false;
+            if (!reported)
+            {
+                reported = true;
+                DEKI_LOG_WARNING("MeshComponent: the mesh asset '%s' did not load; drawing nothing",
+                                 mesh.guid.c_str());
+            }
+        }
+        return (asset && asset->Valid()) ? &asset->View() : nullptr;
+    }
+
     if (m_Storage && m_BuiltPrimitive == primitive)
         return &m_Mesh;
 

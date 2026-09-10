@@ -2,9 +2,11 @@
 
 #include "Deki3DAPI.h"
 #include "Mesh3D.h"
+#include "MeshAsset.h"
 
 #include "deki-rendering/RendererComponent.h"
 #include <deki/Color.h>
+#include <deki/assets/AssetRef.h>
 #include <deki/reflection/Property.h>
 
 /// Which built-in shape to draw. Primitives exist so a scene can have 3D in
@@ -26,7 +28,11 @@ public:
     MeshComponent();
     ~MeshComponent() override;
 
-    DEKI_TOOLTIP("Which built-in shape to draw until a mesh asset is assigned.")
+    DEKI_TOOLTIP("A compiled mesh asset. Assign an imported model here; leave it empty to draw the primitive below instead.")
+    DEKI_EXPORT
+    Deki::AssetRef<Deki3D::MeshAsset> mesh;
+
+    DEKI_TOOLTIP("Which built-in shape to draw while no mesh asset is assigned.")
     DEKI_EXPORT
     MeshPrimitive primitive = MeshPrimitive::Cube;
 
@@ -42,8 +48,9 @@ public:
     DEKI_EXPORT
     bool doubleSided = false;
 
-    /// The geometry to draw this frame, built lazily from `primitive`. Null
-    /// when there is nothing to draw.
+    /// The geometry to draw this frame: the mesh asset when one is assigned
+    /// and loaded, otherwise the built-in primitive. Null when neither is
+    /// available, which is what a not-yet-loaded asset looks like.
     const Deki3D::Mesh3D* Resolve() const;
 
     /// RendererComponent's 2D path draws nothing: a mesh is not a quad of

@@ -19,6 +19,6 @@ generated/
 .deki-package.json
 
 # Benchmark artefacts
-bench/bench.exe
-bench/*.ppm
-bench/*.png
+tests/*.exe
+tests/*.ppm
+tests/*.png

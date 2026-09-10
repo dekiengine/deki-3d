@@ -7,7 +7,7 @@
  * with a measurement. It links nothing but the rasteriser, so it can run long
  * before the package has a component, an asset or a scene.
  *
- * Build (MSYS2 mingw64):
+ * Build (MSYS2 mingw64), from tests/:
  *   g++ -std=c++17 -O2 -I<engine>/include -I.. Raster3DBench.cpp ../Raster3D.cpp -o bench
  */
 
