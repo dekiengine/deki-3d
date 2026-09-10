@@ -76,6 +76,24 @@ void Mesh3DPass::BeginFrame(RenderContext& ctx)
     m_Config.tileSize = cam3d->tileSize;
     m_Config.perspectiveCorrect = cam3d->perspectiveCorrect;
     m_Config.vertexSnap = cam3d->vertexSnap;
+#ifdef DEKI_EDITOR
+    // One thread inside the editor, whatever the scene asks for.
+    //
+    // The editor loads packages as DLLs and unloads them again for hot
+    // reload. Joining a thread while a DLL is being unloaded deadlocks on the
+    // Windows loader lock, and the process cannot then be killed at all, not
+    // even forcibly. That is a far worse failure than losing some preview
+    // speed, and it is not hypothetical: it wedged two editor processes here
+    // before this guard existed.
+    //
+    // A device or simulator build links its packages instead of loading them,
+    // so nothing is ever unloaded and the workers are safe. The output is
+    // identical either way, which the rasteriser's own tests assert, so the
+    // preview differs from the device in speed alone.
+    m_Config.threadCount = 1;
+#else
+    m_Config.threadCount = cam3d->fillThreads;
+#endif
 
     m_Buffer = ctx.buffer;
     m_Width = ctx.width;

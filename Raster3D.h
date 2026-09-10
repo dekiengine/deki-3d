@@ -33,7 +33,10 @@
 
 #include "Mesh3D.h"
 
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
+#include <thread>
 #include <vector>
 
 namespace Deki3D
@@ -59,6 +62,14 @@ struct RasterConfig
     bool depthTest = true;
     bool depthWrite = true;
 
+    /// How many threads fill tiles. Tiles are independent and each owns its
+    /// depth buffer, so this is the one axis of the rasteriser that scales
+    /// without coordination. 1 spawns nothing at all, which is what a
+    /// single-core target wants; 2 is what a dual-core microcontroller has.
+    /// Only the fill is threaded: transform, clipping and binning stay on the
+    /// calling thread, because they append to shared buffers.
+    int threadCount = 1;
+
     /// Direction the single directional light travels, for the lit shading
     /// models. Normalised by the rasteriser.
     Deki::Vector3 lightDirection = Deki::Vector3(-0.4f, -0.8f, -0.45f);
@@ -79,6 +90,14 @@ struct RasterStats
 class Raster3D
 {
 public:
+    Raster3D() = default;
+    ~Raster3D();
+
+    // The worker threads make this non-copyable, and there is no reason to
+    // copy a rasteriser anyway.
+    Raster3D(const Raster3D&) = delete;
+    Raster3D& operator=(const Raster3D&) = delete;
+
     /// Point at a framebuffer and start collecting geometry. The buffer is
     /// not cleared: the caller owns the background, as it does in the 2D path.
     void BeginFrame(uint8_t* buffer, int32_t width, int32_t height,
@@ -133,9 +152,15 @@ private:
                       uint16_t materialIndex);
     void ProjectAndBin(const ClipVertex* poly, int count, uint16_t materialIndex);
     void Bin(const RasterTri& tri);
-    void FillTile(int tileX, int tileY);
+    /// Fill every `stride`-th tile of the row-major grid starting at `start`,
+    /// using `tileDepth` as the scratch depth buffer and accumulating into
+    /// `stats`. Both are per-thread, which is what makes calling this
+    /// concurrently safe.
+    void FillTileRange(int start, int stride, uint16_t* tileDepth, RasterStats& stats);
+    void FillTile(int tileX, int tileY, uint16_t* tileDepth, RasterStats& stats);
     void FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY,
-                            uint16_t* tileDepth, int tileOriginX, int tileOriginY);
+                            uint16_t* tileDepth, int tileOriginX, int tileOriginY,
+                            RasterStats& stats);
 
     uint8_t* m_Buffer = nullptr;
     int32_t m_Width = 0;
@@ -152,9 +177,44 @@ private:
     std::vector<Material3D> m_Materials;
     std::vector<RasterTri> m_Tris;
     std::vector<std::vector<uint32_t>> m_Bins;  // one list of triangle indices per tile
-    std::vector<uint16_t> m_TileDepth;
+    // One scratch depth buffer per fill thread, reused across every tile that
+    // thread takes. This is the whole memory argument for tiling: at a 32-pixel
+    // tile each is 2 KB, against the 150 KB a full-screen buffer would cost.
+    std::vector<std::vector<uint16_t>> m_TileDepth;
 
     RasterStats m_Stats;
+
+    // --- the fill workers ---------------------------------------------------
+    //
+    // Persistent, not spawned per frame. Creating a thread costs tens of
+    // microseconds, which is nothing against a 1080p frame but more than the
+    // whole fill of a 320x240 one: measured, per-frame spawning made the
+    // device-sized case slower than running single-threaded. So the workers
+    // are made once and parked on a condition variable between frames.
+    //
+    // They only ever run FillTileRange, and every tile writes exclusively to
+    // its own pixels of the framebuffer and its own scratch depth buffer, so
+    // the fill itself needs no locking. The lock is only for handing out a
+    // frame and learning when one is finished.
+    void StartWorkers(int count);
+    void StopWorkers();
+    void WorkerLoop(int index);
+
+    std::vector<std::thread> m_Workers;
+    std::mutex m_WorkMutex;
+    std::condition_variable m_WorkReady;
+    std::condition_variable m_WorkDone;
+    std::vector<RasterStats> m_WorkerStats;
+    // One flag per worker rather than a frame counter each worker compares
+    // against its own last-seen value. A counter cannot be made safe here: a
+    // worker created while frames are already running has to start from some
+    // value, and whichever it picks races with the next frame. A flag that
+    // only the issuing side raises and only its own worker lowers has no such
+    // starting-value question.
+    std::vector<char> m_WorkerHasWork;
+    int m_FillStride = 1;  // fixed before the workers start; never read from m_Workers
+    int m_WorkersBusy = 0;
+    bool m_StopWorkers = false;
 };
 
 }  // namespace Deki3D

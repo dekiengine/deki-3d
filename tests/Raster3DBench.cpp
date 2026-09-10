@@ -215,6 +215,68 @@ void CorrectnessChecks()
           "backfaces are culled before binning");
 
     WritePpm("raster_depth.ppm", fb, W, H);
+
+    // Threading the fill must change the picture in no way at all. Tiles are
+    // independent, so this is the property that makes it safe rather than
+    // merely fast, and it is worth asserting rather than assuming.
+    {
+        const int TW = 160, TH = 120;
+        MeshData mesh = MakeCube(6);
+        Material3D m;
+        m.shading = ShadingModel::VertexLit;
+        const Mat4 tvp = Mul(Perspective(1.05f, static_cast<float>(TW) / TH, 0.1f, 100.0f),
+                             LookAt(Vector3(0, 0, 3.2f), Vector3(0, 0, 0), Vector3(0, 1, 0)));
+        const Mat4 model = Compose(0, 0, 0, 0.4f, 0.7f, 0, 1, 1, 1);
+
+        std::vector<uint16_t> single(static_cast<size_t>(TW) * TH, 0);
+        std::vector<uint16_t> many(static_cast<size_t>(TW) * TH, 0);
+        uint32_t singleWritten = 0, manyWritten = 0;
+
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            std::vector<uint16_t>& target = pass == 0 ? single : many;
+            RasterConfig c;
+            c.tileSize = 32;
+            c.threadCount = pass == 0 ? 1 : 4;
+            Raster3D rr;
+            rr.BeginFrame(reinterpret_cast<uint8_t*>(target.data()), TW, TH,
+                          Deki::ColorFormat::RGB565, c);
+            rr.DrawMesh(mesh.View(), &m, 1, Mul(tvp, model), Mat4::Identity());
+            rr.EndFrame();
+            (pass == 0 ? singleWritten : manyWritten) = rr.Stats().pixelsWritten;
+        }
+
+        Check(single == many, "four threads draw the same pixels as one");
+        Check(singleWritten == manyWritten, "and report the same pixel count");
+        Check(singleWritten > 1000, "the comparison actually drew something");
+
+        // Changing the thread count after frames have already been drawn is
+        // ordinary: a scene's value arrives with its component, one frame
+        // after the first. It used to deadlock, because a worker created at
+        // that point saw a frame serial it had never seen, decided a frame was
+        // waiting for it and ran before it had been counted in. If this
+        // regresses the test hangs rather than fails, which is the honest
+        // signal for a deadlock.
+        {
+            std::vector<uint16_t> target(static_cast<size_t>(TW) * TH, 0);
+            Raster3D rr;
+            const int schedule[] = { 1, 1, 2, 4, 2, 1, 3 };
+            for (int threads : schedule)
+            {
+                RasterConfig c;
+                c.tileSize = 32;
+                c.threadCount = threads;
+                for (int frame = 0; frame < 3; ++frame)
+                {
+                    rr.BeginFrame(reinterpret_cast<uint8_t*>(target.data()), TW, TH,
+                                  Deki::ColorFormat::RGB565, c);
+                    rr.DrawMesh(mesh.View(), &m, 1, Mul(tvp, model), Mat4::Identity());
+                    rr.EndFrame();
+                }
+            }
+            Check(target == many, "the thread count can change between frames");
+        }
+    }
 }
 
 uint16_t To565Ref(uint32_t rgba)
@@ -349,6 +411,15 @@ int main()
     RasterConfig desktopTiles = device;
     desktopTiles.tileSize = 128;
 
+    // Threading the fill: the axis a dual-core microcontroller would use, and
+    // the one the desktop numbers below can actually measure.
+    RasterConfig twoThreads = desktopTiles;
+    twoThreads.threadCount = 2;
+    RasterConfig fourThreads = desktopTiles;
+    fourThreads.threadCount = 4;
+    RasterConfig deviceTwoThreads = device;
+    deviceTwoThreads.threadCount = 2;
+
     const Case cases[] = {
         { "320x240 low poly, textured",   320, 240, &lowPoly,  &textured,     device,       300, "raster_320.ppm" },
         { "320x240 low poly, affine",     320, 240, &lowPoly,  &textured,     affine,       300, "raster_affine.ppm" },
@@ -359,6 +430,9 @@ int main()
         { "1920x1080 low poly, textured", 1920, 1080, &lowPoly, &textured,    desktopTiles, 100, "raster_1080.ppm" },
         { "1920x1080 mid poly, textured", 1920, 1080, &midPoly, &textured,    desktopTiles, 60,  nullptr },
         { "1920x1080 high poly, textured",1920, 1080, &highPoly, &textured,   desktopTiles, 40,  nullptr },
+        { "1920x1080 low poly, 2 threads", 1920, 1080, &lowPoly, &textured,    twoThreads,   100, nullptr },
+        { "1920x1080 low poly, 4 threads", 1920, 1080, &lowPoly, &textured,    fourThreads,  100, nullptr },
+        { "320x240 low poly, 2 threads",   320, 240, &lowPoly,  &textured,     deviceTwoThreads, 300, nullptr },
     };
 
     for (const Case& c : cases)

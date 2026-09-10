@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <thread>
 
 namespace Deki3D
 {
@@ -127,9 +128,18 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height,
         for (std::vector<uint32_t>& bin : m_Bins)
             bin.clear();
 
+    // One scratch depth buffer per fill thread, sized once and kept. The
+    // calling thread is one of them, so `threads - 1` workers are needed.
+    const int threads = m_Config.threadCount < 1 ? 1 : m_Config.threadCount;
     const size_t depthCells = static_cast<size_t>(tile) * tile;
-    if (m_TileDepth.size() != depthCells)
-        m_TileDepth.resize(depthCells);
+    if (static_cast<int>(m_TileDepth.size()) != threads)
+        m_TileDepth.assign(static_cast<size_t>(threads), {});
+    for (std::vector<uint16_t>& buffer : m_TileDepth)
+        if (buffer.size() != depthCells)
+            buffer.resize(depthCells);
+
+    if (static_cast<int>(m_Workers.size()) != threads - 1)
+        StartWorkers(threads - 1);
 
     m_Stats.Reset();
 }
@@ -364,16 +374,124 @@ void Raster3D::Bin(const RasterTri& tri)
 // Fill
 // ---------------------------------------------------------------------------
 
+void Raster3D::StartWorkers(int count)
+{
+    StopWorkers();
+    if (count <= 0)
+        return;
+    m_StopWorkers = false;
+    m_WorkerStats.assign(static_cast<size_t>(count), RasterStats{});
+    m_WorkerHasWork.assign(static_cast<size_t>(count), 0);
+    // Every worker plus the calling thread. Set before any thread exists, so
+    // no worker ever reads a container the main thread is still growing.
+    m_FillStride = count + 1;
+    m_WorkersBusy = 0;
+    m_Workers.reserve(static_cast<size_t>(count));
+    for (int i = 0; i < count; ++i)
+        m_Workers.emplace_back([this, i] { WorkerLoop(i); });
+}
+
+void Raster3D::StopWorkers()
+{
+    if (m_Workers.empty())
+        return;
+    {
+        std::lock_guard<std::mutex> lock(m_WorkMutex);
+        m_StopWorkers = true;
+    }
+    m_WorkReady.notify_all();
+    for (std::thread& worker : m_Workers)
+        worker.join();
+    m_Workers.clear();
+    m_WorkerStats.clear();
+    m_WorkerHasWork.clear();
+}
+
+void Raster3D::WorkerLoop(int index)
+{
+    while (true)
+    {
+        {
+            std::unique_lock<std::mutex> lock(m_WorkMutex);
+            m_WorkReady.wait(lock, [this, index] {
+                return m_StopWorkers || m_WorkerHasWork[static_cast<size_t>(index)] != 0;
+            });
+            if (m_StopWorkers)
+                return;
+            m_WorkerHasWork[static_cast<size_t>(index)] = 0;
+        }
+
+        // Outside the lock: this is the whole point. Worker `index` takes
+        // every stride-th tile, and touches nothing another worker touches.
+        // The stride is a member fixed before any worker starts, rather than
+        // m_Workers.size(), which the main thread is still appending to.
+        FillTileRange(index, m_FillStride, m_TileDepth[index].data(), m_WorkerStats[index]);
+
+        {
+            std::lock_guard<std::mutex> lock(m_WorkMutex);
+            if (--m_WorkersBusy == 0)
+                m_WorkDone.notify_one();
+        }
+    }
+}
+
 void Raster3D::EndFrame()
 {
     if (!m_Buffer)
         return;
-    for (int ty = 0; ty < m_TilesY; ++ty)
-        for (int tx = 0; tx < m_TilesX; ++tx)
-            FillTile(tx, ty);
+
+    const int tileCount = m_TilesX * m_TilesY;
+    const int threads = static_cast<int>(m_TileDepth.size());
+
+    if (threads <= 1 || tileCount <= 1 || m_Workers.empty())
+    {
+        FillTileRange(0, 1, m_TileDepth[0].data(), m_Stats);
+        return;
+    }
+
+    // Interleaved rather than contiguous: geometry clusters, so handing each
+    // thread a solid block of the screen gives one of them every empty tile
+    // and another all the work. Striding spreads a cluster across all of them.
+    const int workerCount = static_cast<int>(m_Workers.size());
+    for (RasterStats& s : m_WorkerStats)
+        s.Reset();
+
+    {
+        std::lock_guard<std::mutex> lock(m_WorkMutex);
+        m_WorkersBusy = workerCount;
+        for (char& hasWork : m_WorkerHasWork)
+            hasWork = 1;
+    }
+    m_WorkReady.notify_all();
+
+    // The calling thread takes the last share rather than idling.
+    FillTileRange(workerCount, m_FillStride, m_TileDepth[workerCount].data(), m_Stats);
+
+    {
+        std::unique_lock<std::mutex> lock(m_WorkMutex);
+        m_WorkDone.wait(lock, [this] { return m_WorkersBusy == 0; });
+    }
+
+    for (const RasterStats& s : m_WorkerStats)
+    {
+        m_Stats.pixelsTested += s.pixelsTested;
+        m_Stats.pixelsWritten += s.pixelsWritten;
+    }
 }
 
-void Raster3D::FillTile(int tileX, int tileY)
+Raster3D::~Raster3D()
+{
+    StopWorkers();
+}
+
+void Raster3D::FillTileRange(int start, int stride, uint16_t* tileDepth, RasterStats& stats)
+{
+    const int tileCount = m_TilesX * m_TilesY;
+    for (int index = start; index < tileCount; index += stride)
+        FillTile(index % m_TilesX, index / m_TilesX, tileDepth, stats);
+}
+
+void Raster3D::FillTile(int tileX, int tileY, uint16_t* tileDepth, RasterStats& stats)
 {
     const std::vector<uint32_t>& bin = m_Bins[static_cast<size_t>(tileY) * m_TilesX + tileX];
     if (bin.empty())
@@ -385,17 +503,18 @@ void Raster3D::FillTile(int tileX, int tileY)
     const int maxX = std::min(originX + tile, m_Width) - 1;
     const int maxY = std::min(originY + tile, m_Height) - 1;
 
-    // The whole point of tiling: this is the only depth buffer that exists,
-    // and it is reused by every tile in the frame.
-    std::fill(m_TileDepth.begin(), m_TileDepth.end(), static_cast<uint16_t>(kDepthMax));
+    // Reset this thread's scratch buffer and reuse it for every tile it takes.
+    std::fill(tileDepth, tileDepth + static_cast<size_t>(tile) * tile,
+              static_cast<uint16_t>(kDepthMax));
 
     for (uint32_t index : bin)
-        FillTriangleInTile(m_Tris[index], originX, originY, maxX, maxY,
-                           m_TileDepth.data(), originX, originY);
+        FillTriangleInTile(m_Tris[index], originX, originY, maxX, maxY, tileDepth, originX,
+                           originY, stats);
 }
 
 void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY,
-                                  uint16_t* tileDepth, int tileOriginX, int tileOriginY)
+                                  uint16_t* tileDepth, int tileOriginX, int tileOriginY,
+                                  RasterStats& stats)
 {
     const ScreenVertex& v0 = tri.v[0];
     const ScreenVertex& v1 = tri.v[1];
@@ -626,8 +745,8 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                         z += dz;
                     }
 
-                    m_Stats.pixelsTested += static_cast<uint32_t>(chunkEnd - runX + 1);
-                    m_Stats.pixelsWritten += written;
+                    stats.pixelsTested += static_cast<uint32_t>(chunkEnd - runX + 1);
+                    stats.pixelsWritten += written;
                     runX = chunkEnd + 1;
                 }
 

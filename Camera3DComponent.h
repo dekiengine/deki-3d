@@ -40,4 +40,9 @@ public:
     DEKI_TOOLTIP("Round projected vertices to whole pixels, for the jitter of fixed-point era hardware.")
     DEKI_EXPORT
     bool vertexSnap = false;
+
+    DEKI_TOOLTIP("How many threads fill the screen on a device or simulator build. Tiles are independent, so this is the one part that scales with cores: 1 starts no threads at all, 2 suits a dual-core board, and above the core count it stops helping. The editor always previews with one thread, since it loads packages as unloadable DLLs; the picture is identical either way.")
+    DEKI_RANGE(1, 16)
+    DEKI_EXPORT
+    int32_t fillThreads = 1;
 };
