@@ -1,0 +1,9 @@
+# Package descriptor for deki-engine auto-discovery
+set(PACKAGE_DISPLAY_NAME "3D")
+set(PACKAGE_PREFIX "Deki3D")
+set(PACKAGE_UPPER "3D")
+set(PACKAGE_TARGET "deki-3d")
+set(PACKAGE_FILE_PREFIX "Deki3D")
+set(PACKAGE_ENTRY Deki3DPackage.cpp)
+set(PACKAGE_LINK_DEPS deki-editor deki-rendering)
+set(PACKAGE_EXPORT_ALL_SYMBOLS OFF)

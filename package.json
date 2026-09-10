@@ -1,0 +1,24 @@
+{
+  "id": "deki-3d",
+  "displayName": "3D",
+  "minEngine": "0.14.0",
+  "tags": [
+    "transform_3d"
+  ],
+  "buildDefine": "DEKI_PACKAGE_3D",
+  "requires": [
+    "deki-rendering"
+  ],
+  "features": [
+    {
+      "id": "software",
+      "displayName": "Software rasteriser",
+      "buildDefine": "DEKI_FEATURE_3D_SOFTWARE",
+      "defaultEnabled": true,
+      "componentTypes": [
+        "MeshComponent",
+        "Camera3DComponent"
+      ]
+    }
+  ]
+}
