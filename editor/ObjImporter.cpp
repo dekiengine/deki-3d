@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 #include <map>
 #include <sstream>
 
@@ -82,9 +83,102 @@ bool ParseCorner(const std::string& token, size_t positions, size_t uvs, size_t 
     return true;
 }
 
+/// The largest power of two no bigger than `value`, capped so a stray 4K
+/// texture does not land whole on a microcontroller.
+uint16_t FitPowerOfTwo(int value, int cap)
+{
+    if (value > cap)
+        value = cap;
+    if (value < 1)
+        value = 1;
+    uint16_t size = 1;
+    while (static_cast<int>(size) * 2 <= value)
+        size = static_cast<uint16_t>(size * 2);
+    return size;
+}
+
+/// Box-filter down to the target size and convert to RGB565. Averaging rather
+/// than point sampling, because these textures are shrunk a long way and a
+/// point-sampled reduction aliases badly.
+void ResampleToRgb565(const std::vector<uint8_t>& rgba, int srcW, int srcH,
+                      uint16_t dstW, uint16_t dstH, std::vector<uint8_t>& out)
+{
+    out.resize(static_cast<size_t>(dstW) * dstH * sizeof(uint16_t));
+    uint16_t* dst = reinterpret_cast<uint16_t*>(out.data());
+
+    for (uint16_t y = 0; y < dstH; ++y)
+    {
+        const int y0 = static_cast<int>(static_cast<int64_t>(y) * srcH / dstH);
+        const int y1 = std::max(y0 + 1, static_cast<int>(static_cast<int64_t>(y + 1) * srcH / dstH));
+        for (uint16_t x = 0; x < dstW; ++x)
+        {
+            const int x0 = static_cast<int>(static_cast<int64_t>(x) * srcW / dstW);
+            const int x1 = std::max(x0 + 1, static_cast<int>(static_cast<int64_t>(x + 1) * srcW / dstW));
+
+            uint32_t r = 0, g = 0, b = 0, n = 0;
+            for (int sy = y0; sy < y1 && sy < srcH; ++sy)
+            {
+                for (int sx = x0; sx < x1 && sx < srcW; ++sx)
+                {
+                    const size_t i = (static_cast<size_t>(sy) * srcW + sx) * 4;
+                    r += rgba[i];
+                    g += rgba[i + 1];
+                    b += rgba[i + 2];
+                    ++n;
+                }
+            }
+            if (n == 0)
+                n = 1;
+            r /= n;
+            g /= n;
+            b /= n;
+            dst[static_cast<size_t>(y) * dstW + x] =
+                static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+        }
+    }
+}
+
+/// The first `map_Kd` in a material library. Options such as "-s 1 1 1" may
+/// precede the filename, so the last token on the line is the one wanted.
+std::string FindFirstDiffuseMap(const std::string& mtlText)
+{
+    std::istringstream in(mtlText);
+    std::string line;
+    while (std::getline(in, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        std::istringstream ls(line);
+        std::string keyword;
+        ls >> keyword;
+        if (keyword != "map_Kd")
+            continue;
+        std::string token, last;
+        while (ls >> token)
+            last = token;
+        if (!last.empty())
+            return last;
+    }
+    return {};
+}
+
+/// Join a base directory and a path written inside a model file. Those paths
+/// are relative to the model, and may use either separator.
+std::string ResolveRelative(const std::string& baseDirectory, const std::string& relative)
+{
+    if (baseDirectory.empty())
+        return relative;
+    std::string joined = baseDirectory;
+    if (joined.back() != '/' && joined.back() != '\\')
+        joined += '/';
+    joined += relative;
+    return joined;
+}
+
 }  // namespace
 
-bool CompileObjToMesh(const std::string& objText, std::vector<uint8_t>& outBlob,
+bool CompileObjToMesh(const std::string& objText, const std::string& baseDirectory,
+                      const ImageDecoder& decodeImage, std::vector<uint8_t>& outBlob,
                       std::string& error)
 {
     error.clear();
@@ -109,6 +203,7 @@ bool CompileObjToMesh(const std::string& objText, std::vector<uint8_t>& outBlob,
     std::vector<Range> submeshes;
     std::map<std::string, uint16_t> materialIds;
     std::vector<uint16_t> indices;
+    std::string materialLibrary;
 
     auto beginSubmesh = [&](const std::string& materialName) {
         if (!submeshes.empty())
@@ -169,6 +264,11 @@ bool CompileObjToMesh(const std::string& objText, std::vector<uint8_t>& outBlob,
             Vec3 n;
             ls >> n.x >> n.y >> n.z;
             normals.push_back(n);
+        }
+        else if (keyword == "mtllib")
+        {
+            if (materialLibrary.empty())
+                ls >> materialLibrary;
         }
         else if (keyword == "usemtl")
         {
@@ -284,6 +384,37 @@ bool CompileObjToMesh(const std::string& objText, std::vector<uint8_t>& outBlob,
 
     const bool hasUVs = !uvs.empty();
 
+    // The texture, if the model names a material library that names one and
+    // the caller gave us something able to decode it. A model without texture
+    // coordinates gets none regardless: there would be nothing to sample with.
+    std::vector<uint8_t> texturePixels;
+    uint16_t textureWidth = 0, textureHeight = 0;
+    if (hasUVs && decodeImage && !materialLibrary.empty())
+    {
+        std::ifstream mtlFile(ResolveRelative(baseDirectory, materialLibrary), std::ios::binary);
+        if (mtlFile)
+        {
+            std::ostringstream mtlText;
+            mtlText << mtlFile.rdbuf();
+            const std::string map = FindFirstDiffuseMap(mtlText.str());
+            if (!map.empty())
+            {
+                int srcW = 0, srcH = 0;
+                std::vector<uint8_t> rgba;
+                if (decodeImage(ResolveRelative(baseDirectory, map), srcW, srcH, rgba) &&
+                    srcW > 0 && srcH > 0 &&
+                    rgba.size() >= static_cast<size_t>(srcW) * srcH * 4)
+                {
+                    // 256 is the cap: at RGB565 that is 128 KB, already more
+                    // than a small board wants to hold resident.
+                    textureWidth = FitPowerOfTwo(srcW, 256);
+                    textureHeight = FitPowerOfTwo(srcH, 256);
+                    ResampleToRgb565(rgba, srcW, srcH, textureWidth, textureHeight, texturePixels);
+                }
+            }
+        }
+    }
+
     MeshFileHeader header{};
     std::memcpy(header.magic, "DMSH", 4);
     header.version = kMeshFileVersion;
@@ -295,6 +426,8 @@ bool CompileObjToMesh(const std::string& objText, std::vector<uint8_t>& outBlob,
     header.submeshCount = static_cast<uint16_t>(submeshes.size());
     header.vertexStride =
         static_cast<uint16_t>(sizeof(float) * 3 + sizeof(float) * 3 + (hasUVs ? sizeof(float) * 2 : 0));
+    header.textureWidth = texturePixels.empty() ? 0 : textureWidth;
+    header.textureHeight = texturePixels.empty() ? 0 : textureHeight;
 
     float lo[3] = { outPositions[0].x, outPositions[0].y, outPositions[0].z };
     float hi[3] = { lo[0], lo[1], lo[2] };
@@ -333,6 +466,8 @@ bool CompileObjToMesh(const std::string& objText, std::vector<uint8_t>& outBlob,
         sub.materialIndex = r.materialIndex;
         append(&sub, sizeof(sub));
     }
+    if (!texturePixels.empty())
+        append(texturePixels.data(), texturePixels.size());
 
     return true;
 }

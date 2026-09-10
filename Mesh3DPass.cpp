@@ -135,7 +135,9 @@ void Mesh3DPass::Execute(Deki::Object* obj, RenderContext& ctx)
 #endif
 
     Material3D material;
-    material.texture = nullptr;
+    // A mesh asset carries its own texture; a primitive has none. One texture
+    // for the whole mesh today, so every submesh samples it.
+    material.texture = mesh->AssetTexture();
     material.tint = mesh->tintColor.ToRGBA8888();
     material.shading = mesh->shading;
     material.doubleSided = mesh->doubleSided;

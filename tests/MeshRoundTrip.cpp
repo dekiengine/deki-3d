@@ -19,10 +19,13 @@
 
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
 using namespace Deki3D;
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -63,7 +66,7 @@ int main()
 
     std::vector<uint8_t> blob;
     std::string error;
-    Check(CompileObjToMesh(kCubeObj, blob, error), "a cube compiles");
+    Check(CompileObjToMesh(kCubeObj, "", {}, blob, error), "a cube compiles");
     if (!error.empty())
         std::printf("        error: %s\n", error.c_str());
 
@@ -125,8 +128,71 @@ int main()
     {
         std::string err;
         std::vector<uint8_t> out;
-        Check(!CompileObjToMesh("v 0 0 0\nv 1 0 0\n", out, err), "a file with no faces is refused");
-        Check(!CompileObjToMesh("v 0 0 0\nf 1 2 3\n", out, err), "an out-of-range face is refused");
+        Check(!CompileObjToMesh("v 0 0 0\nv 1 0 0\n", "", {}, out, err),
+              "a file with no faces is refused");
+        Check(!CompileObjToMesh("v 0 0 0\nf 1 2 3\n", "", {}, out, err),
+              "an out-of-range face is refused");
+    }
+
+    std::printf("\nTextures\n");
+    {
+        // A material library on disk naming an image, and a decoder standing
+        // in for the editor's. The image is 12x6, so the importer has to
+        // reduce it to the nearest powers of two below that, 8x4.
+        const fs::path dir = fs::temp_directory_path() / "deki-3d-texture-test";
+        fs::remove_all(dir);
+        fs::create_directories(dir);
+        std::ofstream(dir / "cube.mtl") << "newmtl shell\nmap_Kd brick.png\n";
+
+        bool decoderCalled = false;
+        auto decoder = [&decoderCalled](const std::string& path, int& w, int& h,
+                                        std::vector<uint8_t>& rgba) {
+            decoderCalled = true;
+            if (path.find("brick.png") == std::string::npos)
+                return false;
+            w = 12;
+            h = 6;
+            rgba.assign(static_cast<size_t>(w) * h * 4, 0);
+            for (int i = 0; i < w * h; ++i)
+            {
+                rgba[i * 4 + 0] = 255;  // pure red, which survives RGB565 exactly
+                rgba[i * 4 + 3] = 255;
+            }
+            return true;
+        };
+
+        std::string textured = "mtllib cube.mtl\n";
+        textured += "v -1 -1 0\nv 1 -1 0\nv 1 1 0\n";
+        textured += "vt 0 0\nvt 1 0\nvt 1 1\n";
+        textured += "usemtl shell\nf 1/1 2/2 3/3\n";
+
+        std::vector<uint8_t> out;
+        std::string err;
+        Check(CompileObjToMesh(textured, dir.string(), decoder, out, err),
+              "a textured model compiles");
+        Check(decoderCalled, "the material library led to the image");
+
+        MeshAsset m;
+        Check(m.LoadFromMemory(out.data(), out.size()), "it loads back");
+        const Texture3D* tex = m.Texture();
+        Check(tex != nullptr, "the texture came with it");
+        if (tex)
+        {
+            Check(tex->width == 8 && tex->height == 4, "12x6 was fitted to 8x4");
+            Check((1u << tex->widthShift) == tex->width, "the shift matches the width");
+            const uint16_t first = reinterpret_cast<const uint16_t*>(tex->pixels)[0];
+            Check(first == 0xF800, "red survived the conversion to RGB565");
+        }
+
+        // Without a decoder the same model still compiles, just untextured.
+        std::vector<uint8_t> bare;
+        Check(CompileObjToMesh(textured, dir.string(), {}, bare, err),
+              "no decoder still compiles");
+        MeshAsset m2;
+        m2.LoadFromMemory(bare.data(), bare.size());
+        Check(m2.Texture() == nullptr, "and carries no texture");
+
+        fs::remove_all(dir);
     }
 
     std::printf("\nIt rasterises\n");

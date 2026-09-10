@@ -39,6 +39,17 @@ VertexLayout LayoutFor(uint16_t attributes, uint16_t stride)
     return layout;
 }
 
+/// The exponent of a power of two, or -1 when the value is not one.
+int ShiftOf(uint16_t value)
+{
+    if (value == 0 || (value & (value - 1)) != 0)
+        return -1;
+    int shift = 0;
+    while ((1u << shift) < value)
+        ++shift;
+    return shift;
+}
+
 }  // namespace
 
 bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
@@ -46,6 +57,8 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     m_Vertices.clear();
     m_Indices.clear();
     m_Submeshes.clear();
+    m_TexturePixels.clear();
+    m_Texture = Texture3D{};
     m_View = Mesh3D{};
 
     if (!data || size < sizeof(MeshFileHeader))
@@ -74,7 +87,10 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     const size_t vertexBytes = static_cast<size_t>(header.vertexCount) * header.vertexStride;
     const size_t indexBytes = static_cast<size_t>(header.indexCount) * sizeof(uint16_t);
     const size_t submeshBytes = static_cast<size_t>(header.submeshCount) * sizeof(Submesh3D);
-    const size_t needed = sizeof(MeshFileHeader) + vertexBytes + indexBytes + submeshBytes;
+    const size_t textureBytes =
+        static_cast<size_t>(header.textureWidth) * header.textureHeight * sizeof(uint16_t);
+    const size_t needed =
+        sizeof(MeshFileHeader) + vertexBytes + indexBytes + submeshBytes + textureBytes;
     if (size < needed)
     {
         DEKI_LOG_WARNING("MeshAsset: truncated (%zu bytes, needs %zu)", size, needed);
@@ -95,6 +111,7 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     {
         m_Submeshes.resize(header.submeshCount);
         std::memcpy(m_Submeshes.data(), cursor, submeshBytes);
+        cursor += submeshBytes;
     }
     else
     {
@@ -129,6 +146,32 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
             m_Indices.clear();
             m_Submeshes.clear();
             return false;
+        }
+    }
+
+    if (textureBytes > 0)
+    {
+        // Powers of two only: the sampler masks the coordinate rather than
+        // wrapping it with a division, so anything else would read the wrong
+        // texels rather than merely look wrong.
+        const int wShift = ShiftOf(header.textureWidth);
+        const int hShift = ShiftOf(header.textureHeight);
+        if (wShift < 0 || hShift < 0)
+        {
+            DEKI_LOG_WARNING("MeshAsset: texture %ux%u is not a power of two; ignoring it",
+                             static_cast<unsigned>(header.textureWidth),
+                             static_cast<unsigned>(header.textureHeight));
+        }
+        else
+        {
+            m_TexturePixels.resize(textureBytes);
+            std::memcpy(m_TexturePixels.data(), cursor, textureBytes);
+            m_Texture.pixels = m_TexturePixels.data();
+            m_Texture.palette = nullptr;
+            m_Texture.width = header.textureWidth;
+            m_Texture.height = header.textureHeight;
+            m_Texture.widthShift = static_cast<uint8_t>(wShift);
+            m_Texture.heightShift = static_cast<uint8_t>(hShift);
         }
     }
 

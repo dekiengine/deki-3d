@@ -37,9 +37,14 @@ struct MeshFileHeader
     uint16_t vertexStride;
     float boundsMin[3];
     float boundsMax[3];
+    // An optional texture, RGB565, stored after the submesh table. Both sides
+    // are powers of two so the sampler masks instead of dividing. Zero means
+    // the mesh carries none and draws with its vertex colours.
+    uint16_t textureWidth;
+    uint16_t textureHeight;
 };
 
-constexpr uint16_t kMeshFileVersion = 1;
+constexpr uint16_t kMeshFileVersion = 2;
 
 enum MeshAttribute : uint16_t
 {
@@ -64,6 +69,9 @@ public:
     const Mesh3D& View() const { return m_View; }
     bool Valid() const { return m_View.vertexCount > 0 && m_View.indexCount > 0; }
 
+    /// The mesh's own texture, or null when it has none.
+    const Texture3D* Texture() const { return m_Texture.Valid() ? &m_Texture : nullptr; }
+
     uint32_t VertexCount() const { return m_View.vertexCount; }
     uint32_t TriangleCount() const { return m_View.indexCount / 3; }
 
@@ -73,6 +81,8 @@ private:
     std::vector<uint8_t> m_Vertices;
     std::vector<uint16_t> m_Indices;
     std::vector<Submesh3D> m_Submeshes;
+    std::vector<uint8_t> m_TexturePixels;
+    Texture3D m_Texture;
     Mesh3D m_View;
 };
 

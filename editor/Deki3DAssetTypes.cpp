@@ -23,6 +23,7 @@
 #include <deki-editor/EditorRegistry.h>
 #include <deki-editor/AssetData.h>
 #include <deki-editor/Paths.h>
+#include <deki-editor/TextureImporter.h>
 #include <deki/LogSystem.h>
 #include <deki/assets/AssetManager.h>
 
@@ -64,9 +65,24 @@ void HandleObjSync(const std::string& absolutePath, const std::string& guid,
     std::ostringstream text;
     text << in.rdbuf();
 
+    // The model's material library and its texture are named relative to the
+    // model itself, and decoding an image is the editor's job, so both are
+    // supplied here rather than reached for inside the parser.
+    const std::string baseDirectory = fs::path(absolutePath).parent_path().string();
+    auto decodeImage = [](const std::string& imagePath, int& width, int& height,
+                          std::vector<uint8_t>& rgba) {
+        DecodedImage decoded;
+        if (!DecodeImageFile(imagePath, decoded))
+            return false;
+        width = decoded.width;
+        height = decoded.height;
+        rgba = std::move(decoded.rgba);
+        return true;
+    };
+
     std::vector<uint8_t> blob;
     std::string error;
-    if (!Deki3D::CompileObjToMesh(text.str(), blob, error))
+    if (!Deki3D::CompileObjToMesh(text.str(), baseDirectory, decodeImage, blob, error))
     {
         DEKI_LOG_WARNING("Deki3D: '%s' did not compile: %s", absolutePath.c_str(), error.c_str());
         return;
