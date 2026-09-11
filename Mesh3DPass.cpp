@@ -168,6 +168,15 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     m_Config.tileSize = cam3d->tileSize;
     m_Config.perspectiveCorrect = cam3d->perspectiveCorrect;
     m_Config.vertexSnap = cam3d->vertexSnap;
+
+    // Yaw and pitch rather than a raw vector: an author wants to swing a light
+    // around, not to normalise one by hand. Yaw 0 puts it behind the viewer.
+    const float yaw = cam3d->lightYaw * kPi / 180.0f;
+    const float pitch = cam3d->lightPitch * kPi / 180.0f;
+    m_Config.lightDirection = Deki::Vector3(std::sin(yaw) * std::cos(pitch),
+                                            -std::sin(pitch),
+                                            -std::cos(yaw) * std::cos(pitch));
+    m_Config.ambient = cam3d->ambient;
 #ifdef DEKI_EDITOR
     // One thread inside the editor, whatever the scene asks for.
     //
