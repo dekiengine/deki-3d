@@ -396,8 +396,8 @@ void Raster3D::Bin(const RasterTri& tri)
 
     int minX = std::max(0, static_cast<int>(std::floor(minXf)));
     int minY = std::max(0, static_cast<int>(std::floor(minYf)));
-    int maxX = std::min(m_Width - 1, static_cast<int>(std::ceil(maxXf)));
-    int maxY = std::min(m_Height - 1, static_cast<int>(std::ceil(maxYf)));
+    int maxX = std::min(static_cast<int>(m_Width) - 1, static_cast<int>(std::ceil(maxXf)));
+    int maxY = std::min(static_cast<int>(m_Height) - 1, static_cast<int>(std::ceil(maxYf)));
     if (minX > maxX || minY > maxY)
         return;
 
@@ -547,8 +547,8 @@ void Raster3D::FillTile(int tileX, int tileY, uint16_t* tileDepth, RasterStats& 
     const int tile = m_Config.tileSize;
     const int originX = tileX * tile;
     const int originY = tileY * tile;
-    const int maxX = std::min(originX + tile, m_Width) - 1;
-    const int maxY = std::min(originY + tile, m_Height) - 1;
+    const int maxX = std::min(originX + tile, static_cast<int>(m_Width)) - 1;
+    const int maxY = std::min(originY + tile, static_cast<int>(m_Height)) - 1;
 
     // Reset this thread's scratch buffer and reuse it for every tile it takes.
     std::fill(tileDepth, tileDepth + static_cast<size_t>(tile) * tile,
