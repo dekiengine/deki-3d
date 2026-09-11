@@ -138,10 +138,22 @@ void ResampleToRgb565(const std::vector<uint8_t>& rgba, int srcW, int srcH,
     }
 }
 
-/// The first `map_Kd` in a material library. Options such as "-s 1 1 1" may
-/// precede the filename, so the last token on the line is the one wanted.
-std::string FindFirstDiffuseMap(const std::string& mtlText)
+/// What one `newmtl` block says that this pipeline can use.
+struct MtlEntry
 {
+    std::string diffuseMap;  // map_Kd, as written
+    uint32_t tint = 0xFFFFFFFFu;
+    bool alphaTest = false;
+};
+
+/// Every `newmtl` block in a material library, by name. Kd becomes the
+/// material's tint, so a model that colours its parts without texturing them
+/// still arrives coloured.
+std::map<std::string, MtlEntry> ParseMaterialLibrary(const std::string& mtlText)
+{
+    std::map<std::string, MtlEntry> materials;
+    std::string current;
+
     std::istringstream in(mtlText);
     std::string line;
     while (std::getline(in, line))
@@ -151,15 +163,50 @@ std::string FindFirstDiffuseMap(const std::string& mtlText)
         std::istringstream ls(line);
         std::string keyword;
         ls >> keyword;
-        if (keyword != "map_Kd")
-            continue;
-        std::string token, last;
-        while (ls >> token)
-            last = token;
-        if (!last.empty())
-            return last;
+
+        if (keyword == "newmtl")
+        {
+            current.clear();
+            ls >> current;
+            if (!current.empty())
+                materials.emplace(current, MtlEntry{});
+        }
+        else if (current.empty())
+        {
+            continue;  // anything before the first newmtl belongs to nobody
+        }
+        else if (keyword == "map_Kd")
+        {
+            // Options such as "-s 1 1 1" may precede the filename, so the
+            // last token on the line is the one wanted.
+            std::string token, last;
+            while (ls >> token)
+                last = token;
+            materials[current].diffuseMap = last;
+        }
+        else if (keyword == "Kd")
+        {
+            float r = 1.0f, g = 1.0f, b = 1.0f;
+            ls >> r >> g >> b;
+            auto channel = [](float v) -> uint32_t {
+                if (v < 0.0f) v = 0.0f;
+                if (v > 1.0f) v = 1.0f;
+                return static_cast<uint32_t>(v * 255.0f + 0.5f);
+            };
+            materials[current].tint =
+                0xFF000000u | (channel(b) << 16) | (channel(g) << 8) | channel(r);
+        }
+        else if (keyword == "d" || keyword == "Tr")
+        {
+            // Anything not fully opaque gets the alpha test, which is the
+            // only transparency the span loop has.
+            float value = 1.0f;
+            ls >> value;
+            const float opacity = keyword == "d" ? value : 1.0f - value;
+            materials[current].alphaTest = opacity < 0.999f;
+        }
     }
-    return {};
+    return materials;
 }
 
 /// Join a base directory and a path written inside a model file. Those paths
@@ -384,35 +431,79 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
 
     const bool hasUVs = !uvs.empty();
 
-    // The texture, if the model names a material library that names one and
-    // the caller gave us something able to decode it. A model without texture
-    // coordinates gets none regardless: there would be nothing to sample with.
-    std::vector<uint8_t> texturePixels;
-    uint16_t textureWidth = 0, textureHeight = 0;
-    if (hasUVs && decodeImage && !materialLibrary.empty())
+    // --- materials and their textures --------------------------------------
+    //
+    // One entry per `usemtl` name the faces actually used, in the order the
+    // submeshes index them. A texture is decoded once per distinct image, so
+    // several materials sharing a map share the texture too.
+    std::map<std::string, MtlEntry> library;
+    if (!materialLibrary.empty())
     {
         std::ifstream mtlFile(ResolveRelative(baseDirectory, materialLibrary), std::ios::binary);
         if (mtlFile)
         {
             std::ostringstream mtlText;
             mtlText << mtlFile.rdbuf();
-            const std::string map = FindFirstDiffuseMap(mtlText.str());
-            if (!map.empty())
+            library = ParseMaterialLibrary(mtlText.str());
+        }
+    }
+
+    std::vector<MeshFileMaterial> outMaterials(materialIds.size());
+    std::vector<MeshFileTexture> outTextures;
+    std::vector<uint8_t> texturePixels;
+    std::map<std::string, int16_t> textureByPath;
+
+    for (const auto& entry : materialIds)
+    {
+        MeshFileMaterial material;
+        material.textureIndex = -1;
+        material.flags = 0;
+        material.tint = 0xFFFFFFFFu;
+
+        auto found = library.find(entry.first);
+        if (found != library.end())
+        {
+            material.tint = found->second.tint;
+            if (found->second.alphaTest)
+                material.flags |= MeshMaterial_AlphaTest;
+
+            // No texture coordinates means nothing to sample with, so the
+            // image is not worth carrying.
+            const std::string& map = found->second.diffuseMap;
+            if (hasUVs && decodeImage && !map.empty())
             {
-                int srcW = 0, srcH = 0;
-                std::vector<uint8_t> rgba;
-                if (decodeImage(ResolveRelative(baseDirectory, map), srcW, srcH, rgba) &&
-                    srcW > 0 && srcH > 0 &&
-                    rgba.size() >= static_cast<size_t>(srcW) * srcH * 4)
+                auto cached = textureByPath.find(map);
+                if (cached != textureByPath.end())
                 {
-                    // 256 is the cap: at RGB565 that is 128 KB, already more
-                    // than a small board wants to hold resident.
-                    textureWidth = FitPowerOfTwo(srcW, 256);
-                    textureHeight = FitPowerOfTwo(srcH, 256);
-                    ResampleToRgb565(rgba, srcW, srcH, textureWidth, textureHeight, texturePixels);
+                    material.textureIndex = cached->second;
+                }
+                else
+                {
+                    int srcW = 0, srcH = 0;
+                    std::vector<uint8_t> rgba;
+                    if (decodeImage(ResolveRelative(baseDirectory, map), srcW, srcH, rgba) &&
+                        srcW > 0 && srcH > 0 &&
+                        rgba.size() >= static_cast<size_t>(srcW) * srcH * 4)
+                    {
+                        // 256 is the cap: at RGB565 that is 128 KB, already
+                        // more than a small board wants to hold resident.
+                        MeshFileTexture texture;
+                        texture.width = FitPowerOfTwo(srcW, 256);
+                        texture.height = FitPowerOfTwo(srcH, 256);
+                        texture.byteOffset = static_cast<uint32_t>(texturePixels.size());
+
+                        std::vector<uint8_t> pixels;
+                        ResampleToRgb565(rgba, srcW, srcH, texture.width, texture.height, pixels);
+                        texturePixels.insert(texturePixels.end(), pixels.begin(), pixels.end());
+
+                        material.textureIndex = static_cast<int16_t>(outTextures.size());
+                        outTextures.push_back(texture);
+                        textureByPath.emplace(map, material.textureIndex);
+                    }
                 }
             }
         }
+        outMaterials[entry.second] = material;
     }
 
     MeshFileHeader header{};
@@ -426,8 +517,9 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     header.submeshCount = static_cast<uint16_t>(submeshes.size());
     header.vertexStride =
         static_cast<uint16_t>(sizeof(float) * 3 + sizeof(float) * 3 + (hasUVs ? sizeof(float) * 2 : 0));
-    header.textureWidth = texturePixels.empty() ? 0 : textureWidth;
-    header.textureHeight = texturePixels.empty() ? 0 : textureHeight;
+    header.materialCount = static_cast<uint16_t>(outMaterials.size());
+    header.textureCount = static_cast<uint16_t>(outTextures.size());
+    header.texturePixelBytes = static_cast<uint32_t>(texturePixels.size());
 
     float lo[3] = { outPositions[0].x, outPositions[0].y, outPositions[0].z };
     float hi[3] = { lo[0], lo[1], lo[2] };
@@ -460,12 +552,17 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     append(indices.data(), indices.size() * sizeof(uint16_t));
     for (const Range& r : submeshes)
     {
-        Submesh3D sub;
+        MeshFileSubmesh sub;
         sub.firstIndex = r.firstIndex;
         sub.indexCount = r.indexCount;
         sub.materialIndex = r.materialIndex;
+        sub.padding = 0;
         append(&sub, sizeof(sub));
     }
+    for (const MeshFileMaterial& material : outMaterials)
+        append(&material, sizeof(material));
+    for (const MeshFileTexture& texture : outTextures)
+        append(&texture, sizeof(texture));
     if (!texturePixels.empty())
         append(texturePixels.data(), texturePixels.size());
 

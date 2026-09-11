@@ -174,7 +174,8 @@ int main()
 
         MeshAsset m;
         Check(m.LoadFromMemory(out.data(), out.size()), "it loads back");
-        const Texture3D* tex = m.Texture();
+        Check(m.MaterialCount() == 1, "one usemtl, one material");
+        const Texture3D* tex = m.MaterialCount() ? m.Materials()[0].texture : nullptr;
         Check(tex != nullptr, "the texture came with it");
         if (tex)
         {
@@ -190,7 +191,79 @@ int main()
               "no decoder still compiles");
         MeshAsset m2;
         m2.LoadFromMemory(bare.data(), bare.size());
-        Check(m2.Texture() == nullptr, "and carries no texture");
+        Check(m2.MaterialCount() == 1 && m2.Materials()[0].texture == nullptr,
+              "and carries no texture");
+
+        fs::remove_all(dir);
+    }
+
+    std::printf("\nSeveral materials\n");
+    {
+        // Three groups: one textured red, one textured with the SAME image,
+        // one with only a diffuse colour. A real model looks like this, and
+        // until now every group drew with the first group's texture.
+        const fs::path dir = fs::temp_directory_path() / "deki-3d-multimat-test";
+        fs::remove_all(dir);
+        fs::create_directories(dir);
+        std::ofstream(dir / "m.mtl")
+            << "newmtl red\nKd 1 1 1\nmap_Kd red.png\n"
+               "newmtl alsored\nKd 1 1 1\nmap_Kd red.png\n"
+               "newmtl plain\nKd 0.0 1.0 0.0\nd 0.5\n";
+
+        int decodeCount = 0;
+        auto decoder = [&decodeCount](const std::string& path, int& w, int& h,
+                                      std::vector<uint8_t>& rgba) {
+            if (path.find("red.png") == std::string::npos)
+                return false;
+            ++decodeCount;
+            w = h = 4;
+            rgba.assign(static_cast<size_t>(w) * h * 4, 0);
+            for (int i = 0; i < w * h; ++i)
+            {
+                rgba[i * 4 + 0] = 255;
+                rgba[i * 4 + 3] = 255;
+            }
+            return true;
+        };
+
+        std::string obj = "mtllib m.mtl\n";
+        for (int i = 0; i < 9; ++i)
+            obj += "v " + std::to_string(i) + " 0 0\n";
+        obj += "vt 0 0\nvt 1 0\nvt 1 1\n";
+        obj += "usemtl red\nf 1/1 2/2 3/3\n";
+        obj += "usemtl alsored\nf 4/1 5/2 6/3\n";
+        obj += "usemtl plain\nf 7/1 8/2 9/3\n";
+
+        std::vector<uint8_t> out;
+        std::string err;
+        Check(CompileObjToMesh(obj, dir.string(), decoder, out, err), "it compiles");
+        if (!err.empty())
+            std::printf("        error: %s\n", err.c_str());
+
+        MeshAsset m;
+        Check(m.LoadFromMemory(out.data(), out.size()), "it loads back");
+        Check(m.View().submeshCount == 3, "three groups, three submeshes");
+        Check(m.MaterialCount() == 3, "and three materials");
+        Check(m.TextureCount() == 1, "the shared image was decoded into one texture");
+        Check(decodeCount == 1, "and decoded only once");
+
+        if (m.MaterialCount() == 3)
+        {
+            const Material3D* mats = m.Materials();
+            // Submeshes are emitted in usemtl order, so material indices
+            // follow the order the names were first seen.
+            const Material3D& red = mats[m.View().submeshes[0].materialIndex];
+            const Material3D& alsoRed = mats[m.View().submeshes[1].materialIndex];
+            const Material3D& plain = mats[m.View().submeshes[2].materialIndex];
+
+            Check(red.texture != nullptr && alsoRed.texture != nullptr,
+                  "both textured groups got a texture");
+            Check(red.texture == alsoRed.texture, "and they share the one texture");
+            Check(plain.texture == nullptr, "the untextured group has none");
+            Check((plain.tint & 0x00FFFFFFu) == 0x0000FF00u, "its Kd became a green tint");
+            Check(plain.alphaTest, "d 0.5 asked for the alpha test");
+            Check(!red.alphaTest, "an opaque material did not");
+        }
 
         fs::remove_all(dir);
     }

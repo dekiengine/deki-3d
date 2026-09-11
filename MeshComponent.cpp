@@ -168,12 +168,12 @@ const Deki3D::Mesh3D* MeshComponent::Resolve() const
     return &m_Mesh;
 }
 
-const Deki3D::Texture3D* MeshComponent::AssetTexture() const
+const Deki3D::MeshAsset* MeshComponent::Asset() const
 {
     if (!mesh.HasGuid())
         return nullptr;
     const Deki3D::MeshAsset* asset = mesh.Get();
-    return asset ? asset->Texture() : nullptr;
+    return (asset && asset->Valid()) ? asset : nullptr;
 }
 
 bool MeshComponent::RenderContent(const Deki::Object*, QuadBlit::Source&, float&, float&,

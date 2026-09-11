@@ -49,6 +49,10 @@ private:
 
     Raster3D m_Raster;
     RasterConfig m_Config;
+    // Rebuilt per object from the mesh's own materials and the component's
+    // overrides. A member so a scene full of meshes does not allocate a
+    // vector per object per frame.
+    std::vector<Material3D> m_Materials;
     Deki::Mat4 m_ViewProjection;
 
     // The frame's target, kept so a flush can start the next batch on it.

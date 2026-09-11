@@ -48,9 +48,9 @@ public:
     DEKI_EXPORT
     bool doubleSided = false;
 
-    /// The texture the assigned mesh asset carries, or null when it has none
-    /// or when a primitive is being drawn.
-    const Deki3D::Texture3D* AssetTexture() const;
+    /// The assigned mesh asset once it has loaded, or null while it has not
+    /// or when a primitive is being drawn. The pass reads its material table.
+    const Deki3D::MeshAsset* Asset() const;
 
     /// The geometry to draw this frame: the mesh asset when one is assigned
     /// and loaded, otherwise the built-in primitive. Null when neither is

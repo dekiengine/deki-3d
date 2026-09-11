@@ -18,6 +18,18 @@ namespace
 {
 constexpr float kPi = 3.14159265358979323846f;
 
+/// Two 0xAABBGGRR colours, channel by channel. White leaves the other alone.
+uint32_t MultiplyTint(uint32_t a, uint32_t b)
+{
+    uint32_t out = 0;
+    for (int shift = 0; shift < 32; shift += 8)
+    {
+        const uint32_t channel = (((a >> shift) & 0xFF) * ((b >> shift) & 0xFF) + 127) / 255;
+        out |= (channel & 0xFF) << shift;
+    }
+    return out;
+}
+
 /// The camera's own world rotation, as a basis. The engine stores angles, so
 /// the view matrix is built from a position and a direction rather than by
 /// inverting a matrix.
@@ -152,13 +164,26 @@ void Mesh3DPass::Execute(Deki::Object* obj, RenderContext& ctx)
                                      obj->GetWorldScaleX(), obj->GetWorldScaleY(), 1.0f);
 #endif
 
-    Material3D material;
-    // A mesh asset carries its own texture; a primitive has none. One texture
-    // for the whole mesh today, so every submesh samples it.
-    material.texture = mesh->AssetTexture();
-    material.tint = mesh->tintColor.ToRGBA8888();
-    material.shading = mesh->shading;
-    material.doubleSided = mesh->doubleSided;
+    // Materials come from the mesh, which carries one per `usemtl` group with
+    // its own texture. The component's own settings are applied on top: its
+    // tint multiplies each material's, its shading model replaces theirs
+    // (shading is a property of how you want the object drawn, not of the
+    // model file), and its double-sided switch can only add.
+    const Deki3D::MeshAsset* asset = mesh->Asset();
+    const uint32_t componentTint = mesh->tintColor.ToRGBA8888();
+
+    m_Materials.clear();
+    if (asset && asset->MaterialCount() > 0)
+        m_Materials.assign(asset->Materials(), asset->Materials() + asset->MaterialCount());
+    else
+        m_Materials.emplace_back();
+
+    for (Material3D& material : m_Materials)
+    {
+        material.tint = MultiplyTint(material.tint, componentTint);
+        material.shading = mesh->shading;
+        material.doubleSided = material.doubleSided || mesh->doubleSided;
+    }
 
     // Rotation only for normals: uniform scale leaves them pointing the right
     // way, and the shading models here are not worth an inverse transpose.
@@ -170,7 +195,8 @@ void Mesh3DPass::Execute(Deki::Object* obj, RenderContext& ctx)
     const Deki::Mat4 normalMatrix = RotateZ(obj->GetWorldRotation());
 #endif
 
-    m_Raster.DrawMesh(*geometry, &material, 1, Mul(m_ViewProjection, model), normalMatrix);
+    m_Raster.DrawMesh(*geometry, m_Materials.data(), static_cast<uint16_t>(m_Materials.size()),
+                      Mul(m_ViewProjection, model), normalMatrix);
     m_Pending = true;
 }
 
