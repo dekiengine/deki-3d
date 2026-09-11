@@ -5,6 +5,10 @@
 
 #include "deki-rendering/RenderPass.h"
 
+// The 2D camera the renderer is drawing through; its owner may carry the 3D
+// settings, or the scene may.
+class CameraComponent;
+
 namespace Deki3D
 {
 
@@ -46,6 +50,8 @@ public:
 private:
     /// Fill the tiles for everything binned so far and start a fresh batch.
     void Flush();
+    /// Work out the projection, once per frame, when the first object arrives.
+    void Start(const Deki::Object* sceneObject);
 
     Raster3D m_Raster;
     RasterConfig m_Config;
@@ -61,6 +67,9 @@ private:
     int32_t m_Height = 0;
     Deki::ColorFormat m_Format = Deki::ColorFormat::RGB565;
 
+    CameraComponent* m_Camera = nullptr;
+
+    bool m_Started = false;  // Start() has run for this frame
     bool m_Active = false;   // false when the scene has no 3D camera
     bool m_Pending = false;  // geometry is binned and not yet filled
 };

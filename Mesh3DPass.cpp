@@ -9,6 +9,7 @@
 #include "deki-rendering/DekiRenderPassRegistry.h"
 
 #include <deki/Object.h>
+#include <deki/Scene.h>
 
 #include <cmath>
 
@@ -43,11 +44,51 @@ Deki::Mat4 CameraRotation(const Deki::Object* obj)
 #endif
 }
 
+/// The first Camera3DComponent anywhere in the scene, or null.
+///
+/// Needed because the editor's viewport does not render through the scene's
+/// camera: it makes its own object carrying a bare CameraComponent, which has
+/// no 3D settings on it. Without this the scene view showed nothing at all,
+/// and 3D could only be seen by running the game, which is no way to place
+/// anything.
+const Camera3DComponent* FindInSubtree(const Deki::Object* object)
+{
+    if (!object)
+        return nullptr;
+    if (const Camera3DComponent* found = object->GetComponent<Camera3DComponent>())
+        return found;
+    // Scene::GetObjects() hands back the roots only, and a camera is almost
+    // always a child of one: the scaffold puts every object under a single
+    // root. Searching the roots alone found nothing at all.
+    for (const Deki::Object* child : object->GetChildren())
+    {
+        if (const Camera3DComponent* found = FindInSubtree(child))
+            return found;
+    }
+    return nullptr;
+}
+
+const Camera3DComponent* FindSceneCamera3D(const Deki::Object* anyObject)
+{
+    const Deki::Scene* scene = anyObject ? anyObject->GetOwnerScene() : nullptr;
+    if (!scene)
+        return nullptr;
+    for (const Deki::Object* root : scene->GetObjects())
+    {
+        if (const Camera3DComponent* found = FindInSubtree(root))
+            return found;
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 void Mesh3DPass::BeginFrame(RenderContext& ctx)
 {
     m_Active = false;
+    m_Started = false;
+    m_Pending = false;
+
     if (!ctx.camera || !ctx.buffer || ctx.width <= 0 || ctx.height <= 0)
         return;
 
@@ -57,29 +98,68 @@ void Mesh3DPass::BeginFrame(RenderContext& ctx)
     if (ctx.format != Deki::ColorFormat::RGB565)
         return;
 
-    Deki::Object* cameraObject = ctx.camera->GetOwner();
+    m_Camera = ctx.camera;
+    m_Buffer = ctx.buffer;
+    m_Width = ctx.width;
+    m_Height = ctx.height;
+    m_Format = ctx.format;
+}
+
+/// Set up the projection the first time an object comes past.
+///
+/// Deferred to here rather than done in BeginFrame because finding the
+/// scene's 3D camera needs an object that belongs to the scene, and the
+/// camera the renderer hands us may not: in the editor it is a standalone
+/// object the viewport owns.
+void Mesh3DPass::Start(const Deki::Object* sceneObject)
+{
+    m_Started = true;
+    m_Active = false;
+
+    Deki::Object* cameraObject = m_Camera ? m_Camera->GetOwner() : nullptr;
     if (!cameraObject)
         return;
 
-    // No 3D camera means this scene is not a 3D scene. Draw nothing rather
-    // than inventing a projection.
+    // The camera's own settings when it has them, otherwise the scene's. A
+    // scene with neither is not a 3D scene, and gets nothing drawn rather
+    // than a projection invented for it.
     const Camera3DComponent* cam3d = cameraObject->GetComponent<Camera3DComponent>();
+    const bool throughSceneCamera = cam3d != nullptr;
+    if (!cam3d)
+        cam3d = FindSceneCamera3D(sceneObject);
     if (!cam3d)
         return;
 
+    const float fovY = cam3d->fieldOfView * kPi / 180.0f;
+
 #ifdef DEKI_TRANSFORM_3D
-    const float camZ = cameraObject->GetWorldZ();
+    float camZ = cameraObject->GetWorldZ();
 #else
-    const float camZ = 0.0f;
+    float camZ = 0.0f;
 #endif
+
+    if (!throughSceneCamera)
+    {
+        // Previewing through the editor's own camera. Pull back to the
+        // distance at which the plane through z = 0 covers exactly what the
+        // editor is showing in 2D, so zooming the viewport scales the 3D with
+        // it rather than leaving it a fixed size.
+        const float visibleHeight = m_Camera->GetVisibleHeight(m_Height);
+        const float halfAngle = std::tan(fovY * 0.5f);
+        if (visibleHeight > 0.0f && halfAngle > 0.0f)
+            camZ += (visibleHeight * 0.5f) / halfAngle;
+    }
+
     const Deki::Vector3 eye(cameraObject->GetWorldX(), cameraObject->GetWorldY(), camZ);
 
-    const Deki::Mat4 basis = CameraRotation(cameraObject);
+    // The editor's camera is a 2D pan and zoom with no meaningful orientation,
+    // so the preview looks straight down -Z rather than borrowing its rotation.
+    const Deki::Mat4 basis =
+        throughSceneCamera ? CameraRotation(cameraObject) : Deki::Mat4::Identity();
     const Deki::Vector3 forward = TransformDirection(basis, Deki::Vector3(0.0f, 0.0f, -1.0f));
     const Deki::Vector3 up = TransformDirection(basis, Deki::Vector3(0.0f, 1.0f, 0.0f));
 
-    const float aspect = static_cast<float>(ctx.width) / static_cast<float>(ctx.height);
-    const float fovY = cam3d->fieldOfView * kPi / 180.0f;
+    const float aspect = static_cast<float>(m_Width) / static_cast<float>(m_Height);
     const Deki::Mat4 projection = Perspective(fovY, aspect, cam3d->nearPlane, cam3d->farPlane);
     const Deki::Mat4 view = LookAt(eye, eye + forward, up);
     m_ViewProjection = Mul(projection, view);
@@ -107,11 +187,6 @@ void Mesh3DPass::BeginFrame(RenderContext& ctx)
     m_Config.threadCount = cam3d->fillThreads;
 #endif
 
-    m_Buffer = ctx.buffer;
-    m_Width = ctx.width;
-    m_Height = ctx.height;
-    m_Format = ctx.format;
-
     m_Raster.BeginFrame(m_Buffer, m_Width, m_Height, m_Format, m_Config);
     m_Active = true;
     m_Pending = false;
@@ -129,6 +204,8 @@ void Mesh3DPass::Flush()
 void Mesh3DPass::PreExecute(Deki::Object* obj, RenderContext& ctx)
 {
     (void)ctx;
+    if (!m_Started && obj)
+        Start(obj);
     // A 2D object is about to draw. Anything binned so far sorts before it,
     // so it has to reach the framebuffer first.
     if (!m_Active || !m_Pending || !obj)
@@ -141,6 +218,8 @@ void Mesh3DPass::PreExecute(Deki::Object* obj, RenderContext& ctx)
 void Mesh3DPass::Execute(Deki::Object* obj, RenderContext& ctx)
 {
     (void)ctx;
+    if (!m_Started && obj)
+        Start(obj);
     if (!m_Active || !obj)
         return;
 

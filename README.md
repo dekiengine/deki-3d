@@ -32,6 +32,16 @@ Two limits worth knowing: 65535 vertices per mesh, because the index buffer is
 16-bit, and one texture per mesh, so a model with several materials draws them
 all with the first.
 
+## Seeing it in the editor
+
+The editor's viewport draws through its own camera, which carries no 3D
+settings, so the pass borrows them from the scene's `Camera3DComponent`
+wherever it is. The preview looks straight down -Z from wherever you have
+panned, pulled back so that the plane through z = 0 covers exactly what the
+viewport is showing in 2D. An object of a given world size at z = 0 therefore
+appears the same size as 2D content of that size, and zooming scales both
+together. Geometry further back is smaller, as perspective requires.
+
 ## Threads
 
 `Camera3DComponent.fillThreads` splits the fill across cores on a device or
