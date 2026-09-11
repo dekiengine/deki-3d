@@ -78,6 +78,7 @@ struct RasterConfig
 
 struct RasterStats
 {
+    uint32_t meshesCulled = 0;      // skipped whole, their bounds being off-screen
     uint32_t trianglesIn = 0;       // handed to DrawMesh
     uint32_t trianglesClipped = 0;  // survived near-clip and culling
     uint32_t trianglesBinned = 0;   // counted once per tile they touch

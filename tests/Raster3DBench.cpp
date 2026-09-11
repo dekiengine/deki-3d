@@ -277,6 +277,61 @@ void CorrectnessChecks()
             Check(target == many, "the thread count can change between frames");
         }
     }
+
+    // Bounds culling. The property that matters is that nothing visible is
+    // ever culled; skipping a mesh that is genuinely off-screen is the easy
+    // half.
+    {
+        const int CW = 128, CH = 128;
+        std::vector<uint16_t> onscreen(static_cast<size_t>(CW) * CH, 0);
+        std::vector<uint16_t> withOffscreen(static_cast<size_t>(CW) * CH, 0);
+        MeshData cube = MakeCube(3);
+        Material3D m;
+        m.shading = ShadingModel::Unlit;
+
+        const Mat4 cvp = Mul(Perspective(1.0f, 1.0f, 0.1f, 100.0f),
+                             LookAt(Vector3(0, 0, 4), Vector3(0, 0, 0), Vector3(0, 1, 0)));
+        RasterConfig c;
+        c.tileSize = 32;
+
+        Raster3D a;
+        a.BeginFrame(reinterpret_cast<uint8_t*>(onscreen.data()), CW, CH,
+                     Deki::ColorFormat::RGB565, c);
+        a.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(0, 0, 0)), Mat4::Identity());
+        a.EndFrame();
+        Check(a.Stats().meshesCulled == 0, "a mesh in view is not culled");
+        Check(a.Stats().pixelsWritten > 0, "and it drew");
+
+        // The same frame, plus meshes far outside every plane. The picture
+        // must be identical and they must all have been skipped.
+        Raster3D b;
+        b.BeginFrame(reinterpret_cast<uint8_t*>(withOffscreen.data()), CW, CH,
+                     Deki::ColorFormat::RGB565, c);
+        b.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(0, 0, 0)), Mat4::Identity());
+        // Past each of the six planes. The far one has to clear 100 units
+        // measured from the camera at z = 4, not from the origin; -90 is
+        // still comfortably inside it.
+        const Vector3 aside[] = { Vector3(-40, 0, 0), Vector3(40, 0, 0),   Vector3(0, -40, 0),
+                                  Vector3(0, 40, 0),  Vector3(0, 0, -500), Vector3(0, 0, 40) };
+        for (const Vector3& offset : aside)
+            b.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(offset.x, offset.y, offset.z)),
+                       Mat4::Identity());
+        b.EndFrame();
+
+        Check(b.Stats().meshesCulled == 6, "six off-screen meshes were all culled");
+        Check(b.Stats().trianglesIn == a.Stats().trianglesIn,
+              "and cost no triangle work at all");
+        Check(onscreen == withOffscreen, "the picture is unchanged by what was culled");
+
+        // A mesh straddling the edge must survive: half of it is visible.
+        Raster3D d;
+        d.BeginFrame(reinterpret_cast<uint8_t*>(withOffscreen.data()), CW, CH,
+                     Deki::ColorFormat::RGB565, c);
+        d.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(1.4f, 0, 0)), Mat4::Identity());
+        d.EndFrame();
+        Check(d.Stats().meshesCulled == 0, "a mesh straddling the edge is kept");
+        Check(d.Stats().pixelsWritten > 0, "and still draws");
+    }
 }
 
 uint16_t To565Ref(uint32_t rgba)

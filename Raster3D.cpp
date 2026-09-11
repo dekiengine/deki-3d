@@ -89,6 +89,46 @@ inline float Eval(const Gradient& g, float dxFromV0, float dyFromV0)
     return g.at0 + g.dx * dxFromV0 + g.dy * dyFromV0;
 }
 
+/// Is the mesh's bounding box wholly outside the view?
+///
+/// The eight corners go to clip space and each of the six planes is asked
+/// whether every corner failed it. That test is conservative in the right
+/// direction: a box straddling two planes without touching the frustum is
+/// not culled, but nothing visible is ever culled, which is the property
+/// that matters. It costs eight matrix transforms against the thousands the
+/// mesh would otherwise cost, so it pays for itself on the second triangle.
+bool BoundsOutsideFrustum(const Mesh3D& mesh, const Deki::Mat4& mvp)
+{
+    // A mesh whose bounds were never filled in has min == max == 0, and
+    // culling on that would hide it whenever the origin left the view.
+    if (mesh.boundsMin.x > mesh.boundsMax.x || mesh.boundsMin.y > mesh.boundsMax.y ||
+        mesh.boundsMin.z > mesh.boundsMax.z)
+        return false;
+    if (mesh.boundsMin.x == mesh.boundsMax.x && mesh.boundsMin.y == mesh.boundsMax.y &&
+        mesh.boundsMin.z == mesh.boundsMax.z)
+        return false;
+
+    int outside[6] = { 0, 0, 0, 0, 0, 0 };
+    for (int corner = 0; corner < 8; ++corner)
+    {
+        const Deki::Vector3 point((corner & 1) ? mesh.boundsMax.x : mesh.boundsMin.x,
+                                  (corner & 2) ? mesh.boundsMax.y : mesh.boundsMin.y,
+                                  (corner & 4) ? mesh.boundsMax.z : mesh.boundsMin.z);
+        float w = 1.0f;
+        const Deki::Vector3 clip = Deki3D::TransformPoint(mvp, point, w);
+        if (clip.x < -w) ++outside[0];
+        if (clip.x > w) ++outside[1];
+        if (clip.y < -w) ++outside[2];
+        if (clip.y > w) ++outside[3];
+        if (clip.z < -w) ++outside[4];
+        if (clip.z > w) ++outside[5];
+    }
+    for (int plane = 0; plane < 6; ++plane)
+        if (outside[plane] == 8)
+            return true;
+    return false;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -153,6 +193,13 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
 {
     if (!mesh.vertices || !mesh.indices || mesh.layout.positionOffset < 0)
         return;
+
+    // Eight transforms to decide whether thousands are needed at all.
+    if (BoundsOutsideFrustum(mesh, mvp))
+    {
+        ++m_Stats.meshesCulled;
+        return;
+    }
 
     const VertexLayout& layout = mesh.layout;
 
