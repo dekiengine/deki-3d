@@ -1,5 +1,11 @@
 # deki-3d
 
+> **Experimental.** Published so it can be tried and talked about, not because
+> it is settled. The component properties, the compiled mesh format and the
+> render pass hooks may all change without a migration path, and it has been
+> run on the desktop simulator and compiled for an ESP32-S3 but not yet run on
+> real hardware. Pin a version if you depend on it.
+
 Software-rasterised 3D for the Deki engine.
 
 Geometry is drawn by a render pass, not by a replacement renderer, so a 3D
