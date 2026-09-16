@@ -44,7 +44,7 @@ DEKI_3D_API int Deki3D_EnsureRegistered(void)
 
 DEKI_PLUGIN_API const char* DekiPlugin_GetName(void)
 {
-    return "DekiRendering::Deki 3D Package";
+    return "Deki 3D Package";
 }
 
 DEKI_PLUGIN_API const char* DekiPlugin_GetVersion(void)
