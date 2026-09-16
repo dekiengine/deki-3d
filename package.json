@@ -1,7 +1,7 @@
 {
   "id": "deki-3d",
   "displayName": "3D",
-  "minEngine": "0.15.0",
+  "minEngine": "0.16.0",
   "tags": [
     "transform_3d"
   ],
