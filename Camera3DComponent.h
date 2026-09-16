@@ -5,13 +5,17 @@
 #include <deki/Component.h>
 #include <deki/reflection/Property.h>
 
+namespace Deki3D
+{
+
 /// Gives the scene's camera a perspective projection for the 3D pass. Put it
-/// on the same object as the CameraComponent: that component owns the 2D view
+/// on the same object as the DekiRendering::CameraComponent: that component owns the 2D view
 /// and the framebuffer, and this one only supplies the three numbers a
 /// perspective projection needs. Without one in the scene, meshes are not
 /// drawn at all rather than drawn wrongly.
 DEKI_CATEGORY("3D")
 DEKI_DESCRIPTION("Perspective projection for the 3D pass. Belongs on the camera object.")
+DEKI_FORMER_NAME("Camera3DComponent")
 class DEKI_3D_API Camera3DComponent : public Deki::Component
 {
 public:
@@ -61,3 +65,5 @@ public:
     DEKI_EXPORT
     int32_t fillThreads = 1;
 };
+
+}  // namespace Deki3D

@@ -4,6 +4,9 @@
 
 #include <vector>
 
+namespace Deki3D
+{
+
 namespace
 {
 
@@ -181,3 +184,5 @@ bool MeshComponent::RenderContent(const Deki::Object*, QuadBlit::Source&, float&
 {
     return false;  // Mesh3DPass draws this; see the note in the header.
 }
+
+}  // namespace Deki3D

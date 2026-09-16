@@ -7,8 +7,7 @@
 
 // The 2D camera the renderer is drawing through; its owner may carry the 3D
 // settings, or the scene may.
-class CameraComponent;
-
+namespace DekiRendering { class CameraComponent; }
 namespace Deki3D
 {
 
@@ -31,21 +30,21 @@ namespace Deki3D
 /// backdrop below it stays behind. Consecutive meshes share one depth buffer
 /// and resolve against each other; a 2D object between two meshes splits them
 /// into two batches, as its sorting order asks for.
-class DEKI_3D_API Mesh3DPass : public RenderPass
+class DEKI_3D_API Mesh3DPass : public DekiRendering::RenderPass
 {
 public:
     static constexpr const char* RegistryName = "mesh3d";
 
     uint32_t HookMask() const override
     {
-        return RenderPassHooks::BeginFrame | RenderPassHooks::PreExecute |
-               RenderPassHooks::Execute | RenderPassHooks::EndFrame;
+        return DekiRendering::RenderPassHooks::BeginFrame | DekiRendering::RenderPassHooks::PreExecute |
+               DekiRendering::RenderPassHooks::Execute | DekiRendering::RenderPassHooks::EndFrame;
     }
 
-    void BeginFrame(RenderContext& ctx) override;
-    void PreExecute(Deki::Object* obj, RenderContext& ctx) override;
-    void Execute(Deki::Object* obj, RenderContext& ctx) override;
-    void EndFrame(RenderContext& ctx) override;
+    void BeginFrame(DekiRendering::RenderContext& ctx) override;
+    void PreExecute(Deki::Object* obj, DekiRendering::RenderContext& ctx) override;
+    void Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx) override;
+    void EndFrame(DekiRendering::RenderContext& ctx) override;
 
 private:
     /// Fill the tiles for everything binned so far and start a fresh batch.
@@ -67,7 +66,7 @@ private:
     int32_t m_Height = 0;
     Deki::ColorFormat m_Format = Deki::ColorFormat::RGB565;
 
-    CameraComponent* m_Camera = nullptr;
+    DekiRendering::CameraComponent* m_Camera = nullptr;
 
     bool m_Started = false;  // Start() has run for this frame
     bool m_Active = false;   // false when the scene has no 3D camera

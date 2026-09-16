@@ -9,6 +9,9 @@
 #include <deki/assets/AssetRef.h>
 #include <deki/reflection/Property.h>
 
+namespace Deki3D
+{
+
 /// Which built-in shape to draw. Primitives exist so a scene can have 3D in
 /// it before the mesh asset pipeline does, and they stay afterwards because
 /// a box and a plane are what most blocking-out needs. Mesh assets arrive as
@@ -22,7 +25,8 @@ enum class MeshPrimitive : uint8_t
 
 DEKI_CATEGORY("3D")
 DEKI_DESCRIPTION("Draws a 3D mesh. The object's transform places it, and the scene needs a Camera3DComponent to see it.")
-class DEKI_3D_API MeshComponent : public RendererComponent
+DEKI_FORMER_NAME("MeshComponent")
+class DEKI_3D_API MeshComponent : public DekiRendering::RendererComponent
 {
 public:
     MeshComponent();
@@ -71,3 +75,5 @@ private:
     mutable Deki3D::Mesh3D m_Mesh;
     mutable void* m_Storage = nullptr;  // owns the vertex, index and submesh arrays
 };
+
+}  // namespace Deki3D

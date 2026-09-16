@@ -13,29 +13,38 @@
 #include <deki/reflection/ComponentFactory.h>
 #include <deki/reflection/ComponentRegistry.h>
 
-#ifdef DEKI_EDITOR
-
-// Auto-generated registration helpers.
 extern void Deki3D_RegisterComponents();
 extern int Deki3D_GetAutoComponentCount();
 extern const Deki::ComponentMeta* Deki3D_GetAutoComponentMeta(int index);
 
+namespace Deki3D
+{
+
+#ifdef DEKI_EDITOR
+
+// Auto-generated registration helpers.
+
 static bool s_3DRegistered = false;
+
+
+// The exports below are C symbols at global scope; the package's own
+// registration helpers and statics live in its namespace.
+using namespace Deki3D;
 
 extern "C" {
 
 DEKI_3D_API int Deki3D_EnsureRegistered(void)
 {
     if (s_3DRegistered)
-        return Deki3D_GetAutoComponentCount();
+        return ::Deki3D_GetAutoComponentCount();
     s_3DRegistered = true;
-    Deki3D_RegisterComponents();
-    return Deki3D_GetAutoComponentCount();
+    ::Deki3D_RegisterComponents();
+    return ::Deki3D_GetAutoComponentCount();
 }
 
 DEKI_PLUGIN_API const char* DekiPlugin_GetName(void)
 {
-    return "Deki 3D Package";
+    return "DekiRendering::Deki 3D Package";
 }
 
 DEKI_PLUGIN_API const char* DekiPlugin_GetVersion(void)
@@ -61,12 +70,12 @@ DEKI_PLUGIN_API void DekiPlugin_Shutdown(void)
 
 DEKI_PLUGIN_API int DekiPlugin_GetComponentCount(void)
 {
-    return Deki3D_GetAutoComponentCount();
+    return ::Deki3D_GetAutoComponentCount();
 }
 
 DEKI_PLUGIN_API const Deki::ComponentMeta* DekiPlugin_GetComponentMeta(int index)
 {
-    return Deki3D_GetAutoComponentMeta(index);
+    return ::Deki3D_GetAutoComponentMeta(index);
 }
 
 DEKI_PLUGIN_API void DekiPlugin_RegisterComponents(void)
@@ -86,3 +95,5 @@ DEKI_3D_API const char* Deki3D_GetName(void)
 }  // extern "C"
 
 #endif  // DEKI_EDITOR
+}  // namespace Deki3D
+

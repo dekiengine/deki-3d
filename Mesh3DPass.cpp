@@ -5,7 +5,7 @@
 #include "MeshComponent.h"
 
 #include "deki-rendering/CameraComponent.h"
-#include "deki-rendering/DekiRenderer.h"  // RenderContext
+#include "deki-rendering/DekiRenderer.h"  // DekiRendering::RenderContext
 #include "deki-rendering/DekiRenderPassRegistry.h"
 
 #include <deki/Object.h>
@@ -47,7 +47,7 @@ Deki::Mat4 CameraRotation(const Deki::Object* obj)
 /// The first Camera3DComponent anywhere in the scene, or null.
 ///
 /// Needed because the editor's viewport does not render through the scene's
-/// camera: it makes its own object carrying a bare CameraComponent, which has
+/// camera: it makes its own object carrying a bare DekiRendering::CameraComponent, which has
 /// no 3D settings on it. Without this the scene view showed nothing at all,
 /// and 3D could only be seen by running the game, which is no way to place
 /// anything.
@@ -83,7 +83,7 @@ const Camera3DComponent* FindSceneCamera3D(const Deki::Object* anyObject)
 
 }  // namespace
 
-void Mesh3DPass::BeginFrame(RenderContext& ctx)
+void Mesh3DPass::BeginFrame(DekiRendering::RenderContext& ctx)
 {
     m_Active = false;
     m_Started = false;
@@ -210,7 +210,7 @@ void Mesh3DPass::Flush()
     m_Pending = false;
 }
 
-void Mesh3DPass::PreExecute(Deki::Object* obj, RenderContext& ctx)
+void Mesh3DPass::PreExecute(Deki::Object* obj, DekiRendering::RenderContext& ctx)
 {
     (void)ctx;
     if (!m_Started && obj)
@@ -224,7 +224,7 @@ void Mesh3DPass::PreExecute(Deki::Object* obj, RenderContext& ctx)
     Flush();
 }
 
-void Mesh3DPass::Execute(Deki::Object* obj, RenderContext& ctx)
+void Mesh3DPass::Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx)
 {
     (void)ctx;
     if (!m_Started && obj)
@@ -288,7 +288,7 @@ void Mesh3DPass::Execute(Deki::Object* obj, RenderContext& ctx)
     m_Pending = true;
 }
 
-void Mesh3DPass::EndFrame(RenderContext& ctx)
+void Mesh3DPass::EndFrame(DekiRendering::RenderContext& ctx)
 {
     (void)ctx;
     if (!m_Active)
@@ -310,14 +310,14 @@ struct Mesh3DPassRegistrar
 {
     Mesh3DPassRegistrar()
     {
-        RenderPassInfo info;
-        info.factory = []() -> RenderPass* { return new Deki3D::Mesh3DPass(); };
+        DekiRendering::RenderPassInfo info;
+        info.factory = []() -> DekiRendering::RenderPass* { return new Deki3D::Mesh3DPass(); };
         info.autoAttach = true;
-        DekiRenderPassRegistry::Register(Deki3D::Mesh3DPass::RegistryName, info);
+        DekiRendering::DekiRenderPassRegistry::Register(Deki3D::Mesh3DPass::RegistryName, info);
     }
     ~Mesh3DPassRegistrar()
     {
-        DekiRenderPassRegistry::Unregister(Deki3D::Mesh3DPass::RegistryName);
+        DekiRendering::DekiRenderPassRegistry::Unregister(Deki3D::Mesh3DPass::RegistryName);
     }
 };
 static Mesh3DPassRegistrar s_mesh3dPassRegistrar;
