@@ -68,3 +68,18 @@ worth having.
 
 `deki-rendering`, and a project at the 3D transform width (this package's
 `transform_3d` tag arranges that).
+
+## Namespace
+
+This package's types live in `Deki3D`. Scene files store the qualified
+name, so a component is `Deki3D::SomeComponent` there, and code naming one
+needs the namespace:
+
+```cpp
+using namespace Deki3D;
+obj->AddComponent<SomeComponent>();
+```
+
+Scenes saved before 0.16.0 used bare names and still load: every component
+records what it used to be called, and a save writes the current name.
+
