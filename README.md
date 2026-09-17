@@ -69,6 +69,12 @@ worth having.
 `deki-rendering`, and a project at the 3D transform width (this package's
 `transform_3d` tag arranges that).
 
+## Dependencies
+
+| Dependency | Type |
+|---|---|
+| `deki-rendering` | Deki package |
+
 ## Namespace
 
 This package's types live in `Deki3D`. Scene files store the qualified
