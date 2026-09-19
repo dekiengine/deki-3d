@@ -8,6 +8,12 @@ breaking change bumps the minor across the editor, the engine and every
 package together, so a package with no changes of its own is still released
 alongside one that has them.
 
+## Unreleased
+
+### Fixed
+- Removed an `if` with an empty body from the rasteriser, which ESP-IDF 6's
+  GCC 15 build rejects. It did nothing either way.
+
 ## 0.16.0
 
 ### Changed

@@ -797,9 +797,10 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     runX = chunkEnd + 1;
                 }
 
+                // The run ended here; keep scanning for another. (This was an
+                // `if (!inside) ;` - a statement that did nothing either way,
+                // which GCC 15 rejects as an empty body.)
                 spanStart = -1;
-                if (!inside)
-                    ;  // the run ended here; keep scanning for another
             }
 
             e0 += stepX0;
