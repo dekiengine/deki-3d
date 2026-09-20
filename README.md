@@ -14,9 +14,8 @@ rasteriser bins triangles into tiles and keeps a depth buffer for one tile at
 a time: 2 KB at a 32-pixel tile, rather than the 150 KB a full-screen depth
 buffer would cost at 320x240.
 
-Float does the per-vertex work and fixed point does the per-pixel work, which
-is what a span loop wants on any target and means parts without a hardware
-FPU only pay emulation at vertex rate.
+Per-vertex work is float, per-pixel work is fixed point. On a part with no
+hardware FPU that means emulation is only paid at vertex rate.
 
 ## Components
 
@@ -40,13 +39,11 @@ all with the first.
 
 ## Seeing it in the editor
 
-The editor's viewport draws through its own camera, which carries no 3D
-settings, so the pass borrows them from the scene's `Camera3DComponent`
-wherever it is. The preview looks straight down -Z from wherever you have
-panned, pulled back so that the plane through z = 0 covers exactly what the
-viewport is showing in 2D. An object of a given world size at z = 0 therefore
-appears the same size as 2D content of that size, and zooming scales both
-together. Geometry further back is smaller, as perspective requires.
+The editor's viewport has its own camera with no 3D settings, so the pass
+borrows them from the scene's `Camera3DComponent`. The preview looks straight
+down -Z, pulled back so the plane at z = 0 covers what the viewport shows in
+2D. An object at z = 0 is the same size as 2D content of the same size, and
+zooming scales both. Anything further back is smaller.
 
 ## Threads
 
@@ -58,11 +55,10 @@ unloads deadlocks the Windows loader.
 
 ## The retro switches
 
-`perspectiveCorrect` off gives the texture warping of PlayStation-era
-hardware, and `vertexSnap` gives its vertex jitter. Neither is a performance
-tier: correct texturing divides once per span rather than once per pixel, so
-affine measures about a tenth cheaper. They are there because the look is
-worth having.
+`perspectiveCorrect` off gives you PlayStation-era texture warping,
+`vertexSnap` gives you its vertex jitter. Neither is a speed setting: correct
+texturing divides once per span, not per pixel, so affine is only about a
+tenth cheaper. They are there for the look.
 
 ## Requires
 
@@ -77,15 +73,12 @@ worth having.
 
 ## Namespace
 
-This package's types live in `Deki3D`. Scene files store the qualified
-name, so a component is `Deki3D::SomeComponent` there, and code naming one
-needs the namespace:
+Types live in `Deki3D`. Scene files store the qualified name, and so does code:
 
 ```cpp
 using namespace Deki3D;
 obj->AddComponent<SomeComponent>();
 ```
 
-Scenes saved before 0.16.0 used bare names and still load: every component
-records what it used to be called, and a save writes the current name.
+Scenes saved before 0.16.0 used bare names and still load; saving writes the current one.
 
