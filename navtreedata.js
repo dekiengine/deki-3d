@@ -32,8 +32,10 @@ var NAVTREE =
       [ "MeshComponent", "index.html#c-meshcomponent", null ]
     ] ],
     [ "Changelog", "index.html#autotoc_md3", [
-      [ "0.15.0", "index.html#autotoc_md4", null ],
-      [ "Changed", "index.html#autotoc_md5", null ]
+      [ "Unreleased", "index.html#autotoc_md4", null ],
+      [ "Fixed", "index.html#autotoc_md5", null ],
+      [ "0.16.0", "index.html#autotoc_md6", null ],
+      [ "Changed", "index.html#autotoc_md7", null ]
     ] ]
   ] ]
 ];
