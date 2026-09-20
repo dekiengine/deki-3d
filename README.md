@@ -56,9 +56,9 @@ unloads deadlocks the Windows loader.
 ## The retro switches
 
 `perspectiveCorrect` off gives you PlayStation-era texture warping,
-`vertexSnap` gives you its vertex jitter. Neither is a speed setting: correct
-texturing divides once per span, not per pixel, so affine is only about a
-tenth cheaper. They are there for the look.
+`vertexSnap` gives you its vertex jitter. Both are there for the look: correct
+texturing divides once per span rather than per pixel, so affine only buys
+about a tenth.
 
 ## Requires
 
