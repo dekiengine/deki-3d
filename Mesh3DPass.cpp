@@ -1,6 +1,7 @@
 #include "Mesh3DPass.h"
 
-#include "Camera3DComponent.h"
+#include "Mesh3DSettings.h"
+#include <deki/ScreenScale.h>
 #include "Math3D.h"
 #include "MeshComponent.h"
 
@@ -44,41 +45,43 @@ Deki::Mat4 CameraRotation(const Deki::Object* obj)
 #endif
 }
 
-/// The first Camera3DComponent anywhere in the scene, or null.
+/// Depth-first search of a subtree for the first component that passes `pick`.
 ///
-/// Needed because the editor's viewport does not render through the scene's
-/// camera: it makes its own object carrying a bare DekiRendering::CameraComponent, which has
-/// no 3D settings on it. Without this the scene view showed nothing at all,
-/// and 3D could only be seen by running the game, which is no way to place
-/// anything.
-const Camera3DComponent* FindInSubtree(const Deki::Object* object)
+/// Scene::GetObjects() hands back the roots only, and a camera is almost always
+/// a child of one: the scaffold puts every object under a single root.
+/// Searching the roots alone found nothing at all.
+template <typename T, typename Pick>
+const T* FindInSubtree(const Deki::Object* object, Pick pick)
 {
     if (!object)
         return nullptr;
-    if (const Camera3DComponent* found = object->GetComponent<Camera3DComponent>())
+    if (const T* found = object->GetComponent<T>(); found && pick(*found))
         return found;
-    // Scene::GetObjects() hands back the roots only, and a camera is almost
-    // always a child of one: the scaffold puts every object under a single
-    // root. Searching the roots alone found nothing at all.
     for (const Deki::Object* child : object->GetChildren())
     {
-        if (const Camera3DComponent* found = FindInSubtree(child))
+        if (const T* found = FindInSubtree<T>(child, pick))
             return found;
     }
     return nullptr;
 }
 
-const Camera3DComponent* FindSceneCamera3D(const Deki::Object* anyObject)
+template <typename T, typename Pick>
+const T* FindInScene(const Deki::Object* anyObject, Pick pick)
 {
     const Deki::Scene* scene = anyObject ? anyObject->GetOwnerScene() : nullptr;
     if (!scene)
         return nullptr;
     for (const Deki::Object* root : scene->GetObjects())
     {
-        if (const Camera3DComponent* found = FindInSubtree(root))
+        if (const T* found = FindInSubtree<T>(root, pick))
             return found;
     }
     return nullptr;
+}
+
+bool IsPerspective(const DekiRendering::CameraComponent& c)
+{
+    return c.projection == Deki::ProjectionMode::Perspective;
 }
 
 }  // namespace
@@ -120,17 +123,24 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     if (!cameraObject)
         return;
 
-    // The camera's own settings when it has them, otherwise the scene's. A
-    // scene with neither is not a 3D scene, and gets nothing drawn rather
-    // than a projection invented for it.
-    const Camera3DComponent* cam3d = cameraObject->GetComponent<Camera3DComponent>();
-    const bool throughSceneCamera = cam3d != nullptr;
-    if (!cam3d)
-        cam3d = FindSceneCamera3D(sceneObject);
-    if (!cam3d)
+    // A perspective camera draws the meshes through its own view. The editor's
+    // viewport renders through a camera of its own, orthographic, which is not
+    // in the scene: it borrows the scene's perspective camera's lens instead.
+    // A scene with no perspective camera is not a 3D scene and gets nothing
+    // drawn rather than a projection invented for it.
+    const bool throughSceneCamera = IsPerspective(*m_Camera);
+    const DekiRendering::CameraComponent* lens =
+        throughSceneCamera ? m_Camera
+                           : FindInScene<DekiRendering::CameraComponent>(sceneObject, IsPerspective);
+    if (!lens)
         return;
 
-    const float fovY = cam3d->fieldOfView * kPi / 180.0f;
+    // Through the scene camera the field of view follows the project's Screen
+    // Fit, so the design shape's view survives on screens of other shapes.
+    const float fovDegrees = throughSceneCamera
+        ? Deki::ResolveVerticalFieldOfView(lens->fieldOfView, m_Width, m_Height)
+        : lens->fieldOfView;
+    const float fovY = fovDegrees * kPi / 180.0f;
 
 #ifdef DEKI_TRANSFORM_3D
     float camZ = cameraObject->GetWorldZ();
@@ -144,7 +154,7 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
         // distance at which the plane through z = 0 covers exactly what the
         // editor is showing in 2D, so zooming the viewport scales the 3D with
         // it rather than leaving it a fixed size.
-        const float visibleHeight = m_Camera->GetVisibleHeight(m_Height);
+        const float visibleHeight = m_Camera->GetVisibleHeight(m_Width, m_Height);
         const float halfAngle = std::tan(fovY * 0.5f);
         if (visibleHeight > 0.0f && halfAngle > 0.0f)
             camZ += (visibleHeight * 0.5f) / halfAngle;
@@ -160,23 +170,30 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     const Deki::Vector3 up = TransformDirection(basis, Deki::Vector3(0.0f, 1.0f, 0.0f));
 
     const float aspect = static_cast<float>(m_Width) / static_cast<float>(m_Height);
-    const Deki::Mat4 projection = Perspective(fovY, aspect, cam3d->nearPlane, cam3d->farPlane);
+    const Deki::Mat4 projection = Perspective(fovY, aspect, lens->nearPlane, lens->farPlane);
     const Deki::Mat4 view = LookAt(eye, eye + forward, up);
     m_ViewProjection = Mul(projection, view);
 
+    // How to draw: the scene's Mesh3DSettings, or its values as declared when
+    // the scene has none.
+    static const Mesh3DSettings kDeclared{};
+    const Mesh3DSettings* settings =
+        FindInScene<Mesh3DSettings>(sceneObject, [](const Mesh3DSettings&) { return true; });
+    const Mesh3DSettings& cam3d = settings ? *settings : kDeclared;
+
     m_Config = RasterConfig{};
-    m_Config.tileSize = cam3d->tileSize;
-    m_Config.perspectiveCorrect = cam3d->perspectiveCorrect;
-    m_Config.vertexSnap = cam3d->vertexSnap;
+    m_Config.tileSize = cam3d.tileSize;
+    m_Config.perspectiveCorrect = cam3d.perspectiveCorrect;
+    m_Config.vertexSnap = cam3d.vertexSnap;
 
     // Yaw and pitch rather than a raw vector: an author wants to swing a light
     // around, not to normalise one by hand. Yaw 0 puts it behind the viewer.
-    const float yaw = cam3d->lightYaw * kPi / 180.0f;
-    const float pitch = cam3d->lightPitch * kPi / 180.0f;
+    const float yaw = cam3d.lightYaw * kPi / 180.0f;
+    const float pitch = cam3d.lightPitch * kPi / 180.0f;
     m_Config.lightDirection = Deki::Vector3(std::sin(yaw) * std::cos(pitch),
                                             -std::sin(pitch),
                                             -std::cos(yaw) * std::cos(pitch));
-    m_Config.ambient = cam3d->ambient;
+    m_Config.ambient = cam3d.ambient;
 #ifdef DEKI_EDITOR
     // One thread inside the editor, whatever the scene asks for.
     //
@@ -193,7 +210,7 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     // preview differs from the device in speed alone.
     m_Config.threadCount = 1;
 #else
-    m_Config.threadCount = cam3d->fillThreads;
+    m_Config.threadCount = cam3d.fillThreads;
 #endif
 
     m_Raster.BeginFrame(m_Buffer, m_Width, m_Height, m_Format, m_Config);

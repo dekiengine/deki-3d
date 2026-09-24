@@ -29,7 +29,7 @@
 #endif
 
 #ifdef DEKI_FEATURE_3D_SOFTWARE
-#include "Camera3DComponent.h"
+#include "Mesh3DSettings.h"
 #include "Mesh3DPass.h"
 #include "MeshComponent.h"
 #include "Raster3D.h"

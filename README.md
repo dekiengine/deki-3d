@@ -21,8 +21,14 @@ hardware FPU that means emulation is only paid at vertex rate.
 
 - `MeshComponent` draws an imported mesh, or a built-in primitive while no
   mesh asset is assigned. The object's transform places it.
-- `Camera3DComponent` gives the scene camera a perspective projection. Without
-  one, meshes are not drawn.
+- The scene camera (`DekiRendering::CameraComponent`) draws meshes when its
+  Projection is Perspective; its field of view and clip planes live there.
+  With an orthographic camera, meshes are not drawn.
+- `Mesh3DSettings` sets how the pass draws: tile size, the retro switches, the
+  light and the fill threads. Put one anywhere in the scene; without one the
+  pass uses its declared defaults. It was `Camera3DComponent` before 0.18, and
+  the editor moves an old one's field of view onto the camera when it loads the
+  scene.
 
 ## Models
 
@@ -40,14 +46,14 @@ all with the first.
 ## Seeing it in the editor
 
 The editor's viewport has its own camera with no 3D settings, so the pass
-borrows them from the scene's `Camera3DComponent`. The preview looks straight
+borrows the lens of the scene's perspective camera. The preview looks straight
 down -Z, pulled back so the plane at z = 0 covers what the viewport shows in
 2D. An object at z = 0 is the same size as 2D content of the same size, and
 zooming scales both. Anything further back is smaller.
 
 ## Threads
 
-`Camera3DComponent.fillThreads` splits the fill across cores on a device or
+`Mesh3DSettings.fillThreads` splits the fill across cores on a device or
 simulator build. Tiles are independent, so the output is identical whatever the
 count; only the speed changes. The editor always previews with one thread,
 because it loads packages as unloadable DLLs and joining a thread while one

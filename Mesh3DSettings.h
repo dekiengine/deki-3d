@@ -8,30 +8,19 @@
 namespace Deki3D
 {
 
-/// Gives the scene's camera a perspective projection for the 3D pass. Put it
-/// on the same object as the DekiRendering::CameraComponent: that component owns the 2D view
-/// and the framebuffer, and this one only supplies the three numbers a
-/// perspective projection needs. Without one in the scene, meshes are not
-/// drawn at all rather than drawn wrongly.
+/// How the 3D pass draws: tile size, the retro switches, the light and the fill
+/// threads. The projection itself belongs to the scene's camera
+/// (DekiRendering::CameraComponent with Projection = Perspective); this used to
+/// be Camera3DComponent and carried the field of view too, which moved there so
+/// one camera holds the whole view. Put one anywhere in the scene, usually on
+/// the camera. Without one the pass uses the values below as they stand.
 DEKI_CATEGORY("3D")
-DEKI_DESCRIPTION("Perspective projection for the 3D pass. Belongs on the camera object.")
+DEKI_DESCRIPTION("How the 3D pass draws: tiles, texture and vertex switches, light and threads.")
+DEKI_FORMER_NAME("Deki3D::Camera3DComponent")
 DEKI_FORMER_NAME("Camera3DComponent")
-class DEKI_3D_API Camera3DComponent : public Deki::Component
+class DEKI_3D_API Mesh3DSettings : public Deki::Component
 {
 public:
-    DEKI_TOOLTIP("Vertical field of view in degrees. 60 is a common default; larger values look wider and more distorted at the edges.")
-    DEKI_RANGE(10, 150)
-    DEKI_EXPORT
-    float fieldOfView = 60.0f;
-
-    DEKI_TOOLTIP("Nothing closer than this is drawn. Raising it costs nothing and buys depth precision, so keep it as large as the scene allows.")
-    DEKI_EXPORT
-    float nearPlane = 0.1f;
-
-    DEKI_TOOLTIP("Nothing further than this is drawn.")
-    DEKI_EXPORT
-    float farPlane = 100.0f;
-
     DEKI_TOOLTIP("Tile edge in pixels. The depth buffer is one tile, so 32 costs 2 KB and suits a microcontroller, while a desktop can afford 128 or more.")
     DEKI_RANGE(8, 512)
     DEKI_EXPORT

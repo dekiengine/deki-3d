@@ -17,7 +17,7 @@
       "defaultEnabled": true,
       "componentTypes": [
         "MeshComponent",
-        "Camera3DComponent"
+        "Mesh3DSettings"
       ]
     }
   ]

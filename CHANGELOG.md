@@ -10,6 +10,15 @@ alongside one that has them.
 
 ## Unreleased
 
+### Changed
+- **The scene camera holds the lens.** `Camera3DComponent` is now
+  `Mesh3DSettings` (tiles, retro switches, light, threads); its field of view
+  and clip planes moved to `DekiRendering::CameraComponent`, which draws meshes
+  when its projection is Perspective. The editor moves an old scene's values
+  onto the camera when it loads it.
+- The field of view applies to the design area's shape and follows the
+  project's Screen Fit, so meshes and sprites line up on every screen.
+
 ### Fixed
 - Removed an `if` with an empty body from the rasteriser, which ESP-IDF 6's
   GCC 15 build rejects. It did nothing either way.
