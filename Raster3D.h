@@ -167,6 +167,7 @@ private:
     int32_t m_Width = 0;
     int32_t m_Height = 0;
     Deki::ColorFormat m_Format = Deki::ColorFormat::RGB565;
+    size_t m_BytesPerPixel = 2;  // of m_Format
     RasterConfig m_Config;
     Deki::Vector3 m_LightDir;
 

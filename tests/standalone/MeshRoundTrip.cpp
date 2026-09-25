@@ -7,15 +7,15 @@
  * to write. The malformed cases matter more than the happy one: a mesh blob
  * is parsed on a device with no memory protection worth the name.
  *
- * Build (MSYS2 mingw64), from tests/:
- *   g++ -std=c++17 -O2 -DDEKI_EDITOR -I<engine>/include -I.. \
- *       MeshRoundTrip.cpp ../editor/ObjImporter.cpp ../MeshAsset.cpp ../Raster3D.cpp -o meshtest
+ * Build (MSYS2 mingw64), from tests/standalone/:
+ *   g++ -std=c++26 -O2 -DDEKI_EDITOR -I<engine>/include -I../.. -I../../.. \
+ *       MeshRoundTrip.cpp ../../editor/ObjImporter.cpp ../../MeshAsset.cpp ../../Raster3D.cpp -o meshtest
  */
 
-#include "../MeshAsset.h"
-#include "../Math3D.h"
-#include "../Raster3D.h"
-#include "../editor/ObjImporter.h"
+#include "../../MeshAsset.h"
+#include "../../Math3D.h"
+#include "../../Raster3D.h"
+#include "../../editor/ObjImporter.h"
 
 #include <cstdio>
 #include <cstring>

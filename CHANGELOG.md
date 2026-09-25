@@ -10,6 +10,19 @@ alongside one that has them.
 
 ## Unreleased
 
+### Added
+- **Every format.** Meshes draw into RGB565, RGB888, ARGB8888 and RGB565A8
+  framebuffers, and textures can be RGB565, RGB565A8, RGB888, RGBA8888 or
+  alpha-only. The RGB565-into-RGB565 path is the loop it always was. A texel
+  with alpha below half is a hole when the material has alpha test, which the
+  importer turns on for a texture with transparent pixels.
+- Imported models store their texture in the format their `.data` settings
+  and the target ask for (Automatic follows the target's screen), and export
+  per target. Mesh files are version 4 (a format byte per texture); version 3
+  files still load as RGB565.
+- `Deki3DTests`: every texture format into every framebuffer format, cutout,
+  and the mesh file. The two standalone programs moved to `tests/standalone/`.
+
 ### Changed
 - **The scene camera holds the lens.** `Camera3DComponent` is now
   `Mesh3DSettings` (tiles, retro switches, light, threads); its field of view

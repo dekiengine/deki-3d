@@ -93,10 +93,10 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
         DEKI_LOG_WARNING("MeshAsset: not a mesh (bad magic)");
         return false;
     }
-    if (header.version != kMeshFileVersion)
+    if (header.version < kMeshFileOldestVersion || header.version > kMeshFileVersion)
     {
-        DEKI_LOG_WARNING("MeshAsset: version %u, this build reads %u; rebuild the asset",
-                         static_cast<unsigned>(header.version),
+        DEKI_LOG_WARNING("MeshAsset: version %u, this build reads %u to %u; rebuild the asset",
+                         static_cast<unsigned>(header.version), static_cast<unsigned>(kMeshFileOldestVersion),
                          static_cast<unsigned>(kMeshFileVersion));
         return false;
     }
@@ -143,8 +143,21 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
 
     std::vector<MeshFileTexture> fileTextures(header.textureCount);
     for (uint16_t i = 0; i < header.textureCount; ++i)
-        if (!cursor.Take(&fileTextures[i], sizeof(MeshFileTexture)))
-            return Fail("truncated texture table");
+    {
+        if (header.version >= 4)
+        {
+            if (!cursor.Take(&fileTextures[i], sizeof(MeshFileTexture)))
+                return Fail("truncated texture table");
+        }
+        else
+        {
+            MeshFileTextureV3 old{};
+            if (!cursor.Take(&old, sizeof(old)))
+                return Fail("truncated texture table");
+            fileTextures[i] = MeshFileTexture{ old.width, old.height, old.byteOffset,
+                                               static_cast<uint8_t>(TexelFormat::RGB565), { 0, 0, 0 } };
+        }
+    }
 
     if (header.texturePixelBytes > 0)
     {
@@ -172,13 +185,18 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
         Texture3D view;
         const int wShift = ShiftOf(t.width);
         const int hShift = ShiftOf(t.height);
-        const size_t bytes = static_cast<size_t>(t.width) * t.height * sizeof(uint16_t);
+        const bool knownFormat = t.format <= static_cast<uint8_t>(TexelFormat::ALPHA8);
+        const TexelFormat format = knownFormat ? static_cast<TexelFormat>(t.format) : TexelFormat::RGB565;
+        const size_t bytes = static_cast<size_t>(t.width) * t.height * TexelBytes(format);
         const bool fits = static_cast<size_t>(t.byteOffset) + bytes <= m_TexturePixels.size();
 
-        if (wShift >= 0 && hShift >= 0 && bytes > 0 && fits)
+        if (knownFormat && wShift >= 0 && hShift >= 0 && bytes > 0 && fits)
         {
             view.pixels = m_TexturePixels.data() + t.byteOffset;
             view.palette = nullptr;
+            view.format = format;
+            view.hasAlpha = format == TexelFormat::RGB565 || format == TexelFormat::RGB565A8 ||
+                            format == TexelFormat::RGBA8888 || format == TexelFormat::ALPHA8;
             view.width = t.width;
             view.height = t.height;
             view.widthShift = static_cast<uint8_t>(wShift);
@@ -188,9 +206,9 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
         {
             // Left invalid rather than rejecting the file: one bad texture
             // should cost its own material's texturing, not the whole model.
-            DEKI_LOG_WARNING("MeshAsset: texture %ux%u at %u is unusable; that material goes untextured",
+            DEKI_LOG_WARNING("MeshAsset: texture %ux%u (format %u) at %u is unusable; that material goes untextured",
                              static_cast<unsigned>(t.width), static_cast<unsigned>(t.height),
-                             static_cast<unsigned>(t.byteOffset));
+                             static_cast<unsigned>(t.format), static_cast<unsigned>(t.byteOffset));
         }
         m_Textures.push_back(view);
     }

@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "../Mesh3D.h"  // TexelFormat
+
 namespace Deki3D
 {
 
@@ -29,8 +31,10 @@ namespace Deki3D
 ///
 /// Textures: `mtllib` is read, and the first `map_Kd` found becomes the mesh's
 /// texture. It is decoded through the caller's `decodeImage`, scaled to powers
-/// of two (the sampler masks rather than divides) and capped, then stored as
-/// RGB565 inside the blob. One texture per mesh for now; a model with several
+/// of two (the sampler masks rather than divides) and capped, then stored
+/// inside the blob in the format `chooseFormat` picks for it (RGB565 when it
+/// is empty); a texture with transparent pixels turns the material's alpha
+/// test on when its format keeps alpha. One texture per mesh for now; a model with several
 /// materials draws them all with the first. Passing an empty `decodeImage`
 /// skips textures entirely, which is what the tests do so the parser stays
 /// free of the editor's image loading.
@@ -40,9 +44,12 @@ namespace Deki3D
 using ImageDecoder = std::function<bool(const std::string& absolutePath, int& outWidth,
                                         int& outHeight, std::vector<uint8_t>& outRgba)>;
 
+/// The format to store a texture in, given whether it has transparent pixels.
+using TextureFormatChooser = std::function<TexelFormat(bool hasAlpha)>;
+
 bool CompileObjToMesh(const std::string& objText, const std::string& baseDirectory,
                       const ImageDecoder& decodeImage, std::vector<uint8_t>& outBlob,
-                      std::string& error);
+                      std::string& error, const TextureFormatChooser& chooseFormat = {});
 
 }  // namespace Deki3D
 

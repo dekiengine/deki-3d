@@ -95,12 +95,6 @@ void Mesh3DPass::BeginFrame(DekiRendering::RenderContext& ctx)
     if (!ctx.camera || !ctx.buffer || ctx.width <= 0 || ctx.height <= 0)
         return;
 
-    // RGB565 is the only format the span loop writes. Every Deki display path
-    // uses it; the others would need a second inner loop and no caller wants
-    // one yet.
-    if (ctx.format != Deki::ColorFormat::RGB565)
-        return;
-
     m_Camera = ctx.camera;
     m_Buffer = ctx.buffer;
     m_Width = ctx.width;

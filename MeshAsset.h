@@ -23,7 +23,10 @@
  *   submeshes       submeshCount * MeshFileSubmesh
  *   materials       materialCount * MeshFileMaterial
  *   textures        textureCount * MeshFileTexture
- *   texture pixels  concatenated RGB565, addressed by each texture's offset
+ *   texture pixels  concatenated, each in its own format, addressed by offset
+ *
+ * Version 3 files have no format in the texture table (MeshFileTextureV3) and
+ * every texture is RGB565; they still load.
  */
 
 #include "Deki3DAPI.h"
@@ -35,7 +38,8 @@
 namespace Deki3D
 {
 
-constexpr uint16_t kMeshFileVersion = 3;
+constexpr uint16_t kMeshFileVersion = 4;
+constexpr uint16_t kMeshFileOldestVersion = 3;
 
 /// File header. Little-endian, which every target this engine runs on is.
 struct MeshFileHeader
@@ -84,6 +88,16 @@ struct MeshFileTexture
     uint16_t width;
     uint16_t height;
     uint32_t byteOffset;  // from the start of the pixel blob
+    uint8_t format;       // TexelFormat
+    uint8_t padding[3];
+};
+
+/// The version 3 texture record: RGB565, no format byte.
+struct MeshFileTextureV3
+{
+    uint16_t width;
+    uint16_t height;
+    uint32_t byteOffset;
 };
 
 enum MeshAttribute : uint16_t

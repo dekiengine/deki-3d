@@ -24,8 +24,10 @@
 #include <deki-editor/AssetData.h>
 #include <deki-editor/Paths.h>
 #include <deki-editor/TextureImporter.h>
+#include <deki-editor/TextureFormatResolve.h>
 #include <deki/LogSystem.h>
 #include <deki/assets/AssetManager.h>
+#include <nlohmann/json.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -51,17 +53,46 @@ public:
 
 REGISTER_EDITOR(MeshAssetType)
 
-/// Compile one .obj into the cache. Failure is logged and leaves no cache
-/// file, so the component's asset stays unresolved and the pass draws nothing
-/// rather than drawing something wrong.
-void HandleObjSync(const std::string& absolutePath, const std::string& guid,
-                   const std::string& projectPath)
+/// The format a model's texture is stored in for `target`: the model's
+/// sidecar (<model.obj>.data, settings.texture: "format" and "targets", as for
+/// an image) or Automatic.
+Deki3D::TexelFormat ChooseTexelFormat(const std::string& absolutePath, const AssetExportTarget& target,
+                                      bool hasAlpha)
+{
+    std::string assetFormat, targetFormat;
+    std::ifstream dataFile(absolutePath + ".data");
+    if (dataFile.is_open())
+    {
+        try
+        {
+            const nlohmann::json data = nlohmann::json::parse(dataFile);
+            if (data.contains("settings") && data["settings"].contains("texture"))
+            {
+                const auto& tex = data["settings"]["texture"];
+                assetFormat = tex.value("format", std::string());
+                if (tex.contains("targets") && tex["targets"].contains(target.platformId) &&
+                    tex["targets"][target.platformId].is_string())
+                    targetFormat = tex["targets"][target.platformId].get<std::string>();
+            }
+        }
+        catch (const nlohmann::json::exception&)
+        {
+        }
+    }
+    // TexelFormat is numbered as TextureFormat.
+    const TextureFormat f = ResolveTextureFormat(assetFormat, targetFormat, target.colorFormat, hasAlpha);
+    return static_cast<Deki3D::TexelFormat>(static_cast<uint8_t>(f));
+}
+
+/// Compile one .obj as `target` stores it and write it to `outPath`. Failure
+/// is logged and writes nothing.
+bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& target, const std::string& outPath)
 {
     std::ifstream in(absolutePath, std::ios::binary);
     if (!in)
     {
         DEKI_LOG_WARNING("Deki3D: cannot read '%s'", absolutePath.c_str());
-        return;
+        return false;
     }
     std::ostringstream text;
     text << in.rdbuf();
@@ -80,38 +111,47 @@ void HandleObjSync(const std::string& absolutePath, const std::string& guid,
         rgba = std::move(decoded.rgba);
         return true;
     };
+    auto chooseFormat = [&](bool hasAlpha) { return ChooseTexelFormat(absolutePath, target, hasAlpha); };
 
     std::vector<uint8_t> blob;
     std::string error;
-    if (!Deki3D::CompileObjToMesh(text.str(), baseDirectory, decodeImage, blob, error))
+    if (!Deki3D::CompileObjToMesh(text.str(), baseDirectory, decodeImage, blob, error, chooseFormat))
     {
         DEKI_LOG_WARNING("Deki3D: '%s' did not compile: %s", absolutePath.c_str(), error.c_str());
-        return;
+        return false;
     }
 
-    const fs::path cachePath = fs::path(GetCacheDirectory(projectPath)) / guid;
     std::error_code ec;
-    fs::create_directories(cachePath.parent_path(), ec);
-
-    std::ofstream out(cachePath, std::ios::binary | std::ios::trunc);
+    fs::create_directories(fs::path(outPath).parent_path(), ec);
+    std::ofstream out(outPath, std::ios::binary | std::ios::trunc);
     if (!out)
     {
-        DEKI_LOG_WARNING("Deki3D: cannot write the compiled mesh to '%s'",
-                         cachePath.string().c_str());
-        return;
+        DEKI_LOG_WARNING("Deki3D: cannot write the compiled mesh to '%s'", outPath.c_str());
+        return false;
     }
-    out.write(reinterpret_cast<const char*>(blob.data()),
-              static_cast<std::streamsize>(blob.size()));
-    out.close();
+    out.write(reinterpret_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.size()));
+    DEKI_LOG_EDITOR("Deki3D: compiled '%s' to %zu bytes",
+                    fs::path(absolutePath).filename().string().c_str(), blob.size());
+    return true;
+}
+
+/// Compile one .obj into the cache, stored for the editor's target. Failure
+/// leaves no cache file, so the component's asset stays unresolved and the
+/// pass draws nothing rather than drawing something wrong.
+void HandleObjSync(const std::string& absolutePath, const std::string& guid,
+                   const std::string& projectPath)
+{
+    const AssetPipeline* pipeline = AssetPipeline::Instance();
+    const AssetExportTarget target = pipeline ? pipeline->GetEditorTarget() : AssetExportTarget{};
+    const fs::path cachePath = fs::path(GetCacheDirectory(projectPath)) / guid;
+    if (!CompileObjFile(absolutePath, target, cachePath.string()))
+        return;
 
     // The compiled blob lives in the cache under the source's own GUID, so
     // point the asset manager at it. Without this the GUID resolves to the
     // .obj text, and MeshAsset rejects that as not being a mesh.
     if (auto* assets = Deki::AssetManager::Get())
         assets->RegisterGuid(guid, guid);
-
-    DEKI_LOG_EDITOR("Deki3D: compiled '%s' to %zu bytes",
-                    fs::path(absolutePath).filename().string().c_str(), blob.size());
 }
 
 /// Re-point every already-compiled model at its cache entry. The sync handler
@@ -149,6 +189,9 @@ struct Deki3DAssetRegistrar
 
         AssetPipeline::OnStarted([](AssetPipeline* pipeline) {
             pipeline->RegisterSyncHandler(".obj", HandleObjSync);
+            pipeline->RegisterExportEncoder(".obj", [](const AssetExportContext& ctx) {
+                return CompileObjFile(ctx.absolutePath, ctx.target, ctx.outPath);
+            });
         });
 
         AssetPipeline::OnImportComplete([](AssetPipeline* pipeline) {

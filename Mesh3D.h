@@ -73,18 +73,46 @@ enum class ShadingModel : uint8_t
     Flat = 2,       // lambert per triangle from the face normal
 };
 
-/// A texture the rasterizer can sample: 8-bit indices into a palette, or
-/// RGB565 direct. Dimensions are powers of two so the sampler masks instead
-/// of dividing.
+/// How a texture's pixels are laid out. Numbered as Deki's texture formats
+/// (Texture2D's), which is also what the mesh file stores.
+enum class TexelFormat : uint8_t
+{
+    RGB888 = 0,    // 3 bytes: R, G, B
+    RGBA8888 = 1,  // 4 bytes: R, G, B, A
+    RGB565 = 2,    // 2 bytes, little-endian 565
+    RGB565A8 = 3,  // 3 bytes: 565 lo, 565 hi, A
+    ALPHA8 = 4,    // 1 byte of coverage; the colour is the material tint
+};
+
+/// Bytes one texel of `format` takes.
+inline int TexelBytes(TexelFormat format)
+{
+    switch (format)
+    {
+        case TexelFormat::RGB888: return 3;
+        case TexelFormat::RGBA8888: return 4;
+        case TexelFormat::RGB565: return 2;
+        case TexelFormat::RGB565A8: return 3;
+        case TexelFormat::ALPHA8: return 1;
+    }
+    return 2;
+}
+
+/// A texture the rasterizer can sample: 8-bit indices into an RGB565
+/// palette, or texels of `format`. Dimensions are powers of two so the sampler
+/// masks instead of dividing.
 struct Texture3D
 {
     const uint8_t* pixels = nullptr;
     const uint16_t* palette = nullptr;  // non-null => `pixels` are indices
+    TexelFormat format = TexelFormat::RGB565;
     uint16_t width = 0;
     uint16_t height = 0;
     uint8_t widthShift = 0;   // width == 1 << widthShift
     uint8_t heightShift = 0;  // height == 1 << heightShift
-    bool hasAlpha = false;    // palette index 0 / RGB565 magenta is a hole
+    // Holes, for a material with alphaTest: palette index 0, RGB565 magenta,
+    // or alpha below half for the formats that carry alpha.
+    bool hasAlpha = false;
 
     bool Valid() const { return pixels != nullptr && width > 0 && height > 0; }
 };

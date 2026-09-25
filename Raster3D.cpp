@@ -1,5 +1,6 @@
 #include "Raster3D.h"
 #include "Math3D.h"
+#include "deki-rendering/PixelFormat.h"
 
 #include <algorithm>
 #include <cmath>
@@ -129,6 +130,195 @@ bool BoundsOutsideFrustum(const Mesh3D& mesh, const Deki::Mat4& mvp)
     return false;
 }
 
+// ---------------------------------------------------------------------------
+// The inner loop, one instance per texture layout and framebuffer format.
+// ---------------------------------------------------------------------------
+
+/// What a span needs from its triangle, fixed across the span.
+struct SpanArgs
+{
+    uint8_t* fbRow;       // start of this scanline in the framebuffer
+    uint16_t* depthRow;   // indexed by x, like fbRow
+    int x0, x1;           // inclusive
+    int32_t u, v, z;      // at x0, fixed point
+    int32_t du, dv, dz;
+    const Texture3D* tex;
+    bool alphaTest;
+    bool lit;
+    uint32_t shade;       // 0..32
+    uint16_t flat565;     // untextured colour, as RGB565 and as 8-bit channels
+    uint8_t flatR, flatG, flatB;
+    int uMask, vMask, wShift;
+    bool depthTest, depthWrite;
+};
+
+/// The texture side of a span: none (the flat colour), an RGB565 palette, or
+/// texels of one TexelFormat.
+enum class TexKind { Flat, Palette, RGB565, RGB565A8, RGB888, RGBA8888, ALPHA8 };
+
+/// Scale 8-bit channels by shade in 0..32, as Shade565 does for a 565 pixel.
+inline void Shade8(uint8_t& r, uint8_t& g, uint8_t& b, uint32_t shade)
+{
+    r = static_cast<uint8_t>((r * shade) >> 5);
+    g = static_cast<uint8_t>((g * shade) >> 5);
+    b = static_cast<uint8_t>((b * shade) >> 5);
+}
+
+/// Fill one span; returns how many pixels it wrote.
+///
+/// The RGB565 framebuffer with a flat, palette or RGB565 texture is exactly
+/// the loop this rasteriser has always had (565 arithmetic, magenta holes):
+/// the RGB565 device path must not change a pixel. Everything else reads
+/// texels into 8-bit channels and writes them in the framebuffer's format
+/// through the pixel helpers the 2D blitter uses. With alphaTest, a texel
+/// whose alpha is below half is a hole.
+template <TexKind K, Deki::ColorFormat F>
+uint32_t FillSpan(const SpanArgs& a)
+{
+    constexpr bool kClassic565 = (F == Deki::ColorFormat::RGB565) &&
+                                 (K == TexKind::Flat || K == TexKind::Palette || K == TexKind::RGB565);
+    int32_t u = a.u, v = a.v, z = a.z;
+    uint32_t written = 0;
+    for (int x = a.x0; x <= a.x1; ++x)
+    {
+        const int32_t depth = z >> kDepthFrac;
+        if (!a.depthTest || depth < static_cast<int32_t>(a.depthRow[x]))
+        {
+            bool write = true;
+            int texel = 0;
+            if constexpr (K != TexKind::Flat)
+            {
+                const int tu = (u >> kUvFrac) & a.uMask;
+                const int tv = (v >> kUvFrac) & a.vMask;
+                texel = (tv << a.wShift) + tu;
+            }
+
+            if constexpr (kClassic565)
+            {
+                uint16_t color = a.flat565;
+                if constexpr (K == TexKind::Palette)
+                {
+                    const uint8_t idx = a.tex->pixels[texel];
+                    if (a.alphaTest && idx == 0)
+                        write = false;
+                    else
+                        color = a.tex->palette[idx];
+                }
+                else if constexpr (K == TexKind::RGB565)
+                {
+                    color = reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel];
+                    if (a.alphaTest && color == 0xF81F)  // magenta is the hole
+                        write = false;
+                }
+                if (write)
+                {
+                    if (a.lit)
+                        color = Shade565(color, a.shade);
+                    reinterpret_cast<uint16_t*>(a.fbRow)[x] = color;
+                }
+            }
+            else
+            {
+                uint8_t r = a.flatR, g = a.flatG, b = a.flatB, al = 255;
+                if constexpr (K == TexKind::Palette)
+                {
+                    const uint8_t idx = a.tex->pixels[texel];
+                    if (a.alphaTest && idx == 0)
+                        write = false;
+                    else
+                        DekiPixel::UnpackRGB565(a.tex->palette[idx], r, g, b);
+                }
+                else if constexpr (K == TexKind::RGB565)
+                {
+                    const uint16_t c = reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel];
+                    if (a.alphaTest && c == 0xF81F)
+                        write = false;
+                    else
+                        DekiPixel::UnpackRGB565(c, r, g, b);
+                }
+                else if constexpr (K == TexKind::RGB565A8)
+                    DekiPixel::ReadSrcPixel<DekiPixel::SrcKind::RGB565A8>(a.tex->pixels + texel * 3, true, r, g, b, al);
+                else if constexpr (K == TexKind::RGB888)
+                    DekiPixel::ReadSrcPixel<DekiPixel::SrcKind::RGB888>(a.tex->pixels + texel * 3, false, r, g, b, al);
+                else if constexpr (K == TexKind::RGBA8888)
+                    DekiPixel::ReadSrcPixel<DekiPixel::SrcKind::RGBA8888>(a.tex->pixels + texel * 4, true, r, g, b, al);
+                else if constexpr (K == TexKind::ALPHA8)
+                {
+                    // Coverage only: the colour is the material's.
+                    al = a.tex->pixels[texel];
+                }
+                if (a.alphaTest && al < 128)
+                    write = false;
+                if (write)
+                {
+                    if (a.lit)
+                        Shade8(r, g, b, a.shade);
+                    DekiPixel::WriteDstPixel<F>(a.fbRow, static_cast<size_t>(x), r, g, b, 255);
+                }
+            }
+
+            if (write)
+            {
+                if (a.depthWrite)
+                    a.depthRow[x] = static_cast<uint16_t>(depth);
+                ++written;
+            }
+        }
+        if constexpr (K != TexKind::Flat)
+        {
+            u += a.du;
+            v += a.dv;
+        }
+        z += a.dz;
+    }
+    return written;
+}
+
+template <TexKind K>
+uint32_t FillSpanFor(Deki::ColorFormat format, const SpanArgs& a)
+{
+    switch (format)
+    {
+        case Deki::ColorFormat::RGB565: return FillSpan<K, Deki::ColorFormat::RGB565>(a);
+        case Deki::ColorFormat::RGB888: return FillSpan<K, Deki::ColorFormat::RGB888>(a);
+        case Deki::ColorFormat::ARGB8888: return FillSpan<K, Deki::ColorFormat::ARGB8888>(a);
+        case Deki::ColorFormat::RGB565A8: return FillSpan<K, Deki::ColorFormat::RGB565A8>(a);
+    }
+    return 0;
+}
+
+uint32_t DispatchSpan(TexKind kind, Deki::ColorFormat format, const SpanArgs& a)
+{
+    switch (kind)
+    {
+        case TexKind::Flat: return FillSpanFor<TexKind::Flat>(format, a);
+        case TexKind::Palette: return FillSpanFor<TexKind::Palette>(format, a);
+        case TexKind::RGB565: return FillSpanFor<TexKind::RGB565>(format, a);
+        case TexKind::RGB565A8: return FillSpanFor<TexKind::RGB565A8>(format, a);
+        case TexKind::RGB888: return FillSpanFor<TexKind::RGB888>(format, a);
+        case TexKind::RGBA8888: return FillSpanFor<TexKind::RGBA8888>(format, a);
+        case TexKind::ALPHA8: return FillSpanFor<TexKind::ALPHA8>(format, a);
+    }
+    return 0;
+}
+
+TexKind KindOfTexture(const Texture3D* tex)
+{
+    if (!tex || !tex->Valid())
+        return TexKind::Flat;
+    if (tex->palette)
+        return TexKind::Palette;
+    switch (tex->format)
+    {
+        case TexelFormat::RGB565: return TexKind::RGB565;
+        case TexelFormat::RGB565A8: return TexKind::RGB565A8;
+        case TexelFormat::RGB888: return TexKind::RGB888;
+        case TexelFormat::RGBA8888: return TexKind::RGBA8888;
+        case TexelFormat::ALPHA8: return TexKind::ALPHA8;
+    }
+    return TexKind::Flat;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -142,6 +332,7 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height,
     m_Width = width;
     m_Height = height;
     m_Format = format;
+    m_BytesPerPixel = Deki::FrameBufferBytes(format, 1, 1);
     m_Config = config;
     if (m_Config.tileSize < 8)
         m_Config.tileSize = 8;
@@ -643,6 +834,7 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     const Material3D& mat = m_Materials[tri.materialIndex];
     const Texture3D* tex = mat.texture;
     const bool textured = tex && tex->Valid();
+    const TexKind kind = KindOfTexture(tex);
     const int uMask = textured ? (tex->width - 1) : 0;
     const int vMask = textured ? (tex->height - 1) : 0;
     const int wShift = textured ? tex->widthShift : 0;
@@ -651,9 +843,10 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     // modulated by the material tint. Per-vertex colour interpolation is a
     // later refinement; nothing in the pipeline needs it yet.
     const uint32_t tint = mat.tint;
-    const uint16_t flatColor = To565(((v0.color & 0xFF) * (tint & 0xFF) / 255) |
-                                     ((((v0.color >> 8) & 0xFF) * ((tint >> 8) & 0xFF) / 255) << 8) |
-                                     ((((v0.color >> 16) & 0xFF) * ((tint >> 16) & 0xFF) / 255) << 16));
+    const uint32_t flatRgba = ((v0.color & 0xFF) * (tint & 0xFF) / 255) |
+                              ((((v0.color >> 8) & 0xFF) * ((tint >> 8) & 0xFF) / 255) << 8) |
+                              ((((v0.color >> 16) & 0xFF) * ((tint >> 16) & 0xFF) / 255) << 16);
+    const uint16_t flatColor = To565(flatRgba);
 
     const bool lit = mat.shading != ShadingModel::Unlit;
     const int subdiv = m_Config.perspectiveCorrect ? m_Config.spanSubdivision : (bMaxX - bMinX + 1);
@@ -736,61 +929,30 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     const uint32_t shade =
                         lit ? static_cast<uint32_t>(std::min(32.0f, std::max(0.0f, v0.light * 32.0f))) : 32u;
 
-                    // Row bases, so the loop below indexes by x alone: the
+                    // Row bases, so the span indexes by x alone: the
                     // multiply that turned a pixel into a tile offset was
                     // costing more than the depth test it fed.
-                    uint16_t* const fbRow = reinterpret_cast<uint16_t*>(m_Buffer) +
-                                            static_cast<size_t>(py) * m_Width;
-                    uint16_t* const depthRow =
-                        tileDepth + static_cast<size_t>(py - tileOriginY) * tileStride - tileOriginX;
-                    uint32_t written = 0;
+                    SpanArgs span;
+                    span.fbRow = m_Buffer + static_cast<size_t>(py) * m_Width * m_BytesPerPixel;
+                    span.depthRow = tileDepth + static_cast<size_t>(py - tileOriginY) * tileStride - tileOriginX;
+                    span.x0 = runX;
+                    span.x1 = chunkEnd;
+                    span.u = u; span.v = v; span.z = z;
+                    span.du = du; span.dv = dv; span.dz = dz;
+                    span.tex = tex;
+                    span.alphaTest = mat.alphaTest;
+                    span.lit = lit;
+                    span.shade = shade;
+                    span.flat565 = flatColor;
+                    span.flatR = static_cast<uint8_t>(flatRgba & 0xFF);
+                    span.flatG = static_cast<uint8_t>((flatRgba >> 8) & 0xFF);
+                    span.flatB = static_cast<uint8_t>((flatRgba >> 16) & 0xFF);
+                    span.uMask = uMask; span.vMask = vMask; span.wShift = wShift;
+                    span.depthTest = m_Config.depthTest;
+                    span.depthWrite = m_Config.depthWrite;
 
-                    // ---- the inner loop: integer only ----
-                    for (int x = runX; x <= chunkEnd; ++x)
-                    {
-                        const int32_t depth = z >> kDepthFrac;
-
-                        if (!m_Config.depthTest || depth < static_cast<int32_t>(depthRow[x]))
-                        {
-                            uint16_t color = flatColor;
-                            bool write = true;
-
-                            if (textured)
-                            {
-                                const int tu = (u >> kUvFrac) & uMask;
-                                const int tv = (v >> kUvFrac) & vMask;
-                                const int texel = (tv << wShift) + tu;
-                                if (tex->palette)
-                                {
-                                    const uint8_t idx = tex->pixels[texel];
-                                    if (mat.alphaTest && idx == 0)
-                                        write = false;
-                                    else
-                                        color = tex->palette[idx];
-                                }
-                                else
-                                {
-                                    color = reinterpret_cast<const uint16_t*>(tex->pixels)[texel];
-                                    if (mat.alphaTest && color == 0xF81F)  // magenta is the hole
-                                        write = false;
-                                }
-                            }
-
-                            if (write)
-                            {
-                                if (lit)
-                                    color = Shade565(color, shade);
-                                fbRow[x] = color;
-                                if (m_Config.depthWrite)
-                                    depthRow[x] = static_cast<uint16_t>(depth);
-                                ++written;
-                            }
-                        }
-
-                        u += du;
-                        v += dv;
-                        z += dz;
-                    }
+                    // ---- the inner loop: integer only, one instance per format pair ----
+                    const uint32_t written = DispatchSpan(kind, m_Format, span);
 
                     stats.pixelsTested += static_cast<uint32_t>(chunkEnd - runX + 1);
                     stats.pixelsWritten += written;

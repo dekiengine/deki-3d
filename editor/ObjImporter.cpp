@@ -97,14 +97,13 @@ uint16_t FitPowerOfTwo(int value, int cap)
     return size;
 }
 
-/// Box-filter down to the target size and convert to RGB565. Averaging rather
+/// Box-filter down to the target size, keeping 8-bit RGBA. Averaging rather
 /// than point sampling, because these textures are shrunk a long way and a
 /// point-sampled reduction aliases badly.
-void ResampleToRgb565(const std::vector<uint8_t>& rgba, int srcW, int srcH,
-                      uint16_t dstW, uint16_t dstH, std::vector<uint8_t>& out)
+void ResampleRgba(const std::vector<uint8_t>& rgba, int srcW, int srcH,
+                  uint16_t dstW, uint16_t dstH, std::vector<uint8_t>& out)
 {
-    out.resize(static_cast<size_t>(dstW) * dstH * sizeof(uint16_t));
-    uint16_t* dst = reinterpret_cast<uint16_t*>(out.data());
+    out.resize(static_cast<size_t>(dstW) * dstH * 4);
 
     for (uint16_t y = 0; y < dstH; ++y)
     {
@@ -115,7 +114,7 @@ void ResampleToRgb565(const std::vector<uint8_t>& rgba, int srcW, int srcH,
             const int x0 = static_cast<int>(static_cast<int64_t>(x) * srcW / dstW);
             const int x1 = std::max(x0 + 1, static_cast<int>(static_cast<int64_t>(x + 1) * srcW / dstW));
 
-            uint32_t r = 0, g = 0, b = 0, n = 0;
+            uint32_t r = 0, g = 0, b = 0, a = 0, n = 0;
             for (int sy = y0; sy < y1 && sy < srcH; ++sy)
             {
                 for (int sx = x0; sx < x1 && sx < srcW; ++sx)
@@ -124,18 +123,49 @@ void ResampleToRgb565(const std::vector<uint8_t>& rgba, int srcW, int srcH,
                     r += rgba[i];
                     g += rgba[i + 1];
                     b += rgba[i + 2];
+                    a += rgba[i + 3];
                     ++n;
                 }
             }
             if (n == 0)
                 n = 1;
-            r /= n;
-            g /= n;
-            b /= n;
-            dst[static_cast<size_t>(y) * dstW + x] =
-                static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+            uint8_t* d = out.data() + (static_cast<size_t>(y) * dstW + x) * 4;
+            d[0] = static_cast<uint8_t>(r / n);
+            d[1] = static_cast<uint8_t>(g / n);
+            d[2] = static_cast<uint8_t>(b / n);
+            d[3] = static_cast<uint8_t>(a / n);
         }
     }
+}
+
+/// 8-bit RGBA texels into `format`. RGB565 truncates as it always has, so a
+/// model compiled for an RGB565 target stores exactly what it did before.
+void EncodeTexels(const std::vector<uint8_t>& rgba, TexelFormat format, std::vector<uint8_t>& out)
+{
+    const size_t count = rgba.size() / 4;
+    out.resize(count * TexelBytes(format));
+    for (size_t i = 0; i < count; ++i)
+    {
+        const uint8_t r = rgba[i * 4], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2], a = rgba[i * 4 + 3];
+        const uint16_t v565 = static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+        uint8_t* d = out.data() + i * TexelBytes(format);
+        switch (format)
+        {
+            case TexelFormat::RGB565: d[0] = v565 & 0xFF; d[1] = v565 >> 8; break;
+            case TexelFormat::RGB565A8: d[0] = v565 & 0xFF; d[1] = v565 >> 8; d[2] = a; break;
+            case TexelFormat::RGB888: d[0] = r; d[1] = g; d[2] = b; break;
+            case TexelFormat::RGBA8888: d[0] = r; d[1] = g; d[2] = b; d[3] = a; break;
+            case TexelFormat::ALPHA8: d[0] = a; break;
+        }
+    }
+}
+
+bool HasTransparentTexel(const std::vector<uint8_t>& rgba)
+{
+    for (size_t i = 3; i < rgba.size(); i += 4)
+        if (rgba[i] < 128)
+            return true;
+    return false;
 }
 
 /// What one `newmtl` block says that this pipeline can use.
@@ -226,7 +256,7 @@ std::string ResolveRelative(const std::string& baseDirectory, const std::string&
 
 bool CompileObjToMesh(const std::string& objText, const std::string& baseDirectory,
                       const ImageDecoder& decodeImage, std::vector<uint8_t>& outBlob,
-                      std::string& error)
+                      std::string& error, const TextureFormatChooser& chooseFormat)
 {
     error.clear();
     outBlob.clear();
@@ -452,6 +482,7 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     std::vector<MeshFileTexture> outTextures;
     std::vector<uint8_t> texturePixels;
     std::map<std::string, int16_t> textureByPath;
+    std::vector<bool> textureCutsOut;  // per texture: turns its materials' alpha test on
 
     for (const auto& entry : materialIds)
     {
@@ -476,6 +507,8 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                 if (cached != textureByPath.end())
                 {
                     material.textureIndex = cached->second;
+                    if (textureCutsOut[static_cast<size_t>(cached->second)])
+                        material.flags |= MeshMaterial_AlphaTest;
                 }
                 else
                 {
@@ -487,17 +520,31 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                     {
                         // 256 is the cap: at RGB565 that is 128 KB, already
                         // more than a small board wants to hold resident.
-                        MeshFileTexture texture;
+                        MeshFileTexture texture{};
                         texture.width = FitPowerOfTwo(srcW, 256);
                         texture.height = FitPowerOfTwo(srcH, 256);
                         texture.byteOffset = static_cast<uint32_t>(texturePixels.size());
 
+                        std::vector<uint8_t> scaled;
+                        ResampleRgba(rgba, srcW, srcH, texture.width, texture.height, scaled);
+                        const bool transparent = HasTransparentTexel(scaled);
+                        const TexelFormat format = chooseFormat ? chooseFormat(transparent) : TexelFormat::RGB565;
+                        texture.format = static_cast<uint8_t>(format);
+
+                        // Transparent texels cut out, where the format keeps them.
+                        const bool keepsAlpha = format == TexelFormat::RGB565A8 || format == TexelFormat::RGBA8888 ||
+                                                format == TexelFormat::ALPHA8;
+                        const bool cutsOut = transparent && keepsAlpha;
+                        if (cutsOut)
+                            material.flags |= MeshMaterial_AlphaTest;
+
                         std::vector<uint8_t> pixels;
-                        ResampleToRgb565(rgba, srcW, srcH, texture.width, texture.height, pixels);
+                        EncodeTexels(scaled, format, pixels);
                         texturePixels.insert(texturePixels.end(), pixels.begin(), pixels.end());
 
                         material.textureIndex = static_cast<int16_t>(outTextures.size());
                         outTextures.push_back(texture);
+                        textureCutsOut.push_back(cutsOut);
                         textureByPath.emplace(map, material.textureIndex);
                     }
                 }
