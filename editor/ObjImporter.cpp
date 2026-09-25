@@ -256,7 +256,7 @@ std::string ResolveRelative(const std::string& baseDirectory, const std::string&
 
 bool CompileObjToMesh(const std::string& objText, const std::string& baseDirectory,
                       const ImageDecoder& decodeImage, std::vector<uint8_t>& outBlob,
-                      std::string& error, const TextureFormatChooser& chooseFormat)
+                      std::string& error, const TextureFormatChooser& chooseFormat, int maxTextureSize)
 {
     error.clear();
     outBlob.clear();
@@ -518,11 +518,10 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                         srcW > 0 && srcH > 0 &&
                         rgba.size() >= static_cast<size_t>(srcW) * srcH * 4)
                     {
-                        // 256 is the cap: at RGB565 that is 128 KB, already
-                        // more than a small board wants to hold resident.
                         MeshFileTexture texture{};
-                        texture.width = FitPowerOfTwo(srcW, 256);
-                        texture.height = FitPowerOfTwo(srcH, 256);
+                        const int cap = maxTextureSize > 0 ? maxTextureSize : kDefaultMeshTextureSize;
+                        texture.width = FitPowerOfTwo(srcW, cap);
+                        texture.height = FitPowerOfTwo(srcH, cap);
                         texture.byteOffset = static_cast<uint32_t>(texturePixels.size());
 
                         std::vector<uint8_t> scaled;

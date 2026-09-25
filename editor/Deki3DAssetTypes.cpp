@@ -25,6 +25,7 @@
 #include <deki-editor/Paths.h>
 #include <deki-editor/TextureImporter.h>
 #include <deki-editor/TextureFormatResolve.h>
+#include <deki-editor/TextureSettings.h>
 #include <deki/LogSystem.h>
 #include <deki/assets/AssetManager.h>
 #include <nlohmann/json.hpp>
@@ -53,34 +54,32 @@ public:
 
 REGISTER_EDITOR(MeshAssetType)
 
-/// The format a model's texture is stored in for `target`: the model's
-/// sidecar (<model.obj>.data, settings.texture: "format" and "targets", as for
-/// an image) or Automatic.
-Deki3D::TexelFormat ChooseTexelFormat(const std::string& absolutePath, const AssetExportTarget& target,
+/// A model's texture settings: its sidecar (<model.obj>.data,
+/// settings.texture, the same shape as an image's), or none.
+TextureSettings ReadModelTextureSettings(const std::string& absolutePath)
+{
+    std::ifstream dataFile(absolutePath + ".data");
+    if (!dataFile.is_open())
+        return {};
+    try
+    {
+        const nlohmann::json data = nlohmann::json::parse(dataFile);
+        if (data.contains("settings") && data["settings"].contains("texture"))
+            return ReadTextureSettings(data["settings"]["texture"]);
+    }
+    catch (const nlohmann::json::exception&)
+    {
+    }
+    return {};
+}
+
+/// The format a model's texture is stored in for `target`.
+Deki3D::TexelFormat ChooseTexelFormat(const TextureSettings& settings, const AssetExportTarget& target,
                                       bool hasAlpha)
 {
-    std::string assetFormat, targetFormat;
-    std::ifstream dataFile(absolutePath + ".data");
-    if (dataFile.is_open())
-    {
-        try
-        {
-            const nlohmann::json data = nlohmann::json::parse(dataFile);
-            if (data.contains("settings") && data["settings"].contains("texture"))
-            {
-                const auto& tex = data["settings"]["texture"];
-                assetFormat = tex.value("format", std::string());
-                if (tex.contains("targets") && tex["targets"].contains(target.platformId) &&
-                    tex["targets"][target.platformId].is_string())
-                    targetFormat = tex["targets"][target.platformId].get<std::string>();
-            }
-        }
-        catch (const nlohmann::json::exception&)
-        {
-        }
-    }
     // TexelFormat is numbered as TextureFormat.
-    const TextureFormat f = ResolveTextureFormat(assetFormat, targetFormat, target.colorFormat, hasAlpha);
+    const TextureFormat f = ResolveTextureFormat(settings.format, settings.TargetFormat(target.platformId),
+                                                 target.colorFormat, hasAlpha);
     return static_cast<Deki3D::TexelFormat>(static_cast<uint8_t>(f));
 }
 
@@ -111,11 +110,13 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
         rgba = std::move(decoded.rgba);
         return true;
     };
-    auto chooseFormat = [&](bool hasAlpha) { return ChooseTexelFormat(absolutePath, target, hasAlpha); };
+    const TextureSettings settings = ReadModelTextureSettings(absolutePath);
+    auto chooseFormat = [&](bool hasAlpha) { return ChooseTexelFormat(settings, target, hasAlpha); };
 
     std::vector<uint8_t> blob;
     std::string error;
-    if (!Deki3D::CompileObjToMesh(text.str(), baseDirectory, decodeImage, blob, error, chooseFormat))
+    if (!Deki3D::CompileObjToMesh(text.str(), baseDirectory, decodeImage, blob, error, chooseFormat,
+                                  settings.MaxSizeFor(target.platformId)))
     {
         DEKI_LOG_WARNING("Deki3D: '%s' did not compile: %s", absolutePath.c_str(), error.c_str());
         return false;

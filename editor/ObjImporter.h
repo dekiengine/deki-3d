@@ -44,12 +44,19 @@ namespace Deki3D
 using ImageDecoder = std::function<bool(const std::string& absolutePath, int& outWidth,
                                         int& outHeight, std::vector<uint8_t>& outRgba)>;
 
+/// A mesh texture's cap when its model sets no Max Size: at RGB565 a 256 x 256
+/// texture is 128 KB, already more than a small board wants resident.
+constexpr int kDefaultMeshTextureSize = 256;
+
 /// The format to store a texture in, given whether it has transparent pixels.
 using TextureFormatChooser = std::function<TexelFormat(bool hasAlpha)>;
 
+/// `maxTextureSize` caps the texture's larger side (its Max Size); the stored
+/// sides are the largest powers of two within it.
 bool CompileObjToMesh(const std::string& objText, const std::string& baseDirectory,
                       const ImageDecoder& decodeImage, std::vector<uint8_t>& outBlob,
-                      std::string& error, const TextureFormatChooser& chooseFormat = {});
+                      std::string& error, const TextureFormatChooser& chooseFormat = {},
+                      int maxTextureSize = kDefaultMeshTextureSize);
 
 }  // namespace Deki3D
 

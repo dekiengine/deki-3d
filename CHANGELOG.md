@@ -11,6 +11,10 @@ alongside one that has them.
 ## Unreleased
 
 ### Added
+- A model's texture takes Max Size from its `.data` file (per target, like an
+  image's): the stored powers of two are capped by it, and by 256 when it has
+  none. `CompileObjToMesh` takes `maxTextureSize`. The per-target entry's
+  object form (`{"format", "maxSize"}`) reads, as does the older string.
 - **Every format.** Meshes draw into RGB565, RGB888, ARGB8888 and RGB565A8
   framebuffers, and textures can be RGB565, RGB565A8, RGB888, RGBA8888 or
   alpha-only. The RGB565-into-RGB565 path is the loop it always was. A texel
