@@ -150,7 +150,8 @@ private:
 };
 
 /// Register the "Mesh" loader with the engine's AssetManager. Called from a
-/// static initialiser in MeshAssetLoader.cpp; safe to call more than once.
+/// static initialiser in MeshAssetLoader.cpp and from Deki3D_InitSystem();
+/// safe to call more than once.
 DEKI_3D_API void Deki3D_RegisterMeshLoader();
 
 }  // namespace Deki3D

@@ -9,6 +9,7 @@
  */
 
 #include "MeshAsset.h"
+#include "Deki3DInit.h"
 
 #include <deki/assets/AssetManager.h>
 
@@ -63,3 +64,10 @@ static MeshLoaderRegistrar s_meshLoaderRegistrar;
 }  // namespace
 
 }  // namespace Deki3D
+
+void Deki3D_InitSystem()
+{
+    Deki3D::Deki3D_RegisterMeshLoader();
+}
+
+void Deki3D_ShutdownSystem() {}

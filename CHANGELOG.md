@@ -33,6 +33,9 @@ alongside one that has them.
   project's Screen Fit, so meshes and sprites line up on every screen.
 
 ### Fixed
+- A firmware build has a Mesh loader. It was registered only by a static
+  object in a file nothing referenced, which a static link drops;
+  `Deki3D_InitSystem` (the package's system init) registers it now.
 - Removed an `if` with an empty body from the rasteriser, which ESP-IDF 6's
   GCC 15 build rejects. It did nothing either way.
 
