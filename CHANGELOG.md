@@ -37,6 +37,10 @@ alongside one that has them.
   project's Screen Fit, so meshes and sprites line up on every screen.
 
 ### Fixed
+- A firmware build drew no 3D: the mesh render pass registers from a static
+  object in a file nothing referenced, which a static link drops. The
+  package's system init now keeps it (seen under QEMU with its new display:
+  the test scene's model now draws, matching the editor).
 - A mesh too big for a board's memory rebooted it: the loader read the file,
   and the asset kept its vertices, indices and texture, in std::vectors on the
   internal heap, which abort when full. They are Deki::Buffers now, the big

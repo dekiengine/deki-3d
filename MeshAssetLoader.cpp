@@ -71,6 +71,7 @@ static MeshLoaderRegistrar s_meshLoaderRegistrar;
 void Deki3D_InitSystem()
 {
     Deki3D::Deki3D_RegisterMeshLoader();
+    Deki3D_KeepMesh3DPass();
 }
 
 void Deki3D_ShutdownSystem() {}

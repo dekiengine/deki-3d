@@ -1,4 +1,5 @@
 #include "Mesh3DPass.h"
+#include "Deki3DInit.h"
 
 #include "Mesh3DSettings.h"
 #include <deki/ScreenScale.h>
@@ -333,3 +334,10 @@ struct Mesh3DPassRegistrar
 };
 static Mesh3DPassRegistrar s_mesh3dPassRegistrar;
 }  // namespace
+
+// Referenced from Deki3D_InitSystem so a static link keeps this file, and
+// with it the registrar above. Nothing else refers to it, and a firmware link
+// drops such a file: the pass never registered and a device drew no meshes.
+// Registration itself stays in the static initialiser, which runs before
+// deki-rendering attaches the autoAttach passes at startup.
+void Deki3D_KeepMesh3DPass() {}
