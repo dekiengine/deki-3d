@@ -32,8 +32,9 @@
 #include "Deki3DAPI.h"
 #include "Mesh3D.h"
 
+#include <deki/providers/Buffer.h>
+
 #include <cstdint>
-#include <vector>
 
 namespace Deki3D
 {
@@ -127,12 +128,12 @@ public:
     /// One entry per material the submeshes index, with its texture already
     /// resolved. Never empty for a valid mesh: a model with no materials of
     /// its own gets one plain white default.
-    const Material3D* Materials() const { return m_Materials.data(); }
-    uint16_t MaterialCount() const { return static_cast<uint16_t>(m_Materials.size()); }
+    const Material3D* Materials() const { return m_Materials.Data(); }
+    uint16_t MaterialCount() const { return static_cast<uint16_t>(m_Materials.Count()); }
 
     uint32_t VertexCount() const { return m_View.vertexCount; }
     uint32_t TriangleCount() const { return m_View.indexCount / 3; }
-    uint16_t TextureCount() const { return static_cast<uint16_t>(m_Textures.size()); }
+    uint16_t TextureCount() const { return static_cast<uint16_t>(m_Textures.Count()); }
 
 private:
     void Clear();
@@ -140,12 +141,17 @@ private:
     /// never be left reachable.
     bool Fail(const char* why);
 
-    std::vector<uint8_t> m_Vertices;
-    std::vector<uint16_t> m_Indices;
-    std::vector<Submesh3D> m_Submeshes;
-    std::vector<uint8_t> m_TexturePixels;
-    std::vector<Texture3D> m_Textures;
-    std::vector<Material3D> m_Materials;
+    // Through the engine's memory, sized by the file: a size that does not
+    // fit fails the load with a log line instead of aborting the board. The
+    // big, file-sized ones (vertices, indices, texture pixels) are External,
+    // which is PSRAM where the board has it and the one heap where it does
+    // not; the small tables are Internal.
+    Deki::Buffer<uint8_t> m_Vertices;
+    Deki::Buffer<uint16_t> m_Indices;
+    Deki::Buffer<Submesh3D> m_Submeshes;
+    Deki::Buffer<uint8_t> m_TexturePixels;
+    Deki::Buffer<Texture3D> m_Textures;
+    Deki::Buffer<Material3D> m_Materials;
     Mesh3D m_View;
 };
 

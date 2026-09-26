@@ -104,17 +104,20 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
         return false;
 
     const size_t vertexBytes = static_cast<size_t>(header.vertexCount) * header.vertexStride;
-    m_Vertices.resize(vertexBytes);
-    if (!cursor.Take(m_Vertices.data(), vertexBytes))
+    if (!m_Vertices.Allocate(vertexBytes, Deki::Memory::External))
+        return Fail("no room for the vertex buffer");
+    if (!cursor.Take(m_Vertices.Data(), vertexBytes))
         return Fail("truncated vertex buffer");
 
-    m_Indices.resize(header.indexCount);
-    if (!cursor.Take(m_Indices.data(), m_Indices.size() * sizeof(uint16_t)))
+    if (!m_Indices.Allocate(header.indexCount, Deki::Memory::External))
+        return Fail("no room for the index buffer");
+    if (!cursor.Take(m_Indices.Data(), m_Indices.Bytes()))
         return Fail("truncated index buffer");
 
+    if (!m_Submeshes.Allocate(header.submeshCount > 0 ? header.submeshCount : 1, Deki::Memory::Internal))
+        return Fail("no room for the submesh table");
     if (header.submeshCount > 0)
     {
-        m_Submeshes.reserve(header.submeshCount);
         for (uint16_t i = 0; i < header.submeshCount; ++i)
         {
             MeshFileSubmesh onDisk{};
@@ -124,7 +127,7 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
             sub.firstIndex = onDisk.firstIndex;
             sub.indexCount = onDisk.indexCount;
             sub.materialIndex = onDisk.materialIndex;
-            m_Submeshes.push_back(sub);
+            m_Submeshes.Data()[i] = sub;
         }
     }
     else
@@ -133,20 +136,24 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
         all.firstIndex = 0;
         all.indexCount = header.indexCount;
         all.materialIndex = 0;
-        m_Submeshes.push_back(all);
+        m_Submeshes.Data()[0] = all;
     }
 
-    std::vector<MeshFileMaterial> fileMaterials(header.materialCount);
+    Deki::Buffer<MeshFileMaterial> fileMaterials;
+    if (!fileMaterials.Allocate(header.materialCount, Deki::Memory::Internal))
+        return Fail("no room for the material table");
     for (uint16_t i = 0; i < header.materialCount; ++i)
-        if (!cursor.Take(&fileMaterials[i], sizeof(MeshFileMaterial)))
+        if (!cursor.Take(&fileMaterials.Data()[i], sizeof(MeshFileMaterial)))
             return Fail("truncated material table");
 
-    std::vector<MeshFileTexture> fileTextures(header.textureCount);
+    Deki::Buffer<MeshFileTexture> fileTextures;
+    if (!fileTextures.Allocate(header.textureCount, Deki::Memory::Internal))
+        return Fail("no room for the texture table");
     for (uint16_t i = 0; i < header.textureCount; ++i)
     {
         if (header.version >= 4)
         {
-            if (!cursor.Take(&fileTextures[i], sizeof(MeshFileTexture)))
+            if (!cursor.Take(&fileTextures.Data()[i], sizeof(MeshFileTexture)))
                 return Fail("truncated texture table");
         }
         else
@@ -154,45 +161,49 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
             MeshFileTextureV3 old{};
             if (!cursor.Take(&old, sizeof(old)))
                 return Fail("truncated texture table");
-            fileTextures[i] = MeshFileTexture{ old.width, old.height, old.byteOffset,
+            fileTextures.Data()[i] = MeshFileTexture{ old.width, old.height, old.byteOffset,
                                                static_cast<uint8_t>(TexelFormat::RGB565), { 0, 0, 0 } };
         }
     }
 
     if (header.texturePixelBytes > 0)
     {
-        m_TexturePixels.resize(header.texturePixelBytes);
-        if (!cursor.Take(m_TexturePixels.data(), header.texturePixelBytes))
+        if (!m_TexturePixels.Allocate(header.texturePixelBytes, Deki::Memory::External))
+            return Fail("no room for the texture pixels");
+        if (!cursor.Take(m_TexturePixels.Data(), header.texturePixelBytes))
             return Fail("truncated texture pixels");
     }
 
     // --- everything is present; now check that it all points somewhere real ---
 
-    for (uint16_t index : m_Indices)
+    for (size_t i = 0; i < m_Indices.Count(); ++i)
     {
-        if (index >= header.vertexCount)
+        if (m_Indices.Data()[i] >= header.vertexCount)
             return Fail("an index points past the vertex buffer");
     }
-    for (const Submesh3D& sub : m_Submeshes)
+    for (size_t i = 0; i < m_Submeshes.Count(); ++i)
     {
-        if (static_cast<size_t>(sub.firstIndex) + sub.indexCount > m_Indices.size())
+        const Submesh3D& sub = m_Submeshes.Data()[i];
+        if (static_cast<size_t>(sub.firstIndex) + sub.indexCount > m_Indices.Count())
             return Fail("a submesh runs past the index buffer");
     }
 
-    m_Textures.reserve(header.textureCount);
-    for (const MeshFileTexture& t : fileTextures)
+    if (!m_Textures.Allocate(header.textureCount, Deki::Memory::Internal))
+        return Fail("no room for the texture table");
+    for (uint16_t ti = 0; ti < header.textureCount; ++ti)
     {
+        const MeshFileTexture& t = fileTextures.Data()[ti];
         Texture3D view;
         const int wShift = ShiftOf(t.width);
         const int hShift = ShiftOf(t.height);
         const bool knownFormat = t.format <= static_cast<uint8_t>(TexelFormat::ALPHA8);
         const TexelFormat format = knownFormat ? static_cast<TexelFormat>(t.format) : TexelFormat::RGB565;
         const size_t bytes = static_cast<size_t>(t.width) * t.height * TexelBytes(format);
-        const bool fits = static_cast<size_t>(t.byteOffset) + bytes <= m_TexturePixels.size();
+        const bool fits = static_cast<size_t>(t.byteOffset) + bytes <= m_TexturePixels.Count();
 
         if (knownFormat && wShift >= 0 && hShift >= 0 && bytes > 0 && fits)
         {
-            view.pixels = m_TexturePixels.data() + t.byteOffset;
+            view.pixels = m_TexturePixels.Data() + t.byteOffset;
             view.palette = nullptr;
             view.format = format;
             view.hasAlpha = format == TexelFormat::RGB565 || format == TexelFormat::RGB565A8 ||
@@ -210,29 +221,31 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
                              static_cast<unsigned>(t.width), static_cast<unsigned>(t.height),
                              static_cast<unsigned>(t.format), static_cast<unsigned>(t.byteOffset));
         }
-        m_Textures.push_back(view);
+        m_Textures.Data()[ti] = view;
     }
 
-    m_Materials.reserve(header.materialCount ? header.materialCount : 1);
-    for (const MeshFileMaterial& m : fileMaterials)
+    // A model with no materials of its own still draws, with one default.
+    if (!m_Materials.Allocate(header.materialCount ? header.materialCount : 1, Deki::Memory::Internal))
+        return Fail("no room for the material table");
+    m_Materials.Data()[0] = Material3D{};  // Buffer memory is zeroed, not constructed
+    for (uint16_t mi = 0; mi < header.materialCount; ++mi)
     {
+        const MeshFileMaterial& m = fileMaterials.Data()[mi];
         Material3D material;
         material.tint = m.tint;
         material.doubleSided = (m.flags & MeshMaterial_DoubleSided) != 0;
         material.alphaTest = (m.flags & MeshMaterial_AlphaTest) != 0;
-        if (m.textureIndex >= 0 && static_cast<size_t>(m.textureIndex) < m_Textures.size() &&
-            m_Textures[static_cast<size_t>(m.textureIndex)].Valid())
+        if (m.textureIndex >= 0 && static_cast<size_t>(m.textureIndex) < m_Textures.Count() &&
+            m_Textures.Data()[m.textureIndex].Valid())
         {
-            material.texture = &m_Textures[static_cast<size_t>(m.textureIndex)];
+            material.texture = &m_Textures.Data()[m.textureIndex];
         }
-        m_Materials.push_back(material);
+        m_Materials.Data()[mi] = material;
     }
-    if (m_Materials.empty())
-        m_Materials.push_back(Material3D{});  // a model with no materials still draws
 
-    for (const Submesh3D& sub : m_Submeshes)
+    for (size_t i = 0; i < m_Submeshes.Count(); ++i)
     {
-        if (sub.materialIndex >= m_Materials.size())
+        if (m_Submeshes.Data()[i].materialIndex >= m_Materials.Count())
             return Fail("a submesh names a material that is not there");
     }
 
@@ -241,21 +254,21 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     m_View.indexCount = header.indexCount;
     m_View.boundsMin = Deki::Vector3(header.boundsMin[0], header.boundsMin[1], header.boundsMin[2]);
     m_View.boundsMax = Deki::Vector3(header.boundsMax[0], header.boundsMax[1], header.boundsMax[2]);
-    m_View.vertices = m_Vertices.data();
-    m_View.indices = m_Indices.data();
-    m_View.submeshes = m_Submeshes.data();
-    m_View.submeshCount = static_cast<uint16_t>(m_Submeshes.size());
+    m_View.vertices = m_Vertices.Data();
+    m_View.indices = m_Indices.Data();
+    m_View.submeshes = m_Submeshes.Data();
+    m_View.submeshCount = static_cast<uint16_t>(m_Submeshes.Count());
     return true;
 }
 
 void MeshAsset::Clear()
 {
-    m_Vertices.clear();
-    m_Indices.clear();
-    m_Submeshes.clear();
-    m_TexturePixels.clear();
-    m_Textures.clear();
-    m_Materials.clear();
+    m_Vertices.Reset();
+    m_Indices.Reset();
+    m_Submeshes.Reset();
+    m_TexturePixels.Reset();
+    m_Textures.Reset();
+    m_Materials.Reset();
     m_View = Mesh3D{};
 }
 

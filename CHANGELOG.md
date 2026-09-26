@@ -37,6 +37,12 @@ alongside one that has them.
   project's Screen Fit, so meshes and sprites line up on every screen.
 
 ### Fixed
+- A mesh too big for a board's memory rebooted it: the loader read the file,
+  and the asset kept its vertices, indices and texture, in std::vectors on the
+  internal heap, which abort when full. They are Deki::Buffers now, the big
+  ones External (PSRAM where the board has it): a mesh that does not fit logs
+  "no room for ..." and does not load, and with PSRAM it loads there
+  (verified under QEMU: 201 KB external, 1 KB internal).
 - A firmware build has a Mesh loader. It was registered only by a static
   object in a file nothing referenced, which a static link drops;
   `Deki3D_InitSystem` (the package's system init) registers it now.

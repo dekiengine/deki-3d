@@ -30,11 +30,14 @@ void Deki3D_RegisterMeshLoader()
     // types the manager reloads fresh each time. Both are registered because
     // the packed-asset path on device does go through memory.
     auto loader = [](const char* path) -> void* {
-        std::vector<uint8_t> bytes;
-        if (!Deki::AssetManager::ReadWholeFile(path, bytes) || bytes.empty())
+        // The whole file, briefly, before it is parsed into the asset's own
+        // buffers: External, like them, not a std::vector on the internal
+        // heap, which a board without PSRAM could not fit and would reboot on.
+        Deki::Buffer<uint8_t> bytes;
+        if (!Deki::AssetManager::ReadWholeFile(path, bytes, Deki::Memory::External))
             return nullptr;
         auto* mesh = new MeshAsset();
-        if (mesh->LoadFromMemory(bytes.data(), bytes.size()))
+        if (mesh->LoadFromMemory(bytes.Data(), bytes.Count()))
             return mesh;
         delete mesh;
         return nullptr;
