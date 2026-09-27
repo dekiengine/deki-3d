@@ -33,8 +33,8 @@ alongside one that has them.
   and clip planes moved to `DekiRendering::CameraComponent`, which draws meshes
   when its projection is Perspective. The editor moves an old scene's values
   onto the camera when it loads it.
-- The field of view applies to the design area's shape and follows the
-  project's Screen Fit, so meshes and sprites line up on every screen.
+- The field of view is vertical on every screen, like the orthographic
+  camera's height, so meshes and sprites line up on every screen.
 
 ### Fixed
 - A firmware build drew no 3D: the mesh render pass registers from a static

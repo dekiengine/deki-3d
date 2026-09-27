@@ -2,7 +2,6 @@
 #include "Deki3DInit.h"
 
 #include "Mesh3DSettings.h"
-#include <deki/ScreenScale.h>
 #include "Math3D.h"
 #include "MeshComponent.h"
 
@@ -130,12 +129,9 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     if (!lens)
         return;
 
-    // Through the scene camera the field of view follows the project's Screen
-    // Fit, so the design shape's view survives on screens of other shapes.
-    const float fovDegrees = throughSceneCamera
-        ? Deki::ResolveVerticalFieldOfView(lens->fieldOfView, m_Width, m_Height)
-        : lens->fieldOfView;
-    const float fovY = fovDegrees * kPi / 180.0f;
+    // The field of view is vertical on every screen; a wider one sees more at
+    // the sides.
+    const float fovY = lens->fieldOfView * kPi / 180.0f;
 
 #ifdef DEKI_TRANSFORM_3D
     float camZ = cameraObject->GetWorldZ();
