@@ -8,7 +8,7 @@ breaking change bumps the minor across the editor, the engine and every
 package together, so a package with no changes of its own is still released
 alongside one that has them.
 
-## Unreleased
+## 0.17.0
 
 ### Added
 - A model's texture takes Max Size from its `.data` file (per target, like an
@@ -28,6 +28,7 @@ alongside one that has them.
   and the mesh file. The two standalone programs moved to `tests/standalone/`.
 
 ### Changed
+- `minEngine` 0.17.0. Reflection ABI 20: the package must be rebuilt.
 - **The scene camera holds the lens.** `Camera3DComponent` is now
   `Mesh3DSettings` (tiles, retro switches, light, threads); its field of view
   and clip planes moved to `DekiRendering::CameraComponent`, which draws meshes
