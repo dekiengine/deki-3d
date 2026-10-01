@@ -131,8 +131,8 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
         return false;
     }
     out.write(reinterpret_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.size()));
-    DEKI_LOG_EDITOR("Deki3D: compiled '%s' to %zu bytes",
-                    fs::path(absolutePath).filename().string().c_str(), blob.size());
+    DEKI_LOG_DEBUG("Deki3D: compiled '%s' to %zu bytes",
+                   fs::path(absolutePath).filename().string().c_str(), blob.size());
     return true;
 }
 
