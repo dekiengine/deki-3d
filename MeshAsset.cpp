@@ -2,6 +2,7 @@
 
 #include <deki/LogSystem.h>
 
+#include <cstdint>
 #include <cstring>
 
 namespace Deki3D
@@ -37,6 +38,19 @@ VertexLayout LayoutFor(uint16_t attributes, uint16_t stride)
         offset += static_cast<int16_t>(sizeof(uint32_t));
     }
     return layout;
+}
+
+/// The bytes one vertex with these attributes needs (LayoutFor's offsets).
+uint32_t VertexBytesFor(uint16_t attributes)
+{
+    uint32_t bytes = sizeof(float) * 3;
+    if (attributes & MeshAttribute_Normal)
+        bytes += sizeof(float) * 3;
+    if (attributes & MeshAttribute_UV)
+        bytes += sizeof(float) * 2;
+    if (attributes & MeshAttribute_Color)
+        bytes += sizeof(uint32_t);
+    return bytes;
 }
 
 /// The exponent of a power of two, or -1 when the value is not one.
@@ -102,8 +116,18 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     }
     if (header.vertexCount == 0 || header.indexCount == 0 || header.vertexStride == 0)
         return false;
+    // The stride has to hold the attributes it claims, and keep the floats in
+    // it 4-byte aligned: a short one read past the buffer, an odd one made
+    // unaligned float loads, which trap on Xtensa.
+    if (header.vertexStride < VertexBytesFor(header.attributes) || header.vertexStride % 4 != 0)
+        return Fail("its vertex stride does not fit its attributes");
 
-    const size_t vertexBytes = static_cast<size_t>(header.vertexCount) * header.vertexStride;
+    // In 64 bits: vertexCount * stride wrapped on a 32-bit board, giving a
+    // small buffer that every index then read past.
+    const uint64_t vertexBytes64 = static_cast<uint64_t>(header.vertexCount) * header.vertexStride;
+    if (vertexBytes64 > SIZE_MAX / 2)
+        return Fail("its vertex buffer is larger than this device can address");
+    const size_t vertexBytes = static_cast<size_t>(vertexBytes64);
     if (!m_Vertices.Allocate(vertexBytes, Deki::Memory::External))
         return Fail("no room for the vertex buffer");
     if (!cursor.Take(m_Vertices.Data(), vertexBytes))
@@ -184,7 +208,7 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     for (size_t i = 0; i < m_Submeshes.Count(); ++i)
     {
         const Submesh3D& sub = m_Submeshes.Data()[i];
-        if (static_cast<size_t>(sub.firstIndex) + sub.indexCount > m_Indices.Count())
+        if (static_cast<uint64_t>(sub.firstIndex) + sub.indexCount > m_Indices.Count())
             return Fail("a submesh runs past the index buffer");
     }
 
@@ -198,8 +222,12 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
         const int hShift = ShiftOf(t.height);
         const bool knownFormat = t.format <= static_cast<uint8_t>(TexelFormat::ALPHA8);
         const TexelFormat format = knownFormat ? static_cast<TexelFormat>(t.format) : TexelFormat::RGB565;
-        const size_t bytes = static_cast<size_t>(t.width) * t.height * TexelBytes(format);
-        const bool fits = static_cast<size_t>(t.byteOffset) + bytes <= m_TexturePixels.Count();
+        const uint64_t bytes = static_cast<uint64_t>(t.width) * t.height * TexelBytes(format);
+        // 64-bit, so offset + size cannot wrap past the check; and aligned for
+        // the 2- and 4-byte texel reads (Raster3D reads through uint16_t*).
+        const uint64_t texel = TexelBytes(format);
+        const bool aligned = (texel == 2 || texel == 4) ? (t.byteOffset % texel) == 0 : true;
+        const bool fits = aligned && static_cast<uint64_t>(t.byteOffset) + bytes <= m_TexturePixels.Count();
 
         if (knownFormat && wShift >= 0 && hShift >= 0 && bytes > 0 && fits)
         {
