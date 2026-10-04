@@ -1,15 +1,10 @@
-/**
- * @file Raster3DBench.cpp
- * @brief Correctness checks and timings for the software rasteriser.
- *
- * The timings are the point: everything downstream of the rasteriser was
- * planned against an assumed cost per pixel, and this replaces the assumption
- * with a measurement. It links nothing but the rasteriser, so it can run long
- * before the package has a component, an asset or a scene.
- *
- * Build (MSYS2 mingw64), from tests/standalone/:
- *   g++ -std=c++26 -O2 -I<engine>/include -I../.. -I../../.. Raster3DBench.cpp ../../Raster3D.cpp -o bench
- */
+// Correctness checks and timings for the software rasteriser.
+//
+// The timings measure the real cost per pixel and per triangle. It links only
+// the rasteriser, so it runs without a component, an asset or a scene.
+//
+// Build (MSYS2 mingw64), from tests/standalone/:
+//   g++ -std=c++26 -O2 -I<engine>/include -I../.. -I../../.. Raster3DBench.cpp ../../Raster3D.cpp -o bench
 
 #include "../../Raster3D.h"
 #include "../../Math3D.h"
@@ -57,8 +52,8 @@ MeshData MakeCube(int divisions)
 {
     MeshData mesh;
     // Six faces, each a grid of `divisions` quads a side. Winding is
-    // counter-clockwise seen from outside, which is what the rasteriser
-    // treats as front-facing.
+    // counter-clockwise seen from outside, which the rasteriser treats as
+    // front-facing.
     const Vector3 faceNormals[6] = { Vector3(0, 0, 1),  Vector3(0, 0, -1), Vector3(1, 0, 0),
                                      Vector3(-1, 0, 0), Vector3(0, 1, 0),  Vector3(0, -1, 0) };
     const Vector3 faceU[6] = { Vector3(1, 0, 0), Vector3(-1, 0, 0), Vector3(0, 0, -1),
@@ -215,9 +210,8 @@ void CorrectnessChecks()
 
     WritePpm("raster_depth.ppm", fb, w, h);
 
-    // Threading the fill must change the picture in no way at all. Tiles are
-    // independent, so this is the property that makes it safe rather than
-    // merely fast, and it is worth asserting rather than assuming.
+    // Threading the fill must not change the picture at all. Tiles are
+    // independent, so it should hold; assert it.
     {
         const int tw = 160, th = 120;
         MeshData mesh = MakeCube(6);
@@ -248,13 +242,11 @@ void CorrectnessChecks()
         Check(singleWritten == manyWritten, "and report the same pixel count");
         Check(singleWritten > 1000, "the comparison actually drew something");
 
-        // Changing the thread count after frames have already been drawn is
-        // ordinary: a scene's value arrives with its component, one frame
-        // after the first. It used to deadlock, because a worker created at
-        // that point saw a frame serial it had never seen, decided a frame was
-        // waiting for it and ran before it had been counted in. If this
-        // regresses the test hangs rather than fails, which is the honest
-        // signal for a deadlock.
+        // The thread count often changes after frames have been drawn: a
+        // scene's value arrives with its component, one frame after the
+        // first. A worker created then must not mistake an old frame for new
+        // work. If that breaks, the test hangs rather than fails, which is how
+        // a deadlock shows.
         {
             std::vector<uint16_t> target(static_cast<size_t>(tw) * th, 0);
             Raster3D rr;
@@ -275,9 +267,8 @@ void CorrectnessChecks()
         }
     }
 
-    // Bounds culling. The property that matters is that nothing visible is
-    // ever culled; skipping a mesh that is genuinely off-screen is the easy
-    // half.
+    // Bounds culling. What matters most is that nothing visible is culled;
+    // skipping an off-screen mesh is the easy half.
     {
         const int cw = 128, ch = 128;
         std::vector<uint16_t> onscreen(static_cast<size_t>(cw) * ch, 0);
@@ -303,9 +294,8 @@ void CorrectnessChecks()
         Raster3D b;
         b.BeginFrame(reinterpret_cast<uint8_t*>(withOffscreen.data()), cw, ch, Deki::ColorFormat::RGB565, c);
         b.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(0, 0, 0)), Mat4::Identity());
-        // Past each of the six planes. The far one has to clear 100 units
-        // measured from the camera at z = 4, not from the origin; -90 is
-        // still comfortably inside it.
+        // Past each of the six planes. The far one must clear 100 units from
+        // the camera at z = 4, not from the origin; -90 would still be inside.
         const Vector3 aside[] = { Vector3(-40, 0, 0), Vector3(40, 0, 0),   Vector3(0, -40, 0),
                                   Vector3(0, 40, 0),  Vector3(0, 0, -500), Vector3(0, 0, 40) };
         for (const Vector3& offset : aside)
@@ -460,8 +450,7 @@ int main()
     RasterConfig desktopTiles = device;
     desktopTiles.tileSize = 128;
 
-    // Threading the fill: the axis a dual-core microcontroller would use, and
-    // the one the desktop numbers below can actually measure.
+    // Threaded fill, as a dual-core microcontroller would use it.
     RasterConfig twoThreads = desktopTiles;
     twoThreads.threadCount = 2;
     RasterConfig fourThreads = desktopTiles;

@@ -1,11 +1,10 @@
-/**
- * @file MeshRoundTrip.cpp
- * @brief .obj text in, compiled blob out, MeshAsset back in, rasterised.
+/*
+ * .obj text in, compiled blob out, MeshAsset back in, rasterised.
  *
- * Checks the importer and the loader against each other without an editor, an
- * asset cache or a project, which is what makes a malformed-input case cheap
- * to write. The malformed cases matter more than the happy one: a mesh blob
- * is parsed on a device with no memory protection worth the name.
+ * Checks the importer and the loader against each other without an editor,
+ * an asset cache or a project, so malformed-input cases are cheap to write.
+ * Those cases matter most: a device parses mesh blobs with little memory
+ * protection.
  *
  * Build (MSYS2 mingw64), from tests/standalone/:
  *   g++ -std=c++26 -O2 -DDEKI_EDITOR -I<engine>/include -I../.. -I../../.. \
@@ -40,8 +39,8 @@ void Check(bool ok, const char* what)
     }
 }
 
-// A unit cube: eight corners, six quad faces, normals and texture
-// coordinates left out so the importer has to generate the normals.
+// A unit cube: eight corners, six quad faces, no normals or texture
+// coordinates, so the importer must generate the normals.
 const char* const kCubeObj = R"(# a cube
 v -1 -1  1
 v  1 -1  1
@@ -117,8 +116,8 @@ int main()
         Check(!m.LoadFromMemory(bad.data(), bad.size()), "a future version is refused");
     }
     {
-        // Point the first index past the end of the vertex buffer. Left
-        // unchecked this is an out-of-bounds read inside the span loop.
+        // Point the first index past the end of the vertex buffer, which
+        // would be an out-of-bounds read in the span loop.
         std::vector<uint8_t> bad = blob;
         MeshFileHeader h{};
         std::memcpy(&h, bad.data(), sizeof(h));
@@ -138,8 +137,8 @@ int main()
     std::printf("\nTextures\n");
     {
         // A material library on disk naming an image, and a decoder standing
-        // in for the editor's. The image is 12x6, so the importer has to
-        // reduce it to the nearest powers of two below that, 8x4.
+        // in for the editor's. The image is 12x6, so the importer must reduce
+        // it to the powers of two below, 8x4.
         const fs::path dir = fs::temp_directory_path() / "deki-3d-texture-test";
         fs::remove_all(dir);
         fs::create_directories(dir);
@@ -199,9 +198,9 @@ int main()
 
     std::printf("\nSeveral materials\n");
     {
-        // Three groups: one textured red, one textured with the SAME image,
-        // one with only a diffuse colour. A real model looks like this, and
-        // until now every group drew with the first group's texture.
+        // Three groups, as in a real model: one textured red, one textured
+        // with the same image, one with only a diffuse colour. Each group
+        // must keep its own material, not take the first group's texture.
         const fs::path dir = fs::temp_directory_path() / "deki-3d-multimat-test";
         fs::remove_all(dir);
         fs::create_directories(dir);
@@ -255,8 +254,8 @@ int main()
         if (m.MaterialCount() == 3)
         {
             const Material3D* mats = m.Materials();
-            // Submeshes are emitted in usemtl order, so material indices
-            // follow the order the names were first seen.
+            // Submeshes come in usemtl order, so material indices follow the
+            // order the names were first seen.
             const Material3D& red = mats[m.View().submeshes[0].materialIndex];
             const Material3D& alsoRed = mats[m.View().submeshes[1].materialIndex];
             const Material3D& plain = mats[m.View().submeshes[2].materialIndex];

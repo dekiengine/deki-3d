@@ -10,9 +10,9 @@ namespace Deki3D
 namespace
 {
 
-/// The vertex layout a given attribute mask describes. Offsets follow the
-/// order the compiler writes them in: position, normal, uv, colour, each
-/// present only when its bit is set.
+/// The vertex layout an attribute mask describes. Offsets follow the order
+/// the asset compiler writes: position, normal, uv, colour, each present only
+/// when its bit is set.
 VertexLayout LayoutFor(uint16_t attributes, uint16_t stride)
 {
     VertexLayout layout;
@@ -74,10 +74,9 @@ int ShiftOf(uint16_t value)
     return shift;
 }
 
-/// Reads a blob front to back, refusing to run off the end. Every field of
-/// the file goes through this, because a mesh is parsed on devices with no
-/// memory protection worth the name and a truncated asset has to fail
-/// cleanly rather than read whatever happens to follow it.
+/// Reads a blob front to back and refuses to run off the end. Every field of
+/// the file goes through this: devices have little memory protection, so a
+/// truncated asset must fail cleanly instead of reading whatever follows it.
 class Cursor
 {
 public:
@@ -138,16 +137,16 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     {
         return false;
     }
-    // The stride has to hold the attributes it claims, and keep the floats in
-    // it 4-byte aligned: a short one read past the buffer, an odd one made
-    // unaligned float loads, which trap on Xtensa.
+    // The stride must hold the attributes it claims and keep its floats 4-byte
+    // aligned: a short one reads past the buffer, and unaligned float loads
+    // trap on Xtensa.
     if (header.vertexStride < VertexBytesFor(header.attributes) || header.vertexStride % 4 != 0)
     {
         return Fail("its vertex stride does not fit its attributes");
     }
 
-    // In 64 bits: vertexCount * stride wrapped on a 32-bit board, giving a
-    // small buffer that every index then read past.
+    // In 64 bits: vertexCount * stride can wrap on a 32-bit board, giving a
+    // small buffer that indices then read past.
     const uint64_t vertexBytes64 = static_cast<uint64_t>(header.vertexCount) * header.vertexStride;
     if (vertexBytes64 > SIZE_MAX / 2)
     {
@@ -253,7 +252,7 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
         }
     }
 
-    // --- everything is present; now check that it all points somewhere real ---
+    // Everything is read; now check that every reference points inside it.
 
     for (size_t i = 0; i < m_Indices.Count(); ++i)
     {
@@ -304,8 +303,8 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
         }
         else
         {
-            // Left invalid rather than rejecting the file: one bad texture
-            // should cost its own material's texturing, not the whole model.
+            // Left invalid instead of rejecting the file: one bad texture
+            // costs only its material's texturing, not the whole model.
             DEKI_LOG_WARNING("MeshAsset: texture %ux%u (format %u) at %u is unusable; that material goes untextured",
                              static_cast<unsigned>(t.width), static_cast<unsigned>(t.height),
                              static_cast<unsigned>(t.format), static_cast<unsigned>(t.byteOffset));

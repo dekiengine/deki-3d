@@ -26,8 +26,8 @@ struct Vec2
     float u = 0, v = 0;
 };
 
-/// One corner of a face as .obj spells it: indices into the three source
-/// arrays, already resolved to zero-based. -1 means the file did not give it.
+/// One corner of a face: zero-based indices into the three source arrays.
+/// -1 means the file did not give that index.
 struct Corner
 {
     int position = -1;
@@ -48,8 +48,8 @@ struct Corner
     }
 };
 
-/// .obj indices are one-based and may be negative, meaning "counting back
-/// from the end of what has been declared so far".
+/// .obj indices are one-based and may be negative, meaning "count back from
+/// the end of what has been declared so far".
 bool ResolveIndex(int raw, size_t declared, int& out)
 {
     if (raw > 0)
@@ -100,8 +100,8 @@ bool ParseCorner(const std::string& token, size_t positions, size_t uvs, size_t 
     return true;
 }
 
-/// The largest power of two no bigger than `value`, capped so a stray 4K
-/// texture does not land whole on a microcontroller.
+/// The largest power of two no bigger than `value` or `cap`. The cap keeps a
+/// 4K texture from landing whole on a microcontroller.
 uint16_t FitPowerOfTwo(int value, int cap)
 {
     if (value > cap)
@@ -120,9 +120,9 @@ uint16_t FitPowerOfTwo(int value, int cap)
     return size;
 }
 
-/// Box-filter down to the target size, keeping 8-bit RGBA. Averaging rather
-/// than point sampling, because these textures are shrunk a long way and a
-/// point-sampled reduction aliases badly.
+/// Box-filters down to the target size, keeping 8-bit RGBA. Averages rather
+/// than point samples: these textures shrink a long way, and point sampling
+/// aliases badly.
 void ResampleRgba(const std::vector<uint8_t>& rgba, int srcW, int srcH, uint16_t dstW, uint16_t dstH,
                   std::vector<uint8_t>& out)
 {
@@ -163,8 +163,8 @@ void ResampleRgba(const std::vector<uint8_t>& rgba, int srcW, int srcH, uint16_t
     }
 }
 
-/// 8-bit RGBA texels into `format`. RGB565 truncates as it always has, so a
-/// model compiled for an RGB565 target stores exactly what it did before.
+/// Encodes 8-bit RGBA texels in `format`. RGB565 truncates rather than
+/// rounds; keep it so, or RGB565 builds change their stored texels.
 void EncodeTexels(const std::vector<uint8_t>& rgba, TexelFormat format, std::vector<uint8_t>& out)
 {
     const size_t count = rgba.size() / 4;
@@ -213,7 +213,7 @@ bool HasTransparentTexel(const std::vector<uint8_t>& rgba)
     return false;
 }
 
-/// What one `newmtl` block says that this pipeline can use.
+/// The parts of one `newmtl` block this pipeline uses.
 struct MtlEntry
 {
     std::string diffuseMap;  // map_Kd, as written
@@ -256,8 +256,8 @@ std::map<std::string, MtlEntry> ParseMaterialLibrary(const std::string& mtlText)
         }
         else if (keyword == "map_Kd")
         {
-            // Options such as "-s 1 1 1" may precede the filename, so the
-            // last token on the line is the one wanted.
+            // Options such as "-s 1 1 1" may precede the filename, so take
+            // the last token on the line.
             std::string token, last;
             while (ls >> token)
             {
@@ -285,8 +285,8 @@ std::map<std::string, MtlEntry> ParseMaterialLibrary(const std::string& mtlText)
         }
         else if (keyword == "d" || keyword == "Tr")
         {
-            // Anything not fully opaque gets the alpha test, which is the
-            // only transparency the span loop has.
+            // Anything not fully opaque gets the alpha test, the only
+            // transparency the span loop supports.
             float value = 1.0f;
             ls >> value;
             const float opacity = keyword == "d" ? value : 1.0f - value;
@@ -296,8 +296,8 @@ std::map<std::string, MtlEntry> ParseMaterialLibrary(const std::string& mtlText)
     return materials;
 }
 
-/// Join a base directory and a path written inside a model file. Those paths
-/// are relative to the model, and may use either separator.
+/// Joins a base directory and a path written inside a model file. Those
+/// paths are relative to the model and may use either separator.
 std::string ResolveRelative(const std::string& baseDirectory, const std::string& relative)
 {
     if (baseDirectory.empty())
@@ -466,8 +466,8 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                 break;
             }
 
-            // Fan triangulation: correct for the convex polygons .obj files
-            // carry in practice, and it preserves winding.
+            // Fan triangulation: correct for convex polygons, which is what
+            // .obj files hold in practice, and it keeps the winding.
             for (size_t i = 1; i + 1 < face.size(); ++i)
             {
                 indices.push_back(face[0]);
@@ -499,9 +499,8 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     const bool hadNormals = !normals.empty();
     if (!hadNormals)
     {
-        // Smooth normals: accumulate each face's normal onto its corners, then
-        // normalise. Vertices shared between faces end up averaged, which is
-        // what a model without normals almost always wants.
+        // Smooth normals: add each face's normal to its corners, then
+        // normalise, so vertices shared between faces get the average.
         for (size_t i = 0; i + 2 < indices.size(); i += 3)
         {
             const Vec3& a = outPositions[indices[i]];
@@ -537,9 +536,9 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
 
     // --- materials and their textures --------------------------------------
     //
-    // One entry per `usemtl` name the faces actually used, in the order the
-    // submeshes index them. A texture is decoded once per distinct image, so
-    // several materials sharing a map share the texture too.
+    // One entry per `usemtl` name the faces used, in the order the submeshes
+    // index them. Each distinct image is decoded once, so materials sharing a
+    // map share the texture.
     std::map<std::string, MtlEntry> library;
     if (!materialLibrary.empty())
     {
@@ -574,8 +573,8 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                 material.flags |= MeshMaterialAlphaTest;
             }
 
-            // No texture coordinates means nothing to sample with, so the
-            // image is not worth carrying.
+            // Without texture coordinates the image cannot be sampled, so it
+            // is left out.
             const std::string& map = found->second.diffuseMap;
             if (hasUVs && decodeImage && !map.empty())
             {

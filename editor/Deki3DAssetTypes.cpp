@@ -1,17 +1,13 @@
-/**
- * @file Deki3DAssetTypes.cpp
- * @brief Teaches the editor that .obj is a mesh, and compiles it.
- *
- * Two registrations. The AssetTypeEditor makes ".obj" resolve to the "Mesh"
- * type, which is what puts models in the asset browser and lets a
- * MeshComponent's asset picker offer them. The sync handler is the compile
- * step: it reads the source and writes the blob MeshAsset parses into the
- * project's asset cache, named by the asset's GUID, which is where the
- * runtime looks and what the device image packs.
- *
- * The parsing itself lives in ObjImporter, free of the editor, so it can be
- * tested without one.
- */
+// Registers .obj as a mesh asset in the editor and compiles it.
+//
+// The AssetTypeEditor maps ".obj" to the "Mesh" type, which puts models in
+// the asset browser and in a MeshComponent's asset picker. The sync handler
+// compiles: it reads the source and writes the blob MeshAsset parses into the
+// project's asset cache, named by the asset's GUID. The runtime reads it from
+// there and the device image packs it.
+//
+// The parsing lives in ObjImporter, which does not need the editor, so it can
+// be tested without one.
 
 #ifdef DEKI_EDITOR
 
@@ -85,8 +81,8 @@ Deki3D::TexelFormat ChooseTexelFormat(const TextureSettings& settings, const Ass
     return static_cast<Deki3D::TexelFormat>(static_cast<uint8_t>(f));
 }
 
-/// Compile one .obj as `target` stores it and write it to `outPath`. Failure
-/// is logged and writes nothing.
+/// Compiles one .obj as `target` stores it and writes it to `outPath`.
+/// Failure is logged and writes nothing.
 bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& target, const std::string& outPath)
 {
     std::ifstream in(absolutePath, std::ios::binary);
@@ -98,9 +94,9 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
     std::ostringstream text;
     text << in.rdbuf();
 
-    // The model's material library and its texture are named relative to the
-    // model itself, and decoding an image is the editor's job, so both are
-    // supplied here rather than reached for inside the parser.
+    // The material library and texture are named relative to the model, and
+    // decoding an image is the editor's job, so the parser gets both from
+    // here.
     const std::string baseDirectory = fs::path(absolutePath).parent_path().string();
     auto decodeImage = [](const std::string& imagePath, int& width, int& height, std::vector<uint8_t>& rgba)
     {
@@ -140,9 +136,9 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
     return true;
 }
 
-/// Compile one .obj into the cache, stored for the editor's target. Failure
-/// leaves no cache file, so the component's asset stays unresolved and the
-/// pass draws nothing rather than drawing something wrong.
+/// Compiles one .obj into the cache for the editor's target. Failure leaves
+/// no cache file, so the component's asset stays unresolved and the pass draws
+/// nothing rather than something wrong.
 void HandleObjSync(const std::string& absolutePath, const std::string& guid, const std::string& projectPath)
 {
     const AssetPipeline* pipeline = AssetPipeline::Instance();
@@ -153,18 +149,18 @@ void HandleObjSync(const std::string& absolutePath, const std::string& guid, con
         return;
     }
 
-    // The compiled blob lives in the cache under the source's own GUID, so
-    // point the asset manager at it. Without this the GUID resolves to the
-    // .obj text, and MeshAsset rejects that as not being a mesh.
+    // Point the asset manager at the compiled blob, cached under the source's
+    // GUID. Otherwise the GUID resolves to the .obj text, which MeshAsset
+    // rejects.
     if (auto* assets = Deki::AssetManager::Get())
     {
         assets->RegisterGuid(guid, guid);
     }
 }
 
-/// Re-point every already-compiled model at its cache entry. The sync handler
-/// above only runs when a source changes, so on a project that opens with its
-/// cache already warm nothing would register the GUIDs otherwise.
+/// Points every already-compiled model at its cache entry. The sync handler
+/// above runs only when a source changes, so a project that opens with a warm
+/// cache needs this to register its GUIDs.
 void RegisterCompiledMeshes(AssetPipeline* pipeline, const std::string& projectPath)
 {
     auto* assets = Deki::AssetManager::Get();
@@ -191,9 +187,9 @@ void RegisterCompiledMeshes(AssetPipeline* pipeline, const std::string& projectP
     }
 }
 
-// A static initialiser rather than work in the package entry point, so the
-// vtable of the AssetTypeEditor above stays stable across package rebuilds
-// (see the note in EditorExtension.h).
+// A static initialiser, not work in the package entry point, so the vtable of
+// the AssetTypeEditor above stays stable across package rebuilds (see the
+// note in EditorExtension.h).
 struct Deki3DAssetRegistrar
 {
     Deki3DAssetRegistrar()

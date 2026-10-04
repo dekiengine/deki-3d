@@ -1,17 +1,11 @@
 #pragma once
 
-/**
- * @file Deki3DPackage.h
- * @brief Umbrella include for deki-3d.
- *
- * Include this from outside the package. Headers inside it include
- * Deki3DAPI.h instead, so that including this one from a package header would
- * not re-enter the file being defined.
- *
- * Component headers are behind their feature's definition, so a build that
- * strips a feature does not name what it did not compile. See COMPATIBILITY.md
- * on stripping.
- */
+// Umbrella include for deki-3d. Include this from outside the package; headers
+// inside it include Deki3DAPI.h instead, to avoid a circular include.
+//
+// Component headers sit behind their feature's define, so a build that strips
+// a feature does not name what it did not compile. See COMPATIBILITY.md on
+// stripping.
 
 #include "Deki3DAPI.h"
 

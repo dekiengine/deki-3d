@@ -9,11 +9,10 @@ namespace Deki3D
 {
 
 /// How the 3D pass draws: tile size, the retro switches, the light and the fill
-/// threads. The projection itself belongs to the scene's camera
-/// (DekiRendering::CameraComponent with Projection = Perspective); this used to
-/// be Camera3DComponent and carried the field of view too, which moved there so
-/// one camera holds the whole view. Put one anywhere in the scene, usually on
-/// the camera. Without one the pass uses the values below as they stand.
+/// threads. The projection belongs to the scene's camera
+/// (DekiRendering::CameraComponent with Projection = Perspective). Put one
+/// anywhere in the scene, usually on the camera. Without one the pass uses the
+/// defaults below.
 DEKI_CATEGORY("3D")
 DEKI_DESCRIPTION("How the 3D pass draws: tiles, texture and vertex switches, light and threads.")
 DEKI_FORMER_NAME("Deki3D::Camera3DComponent")

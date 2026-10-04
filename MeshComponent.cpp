@@ -13,8 +13,8 @@ namespace
 using Deki3D::Submesh3D;
 using Deki3D::VertexPNTC;
 
-/// The arrays a built primitive owns. Held behind a void* in the component so
-/// the header does not have to name it.
+/// The arrays a built primitive owns. The component holds it behind a void*
+/// so the header does not have to name it.
 struct PrimitiveStorage
 {
     std::vector<VertexPNTC> vertices;
@@ -38,8 +38,8 @@ void AddQuad(PrimitiveStorage& s, const Deki::Vector3& origin, const Deki::Vecto
         v.color = 0xFFFFFFFFu;
         s.vertices.push_back(v);
     }
-    // Counter-clockwise seen from the side the normal points at, which is
-    // what the rasteriser treats as front-facing.
+    // Counter-clockwise seen from the side the normal points at, which the
+    // rasteriser treats as front-facing.
     const uint16_t quad[6] = { base, static_cast<uint16_t>(base + 1), static_cast<uint16_t>(base + 2),
                                base, static_cast<uint16_t>(base + 2), static_cast<uint16_t>(base + 3) };
     s.indices.insert(s.indices.end(), quad, quad + 6);
@@ -107,17 +107,15 @@ MeshComponent::~MeshComponent()
 
 const Deki3D::Mesh3D* MeshComponent::Resolve() const
 {
-    // An assigned asset wins. AssetRef loads lazily, so this returns null for
-    // the frames between the scene opening and the asset arriving; the pass
-    // simply draws nothing until then.
+    // An assigned asset wins. AssetRef loads lazily, so this returns null
+    // until the asset arrives, and the pass draws nothing until then.
     if (mesh.HasGuid())
     {
         const Deki3D::MeshAsset* asset = mesh.Get();
         if (!asset)
         {
-            // Said once: a mesh that never arrives would otherwise say nothing
-            // at all, and an object silently missing from a scene is a long
-            // hunt. Repeating it every frame would drown the log.
+            // Logged once, so a mesh that never arrives is not silently
+            // missing, without flooding the log every frame.
             static bool s_Reported = false;
             if (!s_Reported)
             {

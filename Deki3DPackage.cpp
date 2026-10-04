@@ -1,11 +1,6 @@
-/**
- * @file Deki3DPackage.cpp
- * @brief Package entry point for deki-3d.
- *
- * Exports the standard Deki plugin interface so the editor can load
- * deki-3d.dll and register its components. For a linked DLL,
- * Deki3DEnsureRegistered() is what triggers the static initialisers.
- */
+// Package entry point for deki-3d. Exports the standard Deki plugin interface
+// so the editor can load deki-3d.dll and register its components. For a linked
+// DLL, Deki3DEnsureRegistered() triggers the static initialisers.
 
 #include "Deki3DPackage.h"
 
@@ -21,8 +16,6 @@ namespace Deki3D
 {
 
 #ifdef DEKI_EDITOR
-
-// Auto-generated registration helpers.
 
 static bool s_Deki3DRegistered = false;
 
@@ -84,9 +77,8 @@ extern "C"
         Deki3DEnsureRegistered();
     }
 
-    // deki-3d draws no editor UI of its own, so it links no ImGui and shares no
-    // ImGui context. Its component inspectors are drawn by the editor via
-    // reflection.
+    // No ImGui context export: deki-3d draws no editor UI of its own. The
+    // editor draws its component inspectors through reflection.
 
     DEKI_3D_API const char* Deki3DGetName(void)
     {

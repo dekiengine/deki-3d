@@ -12,10 +12,9 @@
 namespace Deki3D
 {
 
-/// Which built-in shape to draw. Primitives exist so a scene can have 3D in
-/// it before the mesh asset pipeline does, and they stay afterwards because
-/// a box and a plane are what most blocking-out needs. Mesh assets arrive as
-/// a separate property, not as another entry here.
+/// Which built-in shape to draw when no mesh asset is assigned. A box and a
+/// plane cover most blocking-out. Mesh assets are a separate property, not an
+/// entry here.
 enum class MeshPrimitive : uint8_t
 {
     Cube = 0,
@@ -55,18 +54,17 @@ public:
     DEKI_EXPORT
     bool doubleSided = false;
 
-    /// The assigned mesh asset once it has loaded, or null while it has not
-    /// or when a primitive is being drawn. The pass reads its material table.
+    /// The assigned mesh asset once it has loaded; null before that or when a
+    /// primitive is drawn. The pass reads its material table.
     const Deki3D::MeshAsset* Asset() const;
 
     /// The geometry to draw this frame: the mesh asset when one is assigned
-    /// and loaded, otherwise the built-in primitive. Null when neither is
-    /// available, which is what a not-yet-loaded asset looks like.
+    /// and loaded, otherwise the built-in primitive. Null while an assigned
+    /// asset has not loaded.
     const Deki3D::Mesh3D* Resolve() const;
 
-    /// RendererComponent's 2D path draws nothing: a mesh is not a quad of
-    /// pixels that can be blitted, so Mesh3DPass rasterises it instead. The
-    /// component still derives from RendererComponent because that is what
+    /// Returns false, so the 2D path draws nothing: Mesh3DPass rasterises the
+    /// mesh instead. The component derives from RendererComponent because that
     /// puts it in the renderer's sort, next to the sprites.
     bool RenderContent(const Deki::Object* owner, QuadBlit::Source& outSource, float& outPivotX, float& outPivotY,
                        uint8_t& outTintR, uint8_t& outTintG, uint8_t& outTintB, uint8_t& outTintA) override;

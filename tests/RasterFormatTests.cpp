@@ -1,10 +1,7 @@
-/**
- * @file RasterFormatTests.cpp
- * @brief deki-3d reads every texture format and writes every framebuffer
- *        format: the same textured quad comes out the same colours in each
- *        (within what the narrower formats can hold), alpha cuts out where the
- *        material asks, and version 3 mesh files still load.
- */
+// Tests that deki-3d reads every texture format and writes every framebuffer
+// format: the same textured quad comes out the same colours in each (within
+// what the narrower formats can hold), alpha cuts out where the material asks,
+// and version 3 mesh files still load.
 
 #include <gtest/gtest.h>
 
@@ -208,8 +205,7 @@ TEST(RasterFormats, EveryTextureIntoEveryFramebufferMatches)
     EXPECT_GT(covered, 0) << "the quad drew nothing";
 }
 
-// RGB565 into RGB565 is the path the rasteriser has always had: the colours
-// are the texture's 565 values exactly.
+// RGB565 into RGB565 writes the texture's 565 values exactly.
 TEST(RasterFormats, Rgb565IntoRgb565IsExact)
 {
     const std::vector<uint8_t> texels = Encode(SourceRgba(false), TexelFormat::RGB565);

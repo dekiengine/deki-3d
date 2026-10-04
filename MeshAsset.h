@@ -1,33 +1,28 @@
 #pragma once
 
-/**
- * @file MeshAsset.h
- * @brief The runtime form of a compiled mesh, and the binary it is compiled to.
- *
- * The editor turns a source model (.obj today) into one blob in the project's
- * asset cache, keyed by the asset's GUID; the device reads that blob and
- * nothing else. Geometry is bulk numeric data, so the compiled form is a flat
- * binary rather than JSON or MessagePack: the arrays are laid out exactly as
- * the rasteriser wants to read them, and loading is a header parse plus a few
- * copies.
- *
- * The layout is deliberately the one a GPU would ask for too, so a later
- * backend consumes the same file: one interleaved vertex buffer, one index
- * buffer, submeshes that are ranges over the indices, and a material table
- * those ranges point into.
- *
- * On disk, in order:
- *   header
- *   vertices        vertexCount * vertexStride
- *   indices         indexCount * uint16
- *   submeshes       submeshCount * MeshFileSubmesh
- *   materials       materialCount * MeshFileMaterial
- *   textures        textureCount * MeshFileTexture
- *   texture pixels  concatenated, each in its own format, addressed by offset
- *
- * Version 3 files have no format in the texture table (MeshFileTextureV3) and
- * every texture is RGB565; they still load.
- */
+// The runtime form of a compiled mesh, and the binary it is compiled to.
+//
+// The editor turns a source model (.obj) into one blob in the project's asset
+// cache, keyed by the asset's GUID; the device reads only that blob. Geometry
+// is bulk numeric data, so the blob is flat binary, not JSON or MessagePack:
+// the arrays are laid out as the rasteriser reads them, and loading is a
+// header parse plus a few copies.
+//
+// The layout is also what a GPU asks for, so a GPU backend can read the same
+// file: one interleaved vertex buffer, one index buffer, submeshes that are
+// ranges over the indices, and a material table those ranges point into.
+//
+// On disk, in order:
+//   header
+//   vertices        vertexCount * vertexStride
+//   indices         indexCount * uint16
+//   submeshes       submeshCount * MeshFileSubmesh
+//   materials       materialCount * MeshFileMaterial
+//   textures        textureCount * MeshFileTexture
+//   texture pixels  concatenated, each in its own format, addressed by offset
+//
+// Version 3 files have no format in the texture table (MeshFileTextureV3) and
+// every texture is RGB565; they still load.
 
 #include "Deki3DAPI.h"
 #include "Mesh3D.h"
@@ -42,7 +37,7 @@ namespace Deki3D
 constexpr uint16_t kMeshFileVersion = 4;
 constexpr uint16_t kMeshFileOldestVersion = 3;
 
-/// File header. Little-endian, which every target this engine runs on is.
+/// File header. Little-endian, like every target the engine runs on.
 struct MeshFileHeader
 {
     char magic[4];        // "DMSH"
@@ -59,8 +54,8 @@ struct MeshFileHeader
     float boundsMax[3];
 };
 
-/// A draw range. Matches Submesh3D, but spelled separately so the on-disk
-/// layout cannot drift when the runtime struct is rearranged.
+/// A draw range. Matches Submesh3D but is declared separately, so changing
+/// the runtime struct cannot change the file layout.
 struct MeshFileSubmesh
 {
     uint32_t firstIndex;
@@ -109,7 +104,7 @@ enum MeshAttribute : uint16_t
     MeshAttributeColor = 1 << 3,
 };
 
-/// A loaded mesh. Owns its buffers; `View()` hands the rasteriser a
+/// A loaded mesh. Owns its buffers. `View()` gives the rasteriser a
 /// non-owning Mesh3D over them, and `Materials()` the array its submeshes
 /// index into.
 class DEKI_3D_API MeshAsset
@@ -118,7 +113,7 @@ public:
     /// What AssetRef<MeshAsset> asks the AssetManager for.
     static constexpr const char* kAssetTypeName = "Mesh";
 
-    /// Parse a compiled blob. Returns false and leaves the asset empty on a
+    /// Parses a compiled blob. Returns false and leaves the asset empty on a
     /// bad magic, an unknown version, or anything that does not fit.
     bool LoadFromMemory(const uint8_t* data, size_t size);
 
@@ -137,15 +132,15 @@ public:
 
 private:
     void Clear();
-    /// Log why, empty everything, and return false. A half-parsed mesh must
-    /// never be left reachable.
+    /// Logs why, empties everything, and returns false. A half-parsed mesh
+    /// must never be left reachable.
     bool Fail(const char* why);
 
-    // Through the engine's memory, sized by the file: a size that does not
-    // fit fails the load with a log line instead of aborting the board. The
-    // big, file-sized ones (vertices, indices, texture pixels) are External,
-    // which is PSRAM where the board has it and the one heap where it does
-    // not; the small tables are Internal.
+    // Engine memory, sized by the file: a size that does not fit fails the
+    // load with a log line instead of aborting the board. The big buffers
+    // (vertices, indices, texture pixels) are External, which is PSRAM where
+    // the board has it and the one heap where it does not; the small tables
+    // are Internal.
     Deki::Buffer<uint8_t> m_Vertices;
     Deki::Buffer<uint16_t> m_Indices;
     Deki::Buffer<Submesh3D> m_Submeshes;
@@ -155,7 +150,7 @@ private:
     Mesh3D m_View;
 };
 
-/// Register the "Mesh" loader with the engine's AssetManager. Called from a
+/// Registers the "Mesh" loader with the engine's AssetManager. Called from a
 /// static initialiser in MeshAssetLoader.cpp and from Deki3DInitSystem();
 /// safe to call more than once.
 DEKI_3D_API void Deki3DRegisterMeshLoader();

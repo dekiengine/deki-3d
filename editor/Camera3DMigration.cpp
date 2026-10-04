@@ -1,15 +1,10 @@
-/**
- * @file Camera3DMigration.cpp
- * @brief Moves a pre-0.18 Camera3DComponent's lens onto the scene camera.
- *
- * Before 0.18 the perspective projection lived on Camera3DComponent, beside the
- * 2D camera. One camera now holds the whole view (Projection, field of view,
- * clip planes) and the old component stays as Mesh3DSettings with the rest. On
- * an object that has both, the field of view and clip planes move to the
- * camera, which becomes Perspective; a key the old file left out had the old
- * component's default, so that default is what moves. The next save writes
- * the new shape.
- */
+// Scene migration for files older than 0.18, where Camera3DComponent held the
+// perspective lens beside the 2D camera. Now one camera holds the whole view
+// (Projection, field of view, clip planes) and the old component becomes
+// Mesh3DSettings with the rest. On an object with both, the field of view and
+// clip planes move to the camera, which becomes Perspective; a key missing
+// from the old file moves as the old component's default. The next save
+// writes the new shape.
 
 #ifdef DEKI_EDITOR
 
@@ -66,8 +61,8 @@ void MigrateCamera3D(nlohmann::json& components)
 
     if (!camera)
     {
-        // The lens has nowhere to go on this object. Drop it rather than keep
-        // keys Mesh3DSettings no longer has, and say which scene camera to set.
+        // No camera on this object to take the lens. Drop the keys
+        // Mesh3DSettings does not have, and tell the user to set the camera.
         if (oldProps.contains("fieldOfView") || oldProps.contains("nearPlane") || oldProps.contains("farPlane"))
         {
             DEKI_LOG_WARNING("A Camera3DComponent on an object without a camera became Mesh3DSettings; set the "

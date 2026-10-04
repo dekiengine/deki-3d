@@ -1,10 +1,8 @@
 #pragma once
 
-// Tiny header that defines only DEKI_3D_API. Package headers include
-// this instead of Deki3DPackage.h to avoid a circular include
-// (Deki3DPackage.h is the umbrella include for external consumers and
-// pulls in every header of the package, so including it from one of them would
-// re-enter the file currently being defined).
+// Defines only DEKI_3D_API. Package headers include this, not
+// Deki3DPackage.h: that umbrella header pulls in every header of the
+// package, so including it from one of them would be circular.
 
 #ifdef DEKI_EDITOR
 #ifdef _WIN32

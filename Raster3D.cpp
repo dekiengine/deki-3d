@@ -17,9 +17,9 @@ namespace
 constexpr int kSubBits = 4;
 constexpr int kSubScale = 1 << kSubBits;
 
-// Depth is 24.8 over a 16-bit depth range. 16 fractional bits would put the
-// accumulator past INT32_MAX at the far plane; eight is far more than the
-// depth buffer can resolve anyway.
+// Depth is 24.8 over a 16-bit depth range. 16 fractional bits would push the
+// accumulator past INT32_MAX at the far plane; eight is already more than the
+// depth buffer can resolve.
 constexpr int kDepthFrac = 8;
 constexpr int32_t kDepthMax = 0xFFFF;
 
@@ -56,7 +56,7 @@ inline uint16_t To565(uint32_t rgba)
     return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
 
-/// Scale an RGB565 pixel by shade in 0..32, two multiplies rather than three.
+/// Scales an RGB565 pixel by shade in 0..32, with two multiplies, not three.
 inline uint16_t Shade565(uint16_t c, uint32_t shade)
 {
     const uint32_t rb = ((static_cast<uint32_t>(c) & 0xF81Fu) * shade >> 5) & 0xF81Fu;
@@ -65,8 +65,8 @@ inline uint16_t Shade565(uint16_t c, uint32_t shade)
 }
 
 /// Plane gradients of a screen-linear attribute across a triangle. invW, z,
-/// u/w and v/w are all linear in screen space, which is the whole reason the
-/// span loop can step them with adds.
+/// u/w and v/w are all linear in screen space, which is why the span loop can
+/// step them with adds.
 struct Gradient
 {
     float dx = 0.0f;
@@ -89,18 +89,16 @@ inline float Eval(const Gradient& g, float dxFromV0, float dyFromV0)
     return g.at0 + g.dx * dxFromV0 + g.dy * dyFromV0;
 }
 
-/// Is the mesh's bounding box wholly outside the view?
+/// True when the mesh's bounding box is wholly outside the view.
 ///
-/// The eight corners go to clip space and each of the six planes is asked
-/// whether every corner failed it. That test is conservative in the right
-/// direction: a box straddling two planes without touching the frustum is
-/// not culled, but nothing visible is ever culled, which is the property
-/// that matters. It costs eight matrix transforms against the thousands the
-/// mesh would otherwise cost, so it pays for itself on the second triangle.
+/// Moves the eight corners to clip space and checks whether all of them fail
+/// one of the six planes. Conservative: a box straddling two planes without
+/// touching the frustum is kept, but nothing visible is ever culled. Eight
+/// transforms, against the thousands the mesh would cost.
 bool BoundsOutsideFrustum(const Mesh3D& mesh, const Deki::Mat4& mvp)
 {
-    // A mesh whose bounds were never filled in has min == max == 0, and
-    // culling on that would hide it whenever the origin left the view.
+    // A mesh without bounds has min == max == 0; culling on that would hide
+    // it whenever the origin left the view.
     if (mesh.boundsMin.x > mesh.boundsMax.x || mesh.boundsMin.y > mesh.boundsMax.y ||
         mesh.boundsMin.z > mesh.boundsMax.z)
     {
@@ -190,7 +188,7 @@ enum class TexKind
     ALPHA8
 };
 
-/// Scale 8-bit channels by shade in 0..32, as Shade565 does for a 565 pixel.
+/// Scales 8-bit channels by shade in 0..32, as Shade565 does for a 565 pixel.
 inline void Shade8(uint8_t& r, uint8_t& g, uint8_t& b, uint32_t shade)
 {
     r = static_cast<uint8_t>((r * shade) >> 5);
@@ -198,14 +196,14 @@ inline void Shade8(uint8_t& r, uint8_t& g, uint8_t& b, uint32_t shade)
     b = static_cast<uint8_t>((b * shade) >> 5);
 }
 
-/// Fill one span; returns how many pixels it wrote.
+/// Fills one span and returns how many pixels it wrote.
 ///
-/// The RGB565 framebuffer with a flat, palette or RGB565 texture is exactly
-/// the loop this rasteriser has always had (565 arithmetic, magenta holes):
-/// the RGB565 device path must not change a pixel. Everything else reads
-/// texels into 8-bit channels and writes them in the framebuffer's format
-/// through the pixel helpers the 2D blitter uses. With alphaTest, a texel
-/// whose alpha is below half is a hole.
+/// An RGB565 framebuffer with a flat, palette or RGB565 texture uses 565
+/// arithmetic and magenta holes; this path must stay pixel-identical, since
+/// the RGB565 device output depends on it. Everything else reads texels into
+/// 8-bit channels and writes them in the framebuffer's format through the 2D
+/// blitter's pixel helpers. With alphaTest, a texel whose alpha is below half
+/// is a hole.
 template <TexKind K, Deki::ColorFormat F>
 uint32_t FillSpan(const SpanArgs& a)
 {
@@ -419,9 +417,9 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::
     m_TilesX = (width + tile - 1) / tile;
     m_TilesY = (height + tile - 1) / tile;
 
-    // Keep the capacity the last frame grew into. Reassigning these would
-    // free and reallocate one vector per tile every frame, which costs more
-    // than the rasterising does on light scenes.
+    // Keep the capacity the last frame grew into. Reassigning would free and
+    // reallocate one vector per tile every frame, which costs more than the
+    // rasterising on light scenes.
     m_Tris.clear();
     m_Materials.clear();
     const size_t tileCount = static_cast<size_t>(m_TilesX) * m_TilesY;
@@ -485,8 +483,8 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
     for (uint16_t s = 0; s < mesh.submeshCount; ++s)
     {
         const Submesh3D& sub = mesh.submeshes[s];
-        // Copy the material now: the span loop reads it in EndFrame, after
-        // this call has returned and the caller's own object may be gone.
+        // Copy the material now: the span loop reads it in EndFrame, when the
+        // caller's material may be gone.
         if (m_Materials.size() >= 0xFFFFu)
         {
             return;
@@ -494,8 +492,7 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
         const uint16_t materialIndex = static_cast<uint16_t>(m_Materials.size());
         m_Materials.push_back((materials && sub.materialIndex < materialCount) ? materials[sub.materialIndex]
                                                                                : Material3D{});
-        // By value: m_Materials can reallocate on the next submesh, and a
-        // pointer into it would not survive that.
+        // By value: m_Materials can reallocate on the next submesh.
         const ShadingModel shading = m_Materials.back().shading;
 
         const uint32_t end = sub.firstIndex + sub.indexCount;
@@ -537,8 +534,8 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
                 }
             }
 
-            // Shading is decided here, at vertex rate, so the span loop never
-            // touches a normal or a dot product.
+            // Lighting is computed here, at vertex rate, so the span loop
+            // needs no normals or dot products.
             if (shading == ShadingModel::VertexLit && layout.HasNormals())
             {
                 for (int k = 0; k < 3; ++k)
@@ -572,9 +569,9 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
 
 void Raster3D::EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c, uint16_t materialIndex)
 {
-    // Near-clip only. The left, right, top and bottom planes are handled by
-    // clamping the screen bounding box, which is cheaper and just as correct
-    // for a rasteriser that walks pixels rather than edges.
+    // Near-clip only. Clamping the screen bounding box handles the other
+    // four planes, which is cheaper and just as correct for a rasteriser that
+    // walks pixels rather than edges.
     const ClipVertex in[3] = { a, b, c };
     ClipVertex out[4];
     int outCount = 0;
@@ -670,9 +667,8 @@ void Raster3D::ProjectAndBin(const ClipVertex* poly, int count, uint16_t materia
         }
 
         // The filler's inside test is "all three edge functions >= 0", which
-        // needs positive area. Front faces are negative by the rule above, so
-        // they are the ones that get flipped; a double-sided back face is
-        // already positive and is left alone.
+        // needs positive area. Front faces are negative, so they get flipped;
+        // a double-sided back face is already positive.
         if (area2 < 0.0f)
         {
             std::swap(tri.v[1], tri.v[2]);
@@ -735,7 +731,7 @@ void Raster3D::StartWorkers(int count)
     m_WorkerStats.assign(static_cast<size_t>(count), RasterStats{});
     m_WorkerHasWork.assign(static_cast<size_t>(count), 0);
     // Every worker plus the calling thread. Set before any thread exists, so
-    // no worker ever reads a container the main thread is still growing.
+    // no worker reads a container the main thread is still growing.
     m_FillStride = count + 1;
     m_WorkersBusy = 0;
     m_Workers.reserve(static_cast<size_t>(count));
@@ -780,10 +776,9 @@ void Raster3D::WorkerLoop(int index)
             m_WorkerHasWork[static_cast<size_t>(index)] = 0;
         }
 
-        // Outside the lock: this is the whole point. Worker `index` takes
-        // every stride-th tile, and touches nothing another worker touches.
-        // The stride is a member fixed before any worker starts, rather than
-        // m_Workers.size(), which the main thread is still appending to.
+        // Outside the lock. Worker `index` takes every stride-th tile and
+        // touches nothing another worker touches. The stride is fixed before
+        // any worker starts; m_Workers.size() may still be growing.
         FillTileRange(index, m_FillStride, m_TileDepth[index].data(), m_WorkerStats[index]);
 
         {
@@ -812,9 +807,9 @@ void Raster3D::EndFrame()
         return;
     }
 
-    // Interleaved rather than contiguous: geometry clusters, so handing each
-    // thread a solid block of the screen gives one of them every empty tile
-    // and another all the work. Striding spreads a cluster across all of them.
+    // Interleaved, not contiguous: geometry clusters, so solid blocks of
+    // screen would give one thread the empty tiles and another all the work.
+    // Striding spreads a cluster across all threads.
     const int workerCount = static_cast<int>(m_Workers.size());
     for (RasterStats& s : m_WorkerStats)
     {
@@ -831,7 +826,7 @@ void Raster3D::EndFrame()
     }
     m_WorkReady.notify_all();
 
-    // The calling thread takes the last share rather than idling.
+    // The calling thread takes the last share instead of idling.
     FillTileRange(workerCount, m_FillStride, m_TileDepth[workerCount].data(), m_Stats);
 
     {
@@ -947,8 +942,8 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     const Gradient gZ = MakeGradient(v0.z, v1.z, v2.z, v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
     // Perspective-correct interpolates u/w and v/w, which are linear in screen
     // space, and divides back at the span endpoints. Affine interpolates u and
-    // v themselves, which are not linear in screen space: that error IS the
-    // PlayStation-era warp, and it grows with how much screen a triangle covers.
+    // v directly, which are not: that error is the PlayStation-era warp, and
+    // it grows with the triangle's screen size.
     const bool affine = !m_Config.perspectiveCorrect;
     auto vertexU = [](const ScreenVertex& v) { return v.invW != 0.0f ? v.uOverW / v.invW : 0.0f; };
     auto vertexV = [](const ScreenVertex& v) { return v.invW != 0.0f ? v.vOverW / v.invW : 0.0f; };
@@ -968,9 +963,8 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     const int vMask = textured ? (tex->height - 1) : 0;
     const int wShift = textured ? tex->widthShift : 0;
 
-    // Flat colour when there is no texture: vertex colour of the first vertex,
-    // modulated by the material tint. Per-vertex colour interpolation is a
-    // later refinement; nothing in the pipeline needs it yet.
+    // Flat colour when there is no texture: the first vertex's colour times
+    // the material tint. Vertex colours are not interpolated.
     const uint32_t tint = mat.tint;
     const uint32_t flatRgba = ((v0.color & 0xFF) * (tint & 0xFF) / 255) |
                               ((((v0.color >> 8) & 0xFF) * ((tint >> 8) & 0xFF) / 255) << 8) |
@@ -985,8 +979,8 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     {
         int64_t e0 = rowE0, e1 = rowE1, e2 = rowE2;
 
-        // Find the run of covered pixels on this scanline rather than testing
-        // every pixel of the bounding box.
+        // Find each run of covered pixels on this scanline, then fill it as
+        // spans.
         int spanStart = -1;
         for (int px = bMinX; px <= bMaxX; ++px)
         {
@@ -1067,9 +1061,9 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     const uint32_t shade =
                         lit ? static_cast<uint32_t>(std::min(32.0f, std::max(0.0f, v0.light * 32.0f))) : 32u;
 
-                    // Row bases, so the span indexes by x alone: the
-                    // multiply that turned a pixel into a tile offset was
-                    // costing more than the depth test it fed.
+                    // Row bases, so the span indexes by x alone: a per-pixel
+                    // multiply for the tile offset costs more than the depth
+                    // test it feeds.
                     SpanArgs span;
                     span.fbRow = m_Buffer + static_cast<size_t>(py) * m_Width * m_BytesPerPixel;
                     span.depthRow = tileDepth + static_cast<size_t>(py - tileOriginY) * tileStride - tileOriginX;
@@ -1103,9 +1097,7 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     runX = chunkEnd + 1;
                 }
 
-                // The run ended here; keep scanning for another. (This was an
-                // `if (!inside) ;` - a statement that did nothing either way,
-                // which GCC 15 rejects as an empty body.)
+                // The run ended here; keep scanning for another.
                 spanStart = -1;
             }
 

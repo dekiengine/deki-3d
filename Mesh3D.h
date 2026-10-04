@@ -1,23 +1,14 @@
 #pragma once
 
-/**
- * @file Mesh3D.h
- * @brief Geometry as a GPU would want it: a vertex buffer, an index buffer,
- *        and draw ranges.
- *
- * The shape here is deliberate. A software rasterizer would be happy with
- * arrays of structs and pointers between them; a GPU backend wants one
- * contiguous vertex buffer with a declared attribute layout, one index
- * buffer, and submeshes that are nothing more than (first index, count,
- * material) ranges. Since only the rasterizer is throwaway when a GPU
- * backend arrives, the data it consumes is written the GPU's way from the
- * start, and the span loop pays a little indirection at vertex rate for it.
- *
- * Attributes are float here. Quantising positions or dropping normals for a
- * small target is a decision the asset compiler makes per build, expressed
- * as a different VertexLayout over the same buffer, not a different runtime
- * type.
- */
+// Geometry as a GPU wants it: one vertex buffer with a declared attribute
+// layout, one index buffer, and submeshes that are (first index, count,
+// material) ranges. The software rasterizer reads the same shape, so a GPU
+// backend can take this data as it is; the span loop pays a little
+// indirection at vertex rate for that.
+//
+// Attributes are float here. Quantising positions or dropping normals for a
+// small target is a per-build choice of the asset compiler, expressed as a
+// different VertexLayout over the same buffer, not a different runtime type.
 
 #include <deki/Vector.h>
 
@@ -42,8 +33,7 @@ struct VertexLayout
     bool HasColors() const { return colorOffset >= 0; }
 };
 
-/// Position, normal, uv, colour. The layout a mesh gets when nothing smaller
-/// was asked for.
+/// Position, normal, uv, colour: the default vertex layout.
 struct VertexPNTC
 {
     Deki::Vector3 position;
@@ -63,9 +53,9 @@ inline VertexLayout LayoutPNTC()
     return l;
 }
 
-/// How a submesh is shaded. The portable set: every backend implements all of
-/// these, so content using them runs anywhere. A custom shader is a GPU-tier
-/// thing that sits above this enum, not inside it.
+/// How a submesh is shaded. Every backend implements all of these, so content
+/// using them runs anywhere. Custom shaders belong to the GPU tier, above
+/// this enum.
 enum class ShadingModel : uint8_t
 {
     Unlit = 0,      // texture and/or vertex colour, no lighting
@@ -73,8 +63,8 @@ enum class ShadingModel : uint8_t
     Flat = 2,       // lambert per triangle from the face normal
 };
 
-/// How a texture's pixels are laid out. Numbered as Deki's texture formats
-/// (Texture2D's), which is also what the mesh file stores.
+/// How a texture's pixels are laid out. Numbered like Texture2D's formats,
+/// which is also what the mesh file stores.
 enum class TexelFormat : uint8_t
 {
     RGB888 = 0,    // 3 bytes: R, G, B
@@ -126,8 +116,7 @@ struct Material3D
     bool alphaTest = false;  // discard texels the texture calls holes
 };
 
-/// A range of the index buffer drawn with one material, the software echo of
-/// a single draw call.
+/// A range of the index buffer drawn with one material, like one draw call.
 struct Submesh3D
 {
     uint32_t firstIndex = 0;
@@ -135,8 +124,8 @@ struct Submesh3D
     uint16_t materialIndex = 0;
 };
 
-/// The runtime form of a .mesh asset. Buffers are owned elsewhere (the asset
-/// loader), so this is a view and stays trivially copyable.
+/// The runtime form of a .mesh asset. The asset loader owns the buffers; this
+/// is a trivially copyable view of them.
 struct Mesh3D
 {
     const void* vertices = nullptr;

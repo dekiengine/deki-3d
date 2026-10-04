@@ -1,12 +1,8 @@
-/**
- * @file MeshAssetLoader.cpp
- * @brief Teaches the engine's AssetManager to load a compiled mesh.
- *
- * Separate from MeshAsset.cpp on purpose: parsing a blob is pure and can be
- * exercised without an engine, a project or a DLL, while this file is glue
- * that only means anything inside a running engine. Keeping them apart is
- * what lets the parser's malformed-input cases run in a plain test binary.
- */
+// Registers a loader for compiled meshes with the engine's AssetManager.
+//
+// Kept apart from MeshAsset.cpp: the parser there is pure and its
+// malformed-input tests run in a plain test binary, while this file is glue
+// that needs a running engine.
 
 #include "MeshAsset.h"
 #include "Deki3DInit.h"
@@ -27,15 +23,15 @@ void Deki3DRegisterMeshLoader()
     }
     s_Registered = true;
 
-    // The path loader is the one that actually runs. A cacheable type never
-    // reaches the memory loader through LoadByGuidAndType: that branch is for
-    // types the manager reloads fresh each time. Both are registered because
-    // the packed-asset path on device does go through memory.
+    // LoadByGuidAndType uses the path loader for a cacheable type like this
+    // one; its memory branch is for types reloaded fresh each time. The memory
+    // loader is still registered because packed assets on a device load
+    // through memory.
     auto loader = [](const char* path) -> void*
     {
-        // The whole file, briefly, before it is parsed into the asset's own
-        // buffers: External, like them, not a std::vector on the internal
-        // heap, which a board without PSRAM could not fit and would reboot on.
+        // The whole file, held briefly until it is parsed into the asset's
+        // buffers. External like them: the internal heap of a board without
+        // PSRAM cannot fit it, and the board would reboot.
         Deki::Buffer<uint8_t> bytes;
         if (!Deki::AssetManager::ReadWholeFile(path, bytes, Deki::Memory::External))
         {
@@ -66,9 +62,8 @@ void Deki3DRegisterMeshLoader()
 
 namespace
 {
-// A static registrar rather than a call from the entry point: the device
-// build has no DekiPluginInit, and this is the pattern deki-2d's sprite and
-// animation loaders already use.
+// A static registrar, not a call from the entry point: the device build has
+// no DekiPluginInit. deki-2d's sprite and animation loaders do the same.
 struct MeshLoaderRegistrar
 {
     MeshLoaderRegistrar() { Deki3DRegisterMeshLoader(); }

@@ -5,8 +5,7 @@
 
 #include "deki-rendering/RenderPass.h"
 
-// The 2D camera the renderer is drawing through; its owner may carry the 3D
-// settings, or the scene may.
+// The camera the renderer draws through.
 namespace DekiRendering
 {
 class CameraComponent;
@@ -17,22 +16,18 @@ namespace Deki3D
 /// Draws every MeshComponent the renderer hands it, into the same framebuffer
 /// the 2D content uses.
 ///
-/// A pass rather than a renderer, deliberately. The engine's render system
-/// holds exactly one renderer, chosen by name from project settings, so a
-/// separate 3D renderer would mean giving up 2D entirely. As a pass, a mesh
-/// is simply another item in the renderer's existing sort: 3D draws at its
-/// sorting position and a 2D interface composites on top of it for free, and
-/// the camera, clipping and dirty-rectangle tracking keep working untouched.
+/// A pass, not a renderer: the engine holds exactly one renderer, chosen in
+/// project settings, so a separate 3D renderer would rule out 2D. As a pass, a
+/// mesh is one more item in the renderer's sort. It draws at its sorting
+/// position, 2D interface composites on top, and the camera, clipping and
+/// dirty rectangles keep working.
 ///
-/// Nothing reaches the framebuffer until the tiles are filled, which is what
-/// lets the depth buffer be one tile instead of one screen. That deferral is
-/// also why the pass watches the sort: meshes accumulate while consecutive
-/// mesh objects arrive, and the batch is flushed in PreExecute just before
-/// the first 2D object that sorts after them draws. So a mesh group lands at
-/// its own place in the sort, an interface above it composites on top, and a
-/// backdrop below it stays behind. Consecutive meshes share one depth buffer
-/// and resolve against each other; a 2D object between two meshes splits them
-/// into two batches, as its sorting order asks for.
+/// Nothing reaches the framebuffer until the tiles are filled, which lets the
+/// depth buffer be one tile instead of one screen. So the pass batches
+/// consecutive mesh objects and flushes them in PreExecute just before the
+/// next 2D object draws. Consecutive meshes share one depth buffer and resolve
+/// against each other; a 2D object between two meshes splits them into two
+/// batches, as its sorting order asks.
 class DEKI_3D_API Mesh3DPass : public DekiRendering::RenderPass
 {
 public:
@@ -50,16 +45,15 @@ public:
     void EndFrame(DekiRendering::RenderContext& ctx) override;
 
 private:
-    /// Fill the tiles for everything binned so far and start a fresh batch.
+    /// Fills the tiles for everything binned so far and starts a fresh batch.
     void Flush();
-    /// Work out the projection, once per frame, when the first object arrives.
+    /// Works out the projection, once per frame, when the first object arrives.
     void Start(const Deki::Object* sceneObject);
 
     Raster3D m_Raster;
     RasterConfig m_Config;
-    // Rebuilt per object from the mesh's own materials and the component's
-    // overrides. A member so a scene full of meshes does not allocate a
-    // vector per object per frame.
+    // Rebuilt per object from the mesh's materials and the component's
+    // overrides. A member, so its storage is reused across objects and frames.
     std::vector<Material3D> m_Materials;
     Deki::Mat4 m_ViewProjection;
 

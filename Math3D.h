@@ -1,23 +1,18 @@
 #pragma once
 
-/**
- * @file Math3D.h
- * @brief The matrix operations the engine's Mat4 does not carry yet.
- *
- * Deki's Mat4 (deki/Vector.h) is column-major, m[column][row], and ships with
- * Identity and Ortho only. Everything a perspective pipeline needs lives here
- * until it earns a place in the engine header.
- *
- * Conventions, chosen to match OpenGL so a GPU backend can hand these same
- * matrices to a driver without transposing anything:
- *   - right-handed world, camera looks down -Z
- *   - clip space x, y in [-1, 1], z in [-1, 1]
- *   - Mul(a, b) applies b first, then a
- *
- * Rotation composes X then Y then Z (R = Rz * Ry * Rx), which is the order
- * COMPATIBILITY.md fixes for Deki objects, and `rotation` is the Z angle.
- * Angles are radians.
- */
+// Matrix operations for a perspective pipeline, on top of the engine's Mat4
+// (deki/Vector.h), which is column-major, m[column][row], and has only
+// Identity and Ortho.
+//
+// Conventions match OpenGL, so a GPU backend can hand these matrices to a
+// driver without transposing:
+//   - right-handed world, camera looks down -Z
+//   - clip space x, y in [-1, 1], z in [-1, 1]
+//   - Mul(a, b) applies b first, then a
+//
+// Rotation composes X then Y then Z (R = Rz * Ry * Rx), the order
+// COMPATIBILITY.md fixes for Deki objects, and `rotation` is the Z angle.
+// Angles are radians.
 
 #include <deki/Vector.h>
 
@@ -48,8 +43,8 @@ inline Mat4 Mul(const Mat4& a, const Mat4& b)
     return out;
 }
 
-/// A point through the matrix, with the w it lands on. w is what perspective
-/// division needs, so the caller gets it rather than a silently divided point.
+/// Transforms a point and returns it undivided, with its w in `outW` for the
+/// caller's perspective division.
 inline Vector3 TransformPoint(const Mat4& m, const Vector3& p, float& outW)
 {
     const float x = m.m[0][0] * p.x + m.m[1][0] * p.y + m.m[2][0] * p.z + m.m[3][0];
@@ -59,9 +54,9 @@ inline Vector3 TransformPoint(const Mat4& m, const Vector3& p, float& outW)
     return Vector3(x, y, z);
 }
 
-/// A direction: the translation column is not applied. Correct for normals
-/// only while the matrix has uniform scale; non-uniform scale needs the
-/// inverse transpose, which the mesh path does on the CPU when it must.
+/// Transforms a direction, ignoring translation. Right for normals only under
+/// uniform scale; non-uniform scale needs the inverse transpose, which the
+/// mesh path computes on the CPU when it must.
 inline Vector3 TransformDirection(const Mat4& m, const Vector3& v)
 {
     return Vector3(m.m[0][0] * v.x + m.m[1][0] * v.y + m.m[2][0] * v.z,
