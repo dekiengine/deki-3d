@@ -36,7 +36,7 @@ namespace Deki3D
 class DEKI_3D_API Mesh3DPass : public DekiRendering::RenderPass
 {
 public:
-    static constexpr const char* RegistryName = "mesh3d";
+    static constexpr const char* kRegistryName = "mesh3d";
 
     uint32_t HookMask() const override
     {

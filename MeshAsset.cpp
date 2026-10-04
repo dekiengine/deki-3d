@@ -22,17 +22,17 @@ VertexLayout LayoutFor(uint16_t attributes, uint16_t stride)
     layout.positionOffset = offset;
     offset += static_cast<int16_t>(sizeof(float) * 3);
 
-    if (attributes & MeshAttribute_Normal)
+    if (attributes & MeshAttributeNormal)
     {
         layout.normalOffset = offset;
         offset += static_cast<int16_t>(sizeof(float) * 3);
     }
-    if (attributes & MeshAttribute_UV)
+    if (attributes & MeshAttributeUV)
     {
         layout.uvOffset = offset;
         offset += static_cast<int16_t>(sizeof(float) * 2);
     }
-    if (attributes & MeshAttribute_Color)
+    if (attributes & MeshAttributeColor)
     {
         layout.colorOffset = offset;
         offset += static_cast<int16_t>(sizeof(uint32_t));
@@ -44,15 +44,15 @@ VertexLayout LayoutFor(uint16_t attributes, uint16_t stride)
 uint32_t VertexBytesFor(uint16_t attributes)
 {
     uint32_t bytes = sizeof(float) * 3;
-    if (attributes & MeshAttribute_Normal)
+    if (attributes & MeshAttributeNormal)
     {
         bytes += sizeof(float) * 3;
     }
-    if (attributes & MeshAttribute_UV)
+    if (attributes & MeshAttributeUV)
     {
         bytes += sizeof(float) * 2;
     }
-    if (attributes & MeshAttribute_Color)
+    if (attributes & MeshAttributeColor)
     {
         bytes += sizeof(uint32_t);
     }
@@ -324,8 +324,8 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
         const MeshFileMaterial& m = fileMaterials.Data()[mi];
         Material3D material;
         material.tint = m.tint;
-        material.doubleSided = (m.flags & MeshMaterial_DoubleSided) != 0;
-        material.alphaTest = (m.flags & MeshMaterial_AlphaTest) != 0;
+        material.doubleSided = (m.flags & MeshMaterialDoubleSided) != 0;
+        material.alphaTest = (m.flags & MeshMaterialAlphaTest) != 0;
         if (m.textureIndex >= 0 && static_cast<size_t>(m.textureIndex) < m_Textures.Count() &&
             m_Textures.Data()[m.textureIndex].Valid())
         {

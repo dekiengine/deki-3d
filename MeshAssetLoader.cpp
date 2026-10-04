@@ -18,14 +18,14 @@
 namespace Deki3D
 {
 
-void Deki3D_RegisterMeshLoader()
+void Deki3DRegisterMeshLoader()
 {
-    static bool registered = false;
-    if (registered)
+    static bool s_Registered = false;
+    if (s_Registered)
     {
         return;
     }
-    registered = true;
+    s_Registered = true;
 
     // The path loader is the one that actually runs. A cacheable type never
     // reaches the memory loader through LoadByGuidAndType: that branch is for
@@ -61,29 +61,29 @@ void Deki3D_RegisterMeshLoader()
     };
     auto unloader = [](void* asset) { delete static_cast<MeshAsset*>(asset); };
 
-    Deki::AssetManager::RegisterLoader(MeshAsset::AssetTypeName, loader, unloader, memLoader);
+    Deki::AssetManager::RegisterLoader(MeshAsset::kAssetTypeName, loader, unloader, memLoader);
 }
 
 namespace
 {
 // A static registrar rather than a call from the entry point: the device
-// build has no DekiPlugin_Init, and this is the pattern deki-2d's sprite and
+// build has no DekiPluginInit, and this is the pattern deki-2d's sprite and
 // animation loaders already use.
 struct MeshLoaderRegistrar
 {
-    MeshLoaderRegistrar() { Deki3D_RegisterMeshLoader(); }
+    MeshLoaderRegistrar() { Deki3DRegisterMeshLoader(); }
 };
-static MeshLoaderRegistrar s_meshLoaderRegistrar;
+static MeshLoaderRegistrar s_MeshLoaderRegistrar;
 }  // namespace
 
 }  // namespace Deki3D
 
-void Deki3D_InitSystem()
+void Deki3DInitSystem()
 {
-    Deki3D::Deki3D_RegisterMeshLoader();
-    Deki3D_KeepMesh3DPass();
+    Deki3D::Deki3DRegisterMeshLoader();
+    Deki3DKeepMesh3DPass();
 }
 
-void Deki3D_ShutdownSystem()
+void Deki3DShutdownSystem()
 {
 }

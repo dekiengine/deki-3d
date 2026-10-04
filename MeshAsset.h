@@ -78,8 +78,8 @@ struct MeshFileMaterial
 
 enum MeshMaterialFlags : uint16_t
 {
-    MeshMaterial_DoubleSided = 1 << 0,
-    MeshMaterial_AlphaTest = 1 << 1,
+    MeshMaterialDoubleSided = 1 << 0,
+    MeshMaterialAlphaTest = 1 << 1,
 };
 
 /// Where one texture lives in the pixel blob. Both sides are powers of two so
@@ -103,10 +103,10 @@ struct MeshFileTextureV3
 
 enum MeshAttribute : uint16_t
 {
-    MeshAttribute_Position = 1 << 0,  // always set
-    MeshAttribute_Normal = 1 << 1,
-    MeshAttribute_UV = 1 << 2,
-    MeshAttribute_Color = 1 << 3,
+    MeshAttributePosition = 1 << 0,  // always set
+    MeshAttributeNormal = 1 << 1,
+    MeshAttributeUV = 1 << 2,
+    MeshAttributeColor = 1 << 3,
 };
 
 /// A loaded mesh. Owns its buffers; `View()` hands the rasteriser a
@@ -116,7 +116,7 @@ class DEKI_3D_API MeshAsset
 {
 public:
     /// What AssetRef<MeshAsset> asks the AssetManager for.
-    static constexpr const char* AssetTypeName = "Mesh";
+    static constexpr const char* kAssetTypeName = "Mesh";
 
     /// Parse a compiled blob. Returns false and leaves the asset empty on a
     /// bad magic, an unknown version, or anything that does not fit.
@@ -156,8 +156,8 @@ private:
 };
 
 /// Register the "Mesh" loader with the engine's AssetManager. Called from a
-/// static initialiser in MeshAssetLoader.cpp and from Deki3D_InitSystem();
+/// static initialiser in MeshAssetLoader.cpp and from Deki3DInitSystem();
 /// safe to call more than once.
-DEKI_3D_API void Deki3D_RegisterMeshLoader();
+DEKI_3D_API void Deki3DRegisterMeshLoader();
 
 }  // namespace Deki3D

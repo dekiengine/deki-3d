@@ -212,7 +212,7 @@ struct Deki3DAssetRegistrar
                                         { RegisterCompiledMeshes(pipeline, pipeline->GetProjectPath()); });
     }
 };
-static Deki3DAssetRegistrar s_deki3DAssetRegistrar;
+static Deki3DAssetRegistrar s_Deki3DAssetRegistrar;
 
 }  // namespace
 }  // namespace DekiEditor

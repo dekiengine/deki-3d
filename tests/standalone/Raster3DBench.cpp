@@ -172,8 +172,8 @@ void CorrectnessChecks()
 {
     std::printf("Correctness\n");
 
-    const int W = 64, H = 64;
-    std::vector<uint16_t> fb(static_cast<size_t>(W) * H, 0);
+    const int w = 64, h = 64;
+    std::vector<uint16_t> fb(static_cast<size_t>(w) * h, 0);
 
     RasterConfig cfg;
     cfg.tileSize = 16;
@@ -193,18 +193,18 @@ void CorrectnessChecks()
     Material3D mat;
     mat.shading = ShadingModel::Unlit;
 
-    const Mat4 proj = Perspective(1.0f, static_cast<float>(W) / H, 0.1f, 100.0f);
+    const Mat4 proj = Perspective(1.0f, static_cast<float>(w) / h, 0.1f, 100.0f);
     const Mat4 view = LookAt(Vector3(0, 0, 6), Vector3(0, 0, 0), Vector3(0, 1, 0));
     const Mat4 vp = Mul(proj, view);
 
     Raster3D r;
-    r.BeginFrame(reinterpret_cast<uint8_t*>(fb.data()), W, H, Deki::ColorFormat::RGB565, cfg);
+    r.BeginFrame(reinterpret_cast<uint8_t*>(fb.data()), w, h, Deki::ColorFormat::RGB565, cfg);
     // far first, so a working depth test is what puts red on top
     r.DrawMesh(far.View(), &mat, 1, Mul(vp, Translate(0, 0, -1.5f)), Mat4::Identity());
     r.DrawMesh(near.View(), &mat, 1, Mul(vp, Translate(0, 0, 1.5f)), Mat4::Identity());
     r.EndFrame();
 
-    const uint16_t center = fb[static_cast<size_t>(H / 2) * W + W / 2];
+    const uint16_t center = fb[static_cast<size_t>(h / 2) * w + w / 2];
     Check(center == To565Ref(0xFF0000FFu), "the nearer surface wins the depth test");
     Check(fb[0] == 0, "the background is left alone");
     Check(r.Stats().trianglesIn > 0 && r.Stats().pixelsWritten > 0, "geometry reached the framebuffer");
@@ -213,22 +213,22 @@ void CorrectnessChecks()
     // so the number of triangles surviving the clip is well under the total.
     Check(r.Stats().trianglesClipped < r.Stats().trianglesIn, "backfaces are culled before binning");
 
-    WritePpm("raster_depth.ppm", fb, W, H);
+    WritePpm("raster_depth.ppm", fb, w, h);
 
     // Threading the fill must change the picture in no way at all. Tiles are
     // independent, so this is the property that makes it safe rather than
     // merely fast, and it is worth asserting rather than assuming.
     {
-        const int TW = 160, TH = 120;
+        const int tw = 160, th = 120;
         MeshData mesh = MakeCube(6);
         Material3D m;
         m.shading = ShadingModel::VertexLit;
-        const Mat4 tvp = Mul(Perspective(1.05f, static_cast<float>(TW) / TH, 0.1f, 100.0f),
+        const Mat4 tvp = Mul(Perspective(1.05f, static_cast<float>(tw) / th, 0.1f, 100.0f),
                              LookAt(Vector3(0, 0, 3.2f), Vector3(0, 0, 0), Vector3(0, 1, 0)));
         const Mat4 model = Compose(0, 0, 0, 0.4f, 0.7f, 0, 1, 1, 1);
 
-        std::vector<uint16_t> single(static_cast<size_t>(TW) * TH, 0);
-        std::vector<uint16_t> many(static_cast<size_t>(TW) * TH, 0);
+        std::vector<uint16_t> single(static_cast<size_t>(tw) * th, 0);
+        std::vector<uint16_t> many(static_cast<size_t>(tw) * th, 0);
         uint32_t singleWritten = 0, manyWritten = 0;
 
         for (int pass = 0; pass < 2; ++pass)
@@ -238,7 +238,7 @@ void CorrectnessChecks()
             c.tileSize = 32;
             c.threadCount = pass == 0 ? 1 : 4;
             Raster3D rr;
-            rr.BeginFrame(reinterpret_cast<uint8_t*>(target.data()), TW, TH, Deki::ColorFormat::RGB565, c);
+            rr.BeginFrame(reinterpret_cast<uint8_t*>(target.data()), tw, th, Deki::ColorFormat::RGB565, c);
             rr.DrawMesh(mesh.View(), &m, 1, Mul(tvp, model), Mat4::Identity());
             rr.EndFrame();
             (pass == 0 ? singleWritten : manyWritten) = rr.Stats().pixelsWritten;
@@ -256,7 +256,7 @@ void CorrectnessChecks()
         // regresses the test hangs rather than fails, which is the honest
         // signal for a deadlock.
         {
-            std::vector<uint16_t> target(static_cast<size_t>(TW) * TH, 0);
+            std::vector<uint16_t> target(static_cast<size_t>(tw) * th, 0);
             Raster3D rr;
             const int schedule[] = { 1, 1, 2, 4, 2, 1, 3 };
             for (int threads : schedule)
@@ -266,7 +266,7 @@ void CorrectnessChecks()
                 c.threadCount = threads;
                 for (int frame = 0; frame < 3; ++frame)
                 {
-                    rr.BeginFrame(reinterpret_cast<uint8_t*>(target.data()), TW, TH, Deki::ColorFormat::RGB565, c);
+                    rr.BeginFrame(reinterpret_cast<uint8_t*>(target.data()), tw, th, Deki::ColorFormat::RGB565, c);
                     rr.DrawMesh(mesh.View(), &m, 1, Mul(tvp, model), Mat4::Identity());
                     rr.EndFrame();
                 }
@@ -279,9 +279,9 @@ void CorrectnessChecks()
     // ever culled; skipping a mesh that is genuinely off-screen is the easy
     // half.
     {
-        const int CW = 128, CH = 128;
-        std::vector<uint16_t> onscreen(static_cast<size_t>(CW) * CH, 0);
-        std::vector<uint16_t> withOffscreen(static_cast<size_t>(CW) * CH, 0);
+        const int cw = 128, ch = 128;
+        std::vector<uint16_t> onscreen(static_cast<size_t>(cw) * ch, 0);
+        std::vector<uint16_t> withOffscreen(static_cast<size_t>(cw) * ch, 0);
         MeshData cube = MakeCube(3);
         Material3D m;
         m.shading = ShadingModel::Unlit;
@@ -292,7 +292,7 @@ void CorrectnessChecks()
         c.tileSize = 32;
 
         Raster3D a;
-        a.BeginFrame(reinterpret_cast<uint8_t*>(onscreen.data()), CW, CH, Deki::ColorFormat::RGB565, c);
+        a.BeginFrame(reinterpret_cast<uint8_t*>(onscreen.data()), cw, ch, Deki::ColorFormat::RGB565, c);
         a.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(0, 0, 0)), Mat4::Identity());
         a.EndFrame();
         Check(a.Stats().meshesCulled == 0, "a mesh in view is not culled");
@@ -301,7 +301,7 @@ void CorrectnessChecks()
         // The same frame, plus meshes far outside every plane. The picture
         // must be identical and they must all have been skipped.
         Raster3D b;
-        b.BeginFrame(reinterpret_cast<uint8_t*>(withOffscreen.data()), CW, CH, Deki::ColorFormat::RGB565, c);
+        b.BeginFrame(reinterpret_cast<uint8_t*>(withOffscreen.data()), cw, ch, Deki::ColorFormat::RGB565, c);
         b.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(0, 0, 0)), Mat4::Identity());
         // Past each of the six planes. The far one has to clear 100 units
         // measured from the camera at z = 4, not from the origin; -90 is
@@ -320,7 +320,7 @@ void CorrectnessChecks()
 
         // A mesh straddling the edge must survive: half of it is visible.
         Raster3D d;
-        d.BeginFrame(reinterpret_cast<uint8_t*>(withOffscreen.data()), CW, CH, Deki::ColorFormat::RGB565, c);
+        d.BeginFrame(reinterpret_cast<uint8_t*>(withOffscreen.data()), cw, ch, Deki::ColorFormat::RGB565, c);
         d.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(1.4f, 0, 0)), Mat4::Identity());
         d.EndFrame();
         Check(d.Stats().meshesCulled == 0, "a mesh straddling the edge is kept");
@@ -367,7 +367,7 @@ Result TimeFrames(int width, int height, const MeshData& mesh, const Material3D&
     r.EndFrame();
 
     using Clock = std::chrono::steady_clock;
-    auto Ns = [](Clock::duration d)
+    auto ns = [](Clock::duration d)
     { return static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(d).count()); };
 
     double clearNs = 0, geomNs = 0, fillNs = 0;
@@ -391,9 +391,9 @@ Result TimeFrames(int width, int height, const MeshData& mesh, const Material3D&
         r.EndFrame();
         const auto t3 = Clock::now();
 
-        clearNs += Ns(t1 - t0);
-        geomNs += Ns(t2 - t1);
-        fillNs += Ns(t3 - t2);
+        clearNs += ns(t1 - t0);
+        geomNs += ns(t2 - t1);
+        fillNs += ns(t3 - t2);
         pixels += r.Stats().pixelsWritten;
         tris += r.Stats().trianglesIn;
         lastTris = r.Stats().trianglesClipped;

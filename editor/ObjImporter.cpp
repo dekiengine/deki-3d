@@ -571,7 +571,7 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
             material.tint = found->second.tint;
             if (found->second.alphaTest)
             {
-                material.flags |= MeshMaterial_AlphaTest;
+                material.flags |= MeshMaterialAlphaTest;
             }
 
             // No texture coordinates means nothing to sample with, so the
@@ -585,7 +585,7 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                     material.textureIndex = cached->second;
                     if (textureCutsOut[static_cast<size_t>(cached->second)])
                     {
-                        material.flags |= MeshMaterial_AlphaTest;
+                        material.flags |= MeshMaterialAlphaTest;
                     }
                 }
                 else
@@ -613,7 +613,7 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                         const bool cutsOut = transparent && keepsAlpha;
                         if (cutsOut)
                         {
-                            material.flags |= MeshMaterial_AlphaTest;
+                            material.flags |= MeshMaterialAlphaTest;
                         }
 
                         std::vector<uint8_t> pixels;
@@ -634,10 +634,10 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     MeshFileHeader header{};
     std::memcpy(header.magic, "DMSH", 4);
     header.version = kMeshFileVersion;
-    header.attributes = MeshAttribute_Position | MeshAttribute_Normal;
+    header.attributes = MeshAttributePosition | MeshAttributeNormal;
     if (hasUVs)
     {
-        header.attributes |= MeshAttribute_UV;
+        header.attributes |= MeshAttributeUV;
     }
     header.vertexCount = static_cast<uint32_t>(outPositions.size());
     header.indexCount = static_cast<uint32_t>(indices.size());

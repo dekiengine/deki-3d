@@ -4,7 +4,7 @@
  *
  * Exports the standard Deki plugin interface so the editor can load
  * deki-3d.dll and register its components. For a linked DLL,
- * Deki3D_EnsureRegistered() is what triggers the static initialisers.
+ * Deki3DEnsureRegistered() is what triggers the static initialisers.
  */
 
 #include "Deki3DPackage.h"
@@ -13,9 +13,9 @@
 #include <deki/reflection/ComponentFactory.h>
 #include <deki/reflection/ComponentRegistry.h>
 
-extern void Deki3D_RegisterComponents();
-extern int Deki3D_GetAutoComponentCount();
-extern const Deki::ComponentMeta* Deki3D_GetAutoComponentMeta(int index);
+extern void Deki3DRegisterComponents();
+extern int Deki3DGetAutoComponentCount();
+extern const Deki::ComponentMeta* Deki3DGetAutoComponentMeta(int index);
 
 namespace Deki3D
 {
@@ -24,7 +24,7 @@ namespace Deki3D
 
 // Auto-generated registration helpers.
 
-static bool s_3DRegistered = false;
+static bool s_Deki3DRegistered = false;
 
 // The exports below are C symbols at global scope; the package's own
 // registration helpers and statics live in its namespace.
@@ -32,23 +32,23 @@ using namespace Deki3D;
 
 extern "C"
 {
-    DEKI_3D_API int Deki3D_EnsureRegistered(void)
+    DEKI_3D_API int Deki3DEnsureRegistered(void)
     {
-        if (s_3DRegistered)
+        if (s_Deki3DRegistered)
         {
-            return ::Deki3D_GetAutoComponentCount();
+            return ::Deki3DGetAutoComponentCount();
         }
-        s_3DRegistered = true;
-        ::Deki3D_RegisterComponents();
-        return ::Deki3D_GetAutoComponentCount();
+        s_Deki3DRegistered = true;
+        ::Deki3DRegisterComponents();
+        return ::Deki3DGetAutoComponentCount();
     }
 
-    DEKI_PLUGIN_API const char* DekiPlugin_GetName(void)
+    DEKI_PLUGIN_API const char* DekiPluginGetName(void)
     {
         return "Deki 3D Package";
     }
 
-    DEKI_PLUGIN_API const char* DekiPlugin_GetVersion(void)
+    DEKI_PLUGIN_API const char* DekiPluginGetVersion(void)
     {
 #ifdef DEKI_PACKAGE_VERSION
         return DEKI_PACKAGE_VERSION;
@@ -57,38 +57,38 @@ extern "C"
 #endif
     }
 
-    DEKI_PLUGIN_API int DekiPlugin_Init(void)
+    DEKI_PLUGIN_API int DekiPluginInit(void)
     {
         // The render pass registers itself from Mesh3DPass.cpp, so there is
         // nothing to start here.
         return 0;
     }
 
-    DEKI_PLUGIN_API void DekiPlugin_Shutdown(void)
+    DEKI_PLUGIN_API void DekiPluginShutdown(void)
     {
-        s_3DRegistered = false;
+        s_Deki3DRegistered = false;
     }
 
-    DEKI_PLUGIN_API int DekiPlugin_GetComponentCount(void)
+    DEKI_PLUGIN_API int DekiPluginGetComponentCount(void)
     {
-        return ::Deki3D_GetAutoComponentCount();
+        return ::Deki3DGetAutoComponentCount();
     }
 
-    DEKI_PLUGIN_API const Deki::ComponentMeta* DekiPlugin_GetComponentMeta(int index)
+    DEKI_PLUGIN_API const Deki::ComponentMeta* DekiPluginGetComponentMeta(int index)
     {
-        return ::Deki3D_GetAutoComponentMeta(index);
+        return ::Deki3DGetAutoComponentMeta(index);
     }
 
-    DEKI_PLUGIN_API void DekiPlugin_RegisterComponents(void)
+    DEKI_PLUGIN_API void DekiPluginRegisterComponents(void)
     {
-        Deki3D_EnsureRegistered();
+        Deki3DEnsureRegistered();
     }
 
     // deki-3d draws no editor UI of its own, so it links no ImGui and shares no
     // ImGui context. Its component inspectors are drawn by the editor via
     // reflection.
 
-    DEKI_3D_API const char* Deki3D_GetName(void)
+    DEKI_3D_API const char* Deki3DGetName(void)
     {
         return "3D";
     }

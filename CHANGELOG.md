@@ -8,6 +8,13 @@ breaking change bumps the minor across the editor, the engine and every
 package together, so a package with no changes of its own is still released
 alongside one that has them.
 
+## Unreleased
+
+### Changed
+- **Names follow the code style** (deki-engine/docs/codestyle): types, functions and enum values are PascalCase, constants kPascalCase, members m_PascalCase, locals and parameters camelCase. The code is formatted with clang-format 22.
+- The functions the editor finds by name are PascalCase: Deki3DRegisterComponents, Deki3DGetAutoComponentCount, Deki3DEnsureRegistered and the rest. Built against engine ABI 21; a build of this package from before does not load and is rebuilt.
+- Renamed: `MeshAttribute_Position` and the other mesh flags are `MeshAttributePosition`, ...; `MeshMaterial_AlphaTest` is `MeshMaterialAlphaTest`; `AssetTypeName` is `kAssetTypeName`.
+
 ## 0.17.0
 
 ### Added

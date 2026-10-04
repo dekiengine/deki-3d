@@ -118,10 +118,10 @@ const Deki3D::Mesh3D* MeshComponent::Resolve() const
             // Said once: a mesh that never arrives would otherwise say nothing
             // at all, and an object silently missing from a scene is a long
             // hunt. Repeating it every frame would drown the log.
-            static bool reported = false;
-            if (!reported)
+            static bool s_Reported = false;
+            if (!s_Reported)
             {
-                reported = true;
+                s_Reported = true;
                 DEKI_LOG_WARNING("MeshComponent: the mesh asset '%s' did not load; drawing nothing", mesh.guid.c_str());
             }
         }

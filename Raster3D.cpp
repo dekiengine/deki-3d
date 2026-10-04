@@ -579,14 +579,14 @@ void Raster3D::EmitTriangle(const ClipVertex& a, const ClipVertex& b, const Clip
     ClipVertex out[4];
     int outCount = 0;
 
-    auto Dist = [](const ClipVertex& v) { return v.z + v.w; };  // near plane: z + w = 0
+    auto dist = [](const ClipVertex& v) { return v.z + v.w; };  // near plane: z + w = 0
 
     for (int i = 0; i < 3; ++i)
     {
         const ClipVertex& cur = in[i];
         const ClipVertex& next = in[(i + 1) % 3];
-        const float dCur = Dist(cur);
-        const float dNext = Dist(next);
+        const float dCur = dist(cur);
+        const float dNext = dist(next);
 
         if (dCur >= 0.0f)
         {
@@ -906,35 +906,35 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
 
     // floor+cast rather than lrint: lrint honours the current rounding mode,
     // so it stays a libm call, while floor is one instruction.
-    auto Fixed = [](float f) { return static_cast<int32_t>(std::floor(f * kSubScale + 0.5f)); };
-    const int32_t X0 = Fixed(v0.x), Y0 = Fixed(v0.y);
-    const int32_t X1 = Fixed(v1.x), Y1 = Fixed(v1.y);
-    const int32_t X2 = Fixed(v2.x), Y2 = Fixed(v2.y);
+    auto fixed = [](float f) { return static_cast<int32_t>(std::floor(f * kSubScale + 0.5f)); };
+    const int32_t x0 = fixed(v0.x), y0 = fixed(v0.y);
+    const int32_t x1 = fixed(v1.x), y1 = fixed(v1.y);
+    const int32_t x2 = fixed(v2.x), y2 = fixed(v2.y);
 
     // Edge functions, evaluated at the centre of the first pixel and stepped
     // by adds from there. One pixel is kSubScale in 28.4.
-    const int32_t A01 = Y0 - Y1, B01 = X1 - X0;
-    const int32_t A12 = Y1 - Y2, B12 = X2 - X1;
-    const int32_t A20 = Y2 - Y0, B20 = X0 - X2;
+    const int32_t a01 = y0 - y1, b01 = x1 - x0;
+    const int32_t a12 = y1 - y2, b12 = x2 - x1;
+    const int32_t a20 = y2 - y0, b20 = x0 - x2;
 
-    const int32_t Px = bMinX * kSubScale + kSubScale / 2;
-    const int32_t Py = bMinY * kSubScale + kSubScale / 2;
+    const int32_t px = bMinX * kSubScale + kSubScale / 2;
+    const int32_t py = bMinY * kSubScale + kSubScale / 2;
 
-    auto Edge = [](int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t px, int32_t py) -> int64_t
+    auto edge = [](int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t px, int32_t py) -> int64_t
     { return static_cast<int64_t>(bx - ax) * (py - ay) - static_cast<int64_t>(by - ay) * (px - ax); };
 
-    int64_t rowE0 = Edge(X1, Y1, X2, Y2, Px, Py);  // weight of v0
-    int64_t rowE1 = Edge(X2, Y2, X0, Y0, Px, Py);  // weight of v1
-    int64_t rowE2 = Edge(X0, Y0, X1, Y1, Px, Py);  // weight of v2
+    int64_t rowE0 = edge(x1, y1, x2, y2, px, py);  // weight of v0
+    int64_t rowE1 = edge(x2, y2, x0, y0, px, py);  // weight of v1
+    int64_t rowE2 = edge(x0, y0, x1, y1, px, py);  // weight of v2
 
     // dE/dpx is A, dE/dpy is B, both scaled by one pixel in 28.4. E0 is the
     // edge opposite v0, so it steps with the v1->v2 edge, and so on round.
-    const int64_t stepX0 = static_cast<int64_t>(A12) * kSubScale;
-    const int64_t stepY0 = static_cast<int64_t>(B12) * kSubScale;
-    const int64_t stepX1 = static_cast<int64_t>(A20) * kSubScale;
-    const int64_t stepY1 = static_cast<int64_t>(B20) * kSubScale;
-    const int64_t stepX2 = static_cast<int64_t>(A01) * kSubScale;
-    const int64_t stepY2 = static_cast<int64_t>(B01) * kSubScale;
+    const int64_t stepX0 = static_cast<int64_t>(a12) * kSubScale;
+    const int64_t stepY0 = static_cast<int64_t>(b12) * kSubScale;
+    const int64_t stepX1 = static_cast<int64_t>(a20) * kSubScale;
+    const int64_t stepY1 = static_cast<int64_t>(b20) * kSubScale;
+    const int64_t stepX2 = static_cast<int64_t>(a01) * kSubScale;
+    const int64_t stepY2 = static_cast<int64_t>(b01) * kSubScale;
 
     const float area2 = (v1.x - v0.x) * (v2.y - v0.y) - (v2.x - v0.x) * (v1.y - v0.y);
     if (area2 == 0.0f)
@@ -950,14 +950,14 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     // v themselves, which are not linear in screen space: that error IS the
     // PlayStation-era warp, and it grows with how much screen a triangle covers.
     const bool affine = !m_Config.perspectiveCorrect;
-    auto VertexU = [](const ScreenVertex& v) { return v.invW != 0.0f ? v.uOverW / v.invW : 0.0f; };
-    auto VertexV = [](const ScreenVertex& v) { return v.invW != 0.0f ? v.vOverW / v.invW : 0.0f; };
+    auto vertexU = [](const ScreenVertex& v) { return v.invW != 0.0f ? v.uOverW / v.invW : 0.0f; };
+    auto vertexV = [](const ScreenVertex& v) { return v.invW != 0.0f ? v.vOverW / v.invW : 0.0f; };
 
     const Gradient gU =
-        affine ? MakeGradient(VertexU(v0), VertexU(v1), VertexU(v2), v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea)
+        affine ? MakeGradient(vertexU(v0), vertexU(v1), vertexU(v2), v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea)
                : MakeGradient(v0.uOverW, v1.uOverW, v2.uOverW, v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
     const Gradient gV =
-        affine ? MakeGradient(VertexV(v0), VertexV(v1), VertexV(v2), v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea)
+        affine ? MakeGradient(vertexV(v0), vertexV(v1), vertexV(v2), v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea)
                : MakeGradient(v0.vOverW, v1.vOverW, v2.vOverW, v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
 
     const Material3D& mat = m_Materials[tri.materialIndex];
@@ -1047,7 +1047,7 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     // Depth, also stepped with adds.
                     const float z0 = Eval(gZ, fx0, fy);
                     const float z1 = Eval(gZ, fx1, fy);
-                    auto ToDepth = [](float ndcZ) -> int32_t
+                    auto toDepth = [](float ndcZ) -> int32_t
                     {
                         float d = (ndcZ * 0.5f + 0.5f) * static_cast<float>(kDepthMax);
                         if (d < 0.0f)
@@ -1060,8 +1060,8 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                         }
                         return static_cast<int32_t>(d * (1 << kDepthFrac));
                     };
-                    int32_t z = ToDepth(z0);
-                    const int32_t zE = ToDepth(z1);
+                    int32_t z = toDepth(z0);
+                    const int32_t zE = toDepth(z1);
                     const int32_t dz = (chunkLen > 1) ? static_cast<int32_t>((zE - z) * inv) : 0;
 
                     const uint32_t shade =

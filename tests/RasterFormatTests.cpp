@@ -270,7 +270,7 @@ TEST(MeshFile, Version3StillLoads)
     MeshFileHeader h{};
     std::memcpy(h.magic, "DMSH", 4);
     h.version = 3;
-    h.attributes = MeshAttribute_Position;
+    h.attributes = MeshAttributePosition;
     h.vertexCount = 3;
     h.indexCount = 3;
     h.vertexStride = 12;

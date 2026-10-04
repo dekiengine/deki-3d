@@ -42,7 +42,7 @@ void Check(bool ok, const char* what)
 
 // A unit cube: eight corners, six quad faces, normals and texture
 // coordinates left out so the importer has to generate the normals.
-const char* kCubeObj = R"(# a cube
+const char* const kCubeObj = R"(# a cube
 v -1 -1  1
 v  1 -1  1
 v  1  1  1
@@ -274,8 +274,8 @@ int main()
 
     std::printf("\nIt rasterises\n");
     {
-        const int W = 96, H = 96;
-        std::vector<uint16_t> fb(static_cast<size_t>(W) * H, 0);
+        const int w = 96, h = 96;
+        std::vector<uint16_t> fb(static_cast<size_t>(w) * h, 0);
         Material3D mat;
         mat.shading = ShadingModel::VertexLit;
 
@@ -284,7 +284,7 @@ int main()
         Raster3D r;
         const Deki::Mat4 vp = Mul(Perspective(1.0f, 1.0f, 0.1f, 100.0f),
                                   LookAt(Deki::Vector3(0, 0, 5), Deki::Vector3(0, 0, 0), Deki::Vector3(0, 1, 0)));
-        r.BeginFrame(reinterpret_cast<uint8_t*>(fb.data()), W, H, Deki::ColorFormat::RGB565, cfg);
+        r.BeginFrame(reinterpret_cast<uint8_t*>(fb.data()), w, h, Deki::ColorFormat::RGB565, cfg);
         r.DrawMesh(view, &mat, 1, Mul(vp, Compose(0, 0, 0, 0.4f, 0.7f, 0, 1, 1, 1)), Deki::Mat4::Identity());
         r.EndFrame();
 
