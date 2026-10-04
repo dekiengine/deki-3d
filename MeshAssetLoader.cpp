@@ -22,30 +22,40 @@ void Deki3D_RegisterMeshLoader()
 {
     static bool registered = false;
     if (registered)
+    {
         return;
+    }
     registered = true;
 
     // The path loader is the one that actually runs. A cacheable type never
     // reaches the memory loader through LoadByGuidAndType: that branch is for
     // types the manager reloads fresh each time. Both are registered because
     // the packed-asset path on device does go through memory.
-    auto loader = [](const char* path) -> void* {
+    auto loader = [](const char* path) -> void*
+    {
         // The whole file, briefly, before it is parsed into the asset's own
         // buffers: External, like them, not a std::vector on the internal
         // heap, which a board without PSRAM could not fit and would reboot on.
         Deki::Buffer<uint8_t> bytes;
         if (!Deki::AssetManager::ReadWholeFile(path, bytes, Deki::Memory::External))
+        {
             return nullptr;
+        }
         auto* mesh = new MeshAsset();
         if (mesh->LoadFromMemory(bytes.Data(), bytes.Count()))
+        {
             return mesh;
+        }
         delete mesh;
         return nullptr;
     };
-    auto memLoader = [](const uint8_t* data, size_t size) -> void* {
+    auto memLoader = [](const uint8_t* data, size_t size) -> void*
+    {
         auto* mesh = new MeshAsset();
         if (mesh->LoadFromMemory(data, size))
+        {
             return mesh;
+        }
         delete mesh;
         return nullptr;
     };
@@ -74,4 +84,6 @@ void Deki3D_InitSystem()
     Deki3D_KeepMesh3DPass();
 }
 
-void Deki3D_ShutdownSystem() {}
+void Deki3D_ShutdownSystem()
+{
+}

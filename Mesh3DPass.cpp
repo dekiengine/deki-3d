@@ -54,13 +54,19 @@ template <typename T, typename Pick>
 const T* FindInSubtree(const Deki::Object* object, Pick pick)
 {
     if (!object)
+    {
         return nullptr;
+    }
     if (const T* found = object->GetComponent<T>(); found && pick(*found))
+    {
         return found;
+    }
     for (const Deki::Object* child : object->GetChildren())
     {
         if (const T* found = FindInSubtree<T>(child, pick))
+        {
             return found;
+        }
     }
     return nullptr;
 }
@@ -70,11 +76,15 @@ const T* FindInScene(const Deki::Object* anyObject, Pick pick)
 {
     const Deki::Scene* scene = anyObject ? anyObject->GetOwnerScene() : nullptr;
     if (!scene)
+    {
         return nullptr;
+    }
     for (const Deki::Object* root : scene->GetObjects())
     {
         if (const T* found = FindInSubtree<T>(root, pick))
+        {
             return found;
+        }
     }
     return nullptr;
 }
@@ -93,7 +103,9 @@ void Mesh3DPass::BeginFrame(DekiRendering::RenderContext& ctx)
     m_Pending = false;
 
     if (!ctx.camera || !ctx.buffer || ctx.width <= 0 || ctx.height <= 0)
+    {
         return;
+    }
 
     m_Camera = ctx.camera;
     m_Buffer = ctx.buffer;
@@ -115,7 +127,9 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
 
     Deki::Object* cameraObject = m_Camera ? m_Camera->GetOwner() : nullptr;
     if (!cameraObject)
+    {
         return;
+    }
 
     // A perspective camera draws the meshes through its own view. The editor's
     // viewport renders through a camera of its own, orthographic, which is not
@@ -124,10 +138,11 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     // drawn rather than a projection invented for it.
     const bool throughSceneCamera = IsPerspective(*m_Camera);
     const DekiRendering::CameraComponent* lens =
-        throughSceneCamera ? m_Camera
-                           : FindInScene<DekiRendering::CameraComponent>(sceneObject, IsPerspective);
+        throughSceneCamera ? m_Camera : FindInScene<DekiRendering::CameraComponent>(sceneObject, IsPerspective);
     if (!lens)
+    {
         return;
+    }
 
     // The field of view is vertical on every screen; a wider one sees more at
     // the sides.
@@ -148,15 +163,16 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
         const float visibleHeight = m_Camera->GetVisibleHeight(m_Width, m_Height);
         const float halfAngle = std::tan(fovY * 0.5f);
         if (visibleHeight > 0.0f && halfAngle > 0.0f)
+        {
             camZ += (visibleHeight * 0.5f) / halfAngle;
+        }
     }
 
     const Deki::Vector3 eye(cameraObject->GetWorldX(), cameraObject->GetWorldY(), camZ);
 
     // The editor's camera is a 2D pan and zoom with no meaningful orientation,
     // so the preview looks straight down -Z rather than borrowing its rotation.
-    const Deki::Mat4 basis =
-        throughSceneCamera ? CameraRotation(cameraObject) : Deki::Mat4::Identity();
+    const Deki::Mat4 basis = throughSceneCamera ? CameraRotation(cameraObject) : Deki::Mat4::Identity();
     const Deki::Vector3 forward = TransformDirection(basis, Deki::Vector3(0.0f, 0.0f, -1.0f));
     const Deki::Vector3 up = TransformDirection(basis, Deki::Vector3(0.0f, 1.0f, 0.0f));
 
@@ -181,9 +197,8 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     // around, not to normalise one by hand. Yaw 0 puts it behind the viewer.
     const float yaw = cam3d.lightYaw * kPi / 180.0f;
     const float pitch = cam3d.lightPitch * kPi / 180.0f;
-    m_Config.lightDirection = Deki::Vector3(std::sin(yaw) * std::cos(pitch),
-                                            -std::sin(pitch),
-                                            -std::cos(yaw) * std::cos(pitch));
+    m_Config.lightDirection =
+        Deki::Vector3(std::sin(yaw) * std::cos(pitch), -std::sin(pitch), -std::cos(yaw) * std::cos(pitch));
     m_Config.ambient = cam3d.ambient;
 #ifdef DEKI_EDITOR
     // One thread inside the editor, whatever the scene asks for.
@@ -212,7 +227,9 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
 void Mesh3DPass::Flush()
 {
     if (!m_Pending)
+    {
         return;
+    }
     m_Raster.EndFrame();
     m_Raster.BeginFrame(m_Buffer, m_Width, m_Height, m_Format, m_Config);
     m_Pending = false;
@@ -222,13 +239,19 @@ void Mesh3DPass::PreExecute(Deki::Object* obj, DekiRendering::RenderContext& ctx
 {
     (void)ctx;
     if (!m_Started && obj)
+    {
         Start(obj);
+    }
     // A 2D object is about to draw. Anything binned so far sorts before it,
     // so it has to reach the framebuffer first.
     if (!m_Active || !m_Pending || !obj)
+    {
         return;
+    }
     if (obj->GetComponent<MeshComponent>())
+    {
         return;  // still in a run of meshes: keep batching
+    }
     Flush();
 }
 
@@ -236,27 +259,32 @@ void Mesh3DPass::Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx)
 {
     (void)ctx;
     if (!m_Started && obj)
+    {
         Start(obj);
+    }
     if (!m_Active || !obj)
+    {
         return;
+    }
 
     MeshComponent* mesh = obj->GetComponent<MeshComponent>();
     if (!mesh)
+    {
         return;
+    }
 
     const Mesh3D* geometry = mesh->Resolve();
     if (!geometry)
+    {
         return;
+    }
 
 #ifdef DEKI_TRANSFORM_3D
-    const Deki::Mat4 model = Compose(obj->GetWorldX(), obj->GetWorldY(), obj->GetWorldZ(),
-                                     obj->GetWorldRotationX(), obj->GetWorldRotationY(),
-                                     obj->GetWorldRotation(),
-                                     obj->GetWorldScaleX(), obj->GetWorldScaleY(),
-                                     obj->GetWorldScaleZ());
+    const Deki::Mat4 model = Compose(obj->GetWorldX(), obj->GetWorldY(), obj->GetWorldZ(), obj->GetWorldRotationX(),
+                                     obj->GetWorldRotationY(), obj->GetWorldRotation(), obj->GetWorldScaleX(),
+                                     obj->GetWorldScaleY(), obj->GetWorldScaleZ());
 #else
-    const Deki::Mat4 model = Compose(obj->GetWorldX(), obj->GetWorldY(), 0.0f,
-                                     0.0f, 0.0f, obj->GetWorldRotation(),
+    const Deki::Mat4 model = Compose(obj->GetWorldX(), obj->GetWorldY(), 0.0f, 0.0f, 0.0f, obj->GetWorldRotation(),
                                      obj->GetWorldScaleX(), obj->GetWorldScaleY(), 1.0f);
 #endif
 
@@ -270,9 +298,13 @@ void Mesh3DPass::Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx)
 
     m_Materials.clear();
     if (asset && asset->MaterialCount() > 0)
+    {
         m_Materials.assign(asset->Materials(), asset->Materials() + asset->MaterialCount());
+    }
     else
+    {
         m_Materials.emplace_back();
+    }
 
     for (Material3D& material : m_Materials)
     {
@@ -285,8 +317,7 @@ void Mesh3DPass::Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx)
     // way, and the shading models here are not worth an inverse transpose.
 #ifdef DEKI_TRANSFORM_3D
     const Deki::Mat4 normalMatrix = Mul(RotateZ(obj->GetWorldRotation()),
-                                        Mul(RotateY(obj->GetWorldRotationY()),
-                                            RotateX(obj->GetWorldRotationX())));
+                                        Mul(RotateY(obj->GetWorldRotationY()), RotateX(obj->GetWorldRotationX())));
 #else
     const Deki::Mat4 normalMatrix = RotateZ(obj->GetWorldRotation());
 #endif
@@ -300,7 +331,9 @@ void Mesh3DPass::EndFrame(DekiRendering::RenderContext& ctx)
 {
     (void)ctx;
     if (!m_Active)
+    {
         return;
+    }
     m_Raster.EndFrame();  // whatever the last run of meshes left binned
     m_Active = false;
     m_Pending = false;
@@ -323,10 +356,7 @@ struct Mesh3DPassRegistrar
         info.autoAttach = true;
         DekiRendering::DekiRenderPassRegistry::Register(Deki3D::Mesh3DPass::RegistryName, info);
     }
-    ~Mesh3DPassRegistrar()
-    {
-        DekiRendering::DekiRenderPassRegistry::Unregister(Deki3D::Mesh3DPass::RegistryName);
-    }
+    ~Mesh3DPassRegistrar() { DekiRendering::DekiRenderPassRegistry::Unregister(Deki3D::Mesh3DPass::RegistryName); }
 };
 static Mesh3DPassRegistrar s_mesh3dPassRegistrar;
 }  // namespace
@@ -336,4 +366,6 @@ static Mesh3DPassRegistrar s_mesh3dPassRegistrar;
 // drops such a file: the pass never registered and a device drew no meshes.
 // Registration itself stays in the static initialiser, which runs before
 // deki-rendering attaches the autoAttach passes at startup.
-void Deki3D_KeepMesh3DPass() {}
+void Deki3D_KeepMesh3DPass()
+{
+}

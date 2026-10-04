@@ -74,8 +74,7 @@ struct Gradient
     float at0 = 0.0f;
 };
 
-inline Gradient MakeGradient(float f0, float f1, float f2,
-                             float x0, float y0, float x1, float y1, float x2, float y2,
+inline Gradient MakeGradient(float f0, float f1, float f2, float x0, float y0, float x1, float y1, float x2, float y2,
                              float invArea)
 {
     Gradient g;
@@ -104,10 +103,14 @@ bool BoundsOutsideFrustum(const Mesh3D& mesh, const Deki::Mat4& mvp)
     // culling on that would hide it whenever the origin left the view.
     if (mesh.boundsMin.x > mesh.boundsMax.x || mesh.boundsMin.y > mesh.boundsMax.y ||
         mesh.boundsMin.z > mesh.boundsMax.z)
+    {
         return false;
+    }
     if (mesh.boundsMin.x == mesh.boundsMax.x && mesh.boundsMin.y == mesh.boundsMax.y &&
         mesh.boundsMin.z == mesh.boundsMax.z)
+    {
         return false;
+    }
 
     int outside[6] = { 0, 0, 0, 0, 0, 0 };
     for (int corner = 0; corner < 8; ++corner)
@@ -117,16 +120,38 @@ bool BoundsOutsideFrustum(const Mesh3D& mesh, const Deki::Mat4& mvp)
                                   (corner & 4) ? mesh.boundsMax.z : mesh.boundsMin.z);
         float w = 1.0f;
         const Deki::Vector3 clip = Deki3D::TransformPoint(mvp, point, w);
-        if (clip.x < -w) ++outside[0];
-        if (clip.x > w) ++outside[1];
-        if (clip.y < -w) ++outside[2];
-        if (clip.y > w) ++outside[3];
-        if (clip.z < -w) ++outside[4];
-        if (clip.z > w) ++outside[5];
+        if (clip.x < -w)
+        {
+            ++outside[0];
+        }
+        if (clip.x > w)
+        {
+            ++outside[1];
+        }
+        if (clip.y < -w)
+        {
+            ++outside[2];
+        }
+        if (clip.y > w)
+        {
+            ++outside[3];
+        }
+        if (clip.z < -w)
+        {
+            ++outside[4];
+        }
+        if (clip.z > w)
+        {
+            ++outside[5];
+        }
     }
     for (int plane = 0; plane < 6; ++plane)
+    {
         if (outside[plane] == 8)
+        {
             return true;
+        }
+    }
     return false;
 }
 
@@ -137,16 +162,16 @@ bool BoundsOutsideFrustum(const Mesh3D& mesh, const Deki::Mat4& mvp)
 /// What a span needs from its triangle, fixed across the span.
 struct SpanArgs
 {
-    uint8_t* fbRow;       // start of this scanline in the framebuffer
-    uint16_t* depthRow;   // indexed by x, like fbRow
-    int x0, x1;           // inclusive
-    int32_t u, v, z;      // at x0, fixed point
+    uint8_t* fbRow;      // start of this scanline in the framebuffer
+    uint16_t* depthRow;  // indexed by x, like fbRow
+    int x0, x1;          // inclusive
+    int32_t u, v, z;     // at x0, fixed point
     int32_t du, dv, dz;
     const Texture3D* tex;
     bool alphaTest;
     bool lit;
-    uint32_t shade;       // 0..32
-    uint16_t flat565;     // untextured colour, as RGB565 and as 8-bit channels
+    uint32_t shade;    // 0..32
+    uint16_t flat565;  // untextured colour, as RGB565 and as 8-bit channels
     uint8_t flatR, flatG, flatB;
     int uMask, vMask, wShift;
     bool depthTest, depthWrite;
@@ -154,7 +179,16 @@ struct SpanArgs
 
 /// The texture side of a span: none (the flat colour), an RGB565 palette, or
 /// texels of one TexelFormat.
-enum class TexKind { Flat, Palette, RGB565, RGB565A8, RGB888, RGBA8888, ALPHA8 };
+enum class TexKind
+{
+    Flat,
+    Palette,
+    RGB565,
+    RGB565A8,
+    RGB888,
+    RGBA8888,
+    ALPHA8
+};
 
 /// Scale 8-bit channels by shade in 0..32, as Shade565 does for a 565 pixel.
 inline void Shade8(uint8_t& r, uint8_t& g, uint8_t& b, uint32_t shade)
@@ -175,8 +209,8 @@ inline void Shade8(uint8_t& r, uint8_t& g, uint8_t& b, uint32_t shade)
 template <TexKind K, Deki::ColorFormat F>
 uint32_t FillSpan(const SpanArgs& a)
 {
-    constexpr bool kClassic565 = (F == Deki::ColorFormat::RGB565) &&
-                                 (K == TexKind::Flat || K == TexKind::Palette || K == TexKind::RGB565);
+    constexpr bool kClassic565 =
+        (F == Deki::ColorFormat::RGB565) && (K == TexKind::Flat || K == TexKind::Palette || K == TexKind::RGB565);
     int32_t u = a.u, v = a.v, z = a.z;
     uint32_t written = 0;
     for (int x = a.x0; x <= a.x1; ++x)
@@ -200,20 +234,28 @@ uint32_t FillSpan(const SpanArgs& a)
                 {
                     const uint8_t idx = a.tex->pixels[texel];
                     if (a.alphaTest && idx == 0)
+                    {
                         write = false;
+                    }
                     else
+                    {
                         color = a.tex->palette[idx];
+                    }
                 }
                 else if constexpr (K == TexKind::RGB565)
                 {
                     color = reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel];
                     if (a.alphaTest && color == 0xF81F)  // magenta is the hole
+                    {
                         write = false;
+                    }
                 }
                 if (write)
                 {
                     if (a.lit)
+                    {
                         color = Shade565(color, a.shade);
+                    }
                     reinterpret_cast<uint16_t*>(a.fbRow)[x] = color;
                 }
             }
@@ -224,35 +266,53 @@ uint32_t FillSpan(const SpanArgs& a)
                 {
                     const uint8_t idx = a.tex->pixels[texel];
                     if (a.alphaTest && idx == 0)
+                    {
                         write = false;
+                    }
                     else
+                    {
                         DekiPixel::UnpackRGB565(a.tex->palette[idx], r, g, b);
+                    }
                 }
                 else if constexpr (K == TexKind::RGB565)
                 {
                     const uint16_t c = reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel];
                     if (a.alphaTest && c == 0xF81F)
+                    {
                         write = false;
+                    }
                     else
+                    {
                         DekiPixel::UnpackRGB565(c, r, g, b);
+                    }
                 }
                 else if constexpr (K == TexKind::RGB565A8)
+                {
                     DekiPixel::ReadSrcPixel<DekiPixel::SrcKind::RGB565A8>(a.tex->pixels + texel * 3, true, r, g, b, al);
+                }
                 else if constexpr (K == TexKind::RGB888)
+                {
                     DekiPixel::ReadSrcPixel<DekiPixel::SrcKind::RGB888>(a.tex->pixels + texel * 3, false, r, g, b, al);
+                }
                 else if constexpr (K == TexKind::RGBA8888)
+                {
                     DekiPixel::ReadSrcPixel<DekiPixel::SrcKind::RGBA8888>(a.tex->pixels + texel * 4, true, r, g, b, al);
+                }
                 else if constexpr (K == TexKind::ALPHA8)
                 {
                     // Coverage only: the colour is the material's.
                     al = a.tex->pixels[texel];
                 }
                 if (a.alphaTest && al < 128)
+                {
                     write = false;
+                }
                 if (write)
                 {
                     if (a.lit)
+                    {
                         Shade8(r, g, b, a.shade);
+                    }
                     DekiPixel::WriteDstPixel<F>(a.fbRow, static_cast<size_t>(x), r, g, b, 255);
                 }
             }
@@ -260,7 +320,9 @@ uint32_t FillSpan(const SpanArgs& a)
             if (write)
             {
                 if (a.depthWrite)
+                {
                     a.depthRow[x] = static_cast<uint16_t>(depth);
+                }
                 ++written;
             }
         }
@@ -305,9 +367,13 @@ uint32_t DispatchSpan(TexKind kind, Deki::ColorFormat format, const SpanArgs& a)
 TexKind KindOfTexture(const Texture3D* tex)
 {
     if (!tex || !tex->Valid())
+    {
         return TexKind::Flat;
+    }
     if (tex->palette)
+    {
         return TexKind::Palette;
+    }
     switch (tex->format)
     {
         case TexelFormat::RGB565: return TexKind::RGB565;
@@ -325,8 +391,8 @@ TexKind KindOfTexture(const Texture3D* tex)
 // Frame setup
 // ---------------------------------------------------------------------------
 
-void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height,
-                          Deki::ColorFormat format, const RasterConfig& config)
+void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::ColorFormat format,
+                          const RasterConfig& config)
 {
     m_Buffer = buffer;
     m_Width = width;
@@ -335,13 +401,19 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height,
     m_BytesPerPixel = Deki::FrameBufferBytes(format, 1, 1);
     m_Config = config;
     if (m_Config.tileSize < 8)
+    {
         m_Config.tileSize = 8;
+    }
     if (m_Config.spanSubdivision < 1)
+    {
         m_Config.spanSubdivision = 1;
+    }
 
     m_LightDir = m_Config.lightDirection;
     if (m_LightDir.LengthSquared() > 0.0f)
+    {
         m_LightDir.Normalize();
+    }
 
     const int tile = m_Config.tileSize;
     m_TilesX = (width + tile - 1) / tile;
@@ -354,23 +426,37 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height,
     m_Materials.clear();
     const size_t tileCount = static_cast<size_t>(m_TilesX) * m_TilesY;
     if (m_Bins.size() != tileCount)
+    {
         m_Bins.assign(tileCount, {});
+    }
     else
+    {
         for (std::vector<uint32_t>& bin : m_Bins)
+        {
             bin.clear();
+        }
+    }
 
     // One scratch depth buffer per fill thread, sized once and kept. The
     // calling thread is one of them, so `threads - 1` workers are needed.
     const int threads = m_Config.threadCount < 1 ? 1 : m_Config.threadCount;
     const size_t depthCells = static_cast<size_t>(tile) * tile;
     if (static_cast<int>(m_TileDepth.size()) != threads)
+    {
         m_TileDepth.assign(static_cast<size_t>(threads), {});
+    }
     for (std::vector<uint16_t>& buffer : m_TileDepth)
+    {
         if (buffer.size() != depthCells)
+        {
             buffer.resize(depthCells);
+        }
+    }
 
     if (static_cast<int>(m_Workers.size()) != threads - 1)
+    {
         StartWorkers(threads - 1);
+    }
 
     m_Stats.Reset();
 }
@@ -379,11 +465,13 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height,
 // Geometry: transform, clip, project, bin
 // ---------------------------------------------------------------------------
 
-void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_t materialCount,
-                        const Deki::Mat4& mvp, const Deki::Mat4& normalMatrix)
+void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_t materialCount, const Deki::Mat4& mvp,
+                        const Deki::Mat4& normalMatrix)
 {
     if (!mesh.vertices || !mesh.indices || mesh.layout.positionOffset < 0)
+    {
         return;
+    }
 
     // Eight transforms to decide whether thousands are needed at all.
     if (BoundsOutsideFrustum(mesh, mvp))
@@ -400,11 +488,12 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
         // Copy the material now: the span loop reads it in EndFrame, after
         // this call has returned and the caller's own object may be gone.
         if (m_Materials.size() >= 0xFFFFu)
+        {
             return;
+        }
         const uint16_t materialIndex = static_cast<uint16_t>(m_Materials.size());
-        m_Materials.push_back((materials && sub.materialIndex < materialCount)
-                                  ? materials[sub.materialIndex]
-                                  : Material3D{});
+        m_Materials.push_back((materials && sub.materialIndex < materialCount) ? materials[sub.materialIndex]
+                                                                               : Material3D{});
         // By value: m_Materials can reallocate on the next submesh, and a
         // pointer into it would not survive that.
         const ShadingModel shading = m_Materials.back().shading;
@@ -431,15 +520,21 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
                 cv[k].w = w;
 
                 if (layout.HasUVs())
+                {
                     ReadUV(vtx, layout.uvOffset, cv[k].u, cv[k].v);
+                }
                 else
+                {
                     cv[k].u = cv[k].v = 0.0f;
+                }
 
                 cv[k].color = layout.HasColors() ? ReadColor(vtx, layout.colorOffset) : 0xFFFFFFFFu;
                 cv[k].light = 1.0f;
 
                 if (layout.HasNormals())
+                {
                     objNormal[k] = ReadVec3(vtx, layout.normalOffset);
+                }
             }
 
             // Shading is decided here, at vertex rate, so the span loop never
@@ -450,7 +545,9 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
                 {
                     Deki::Vector3 n = Deki3D::TransformDirection(normalMatrix, objNormal[k]);
                     if (n.LengthSquared() > 0.0f)
+                    {
                         n.Normalize();
+                    }
                     const float d = -n.Dot(m_LightDir);
                     cv[k].light = m_Config.ambient + (d > 0.0f ? d : 0.0f) * (1.0f - m_Config.ambient);
                 }
@@ -460,7 +557,9 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
                 Deki::Vector3 faceNormal = (objPos[1] - objPos[0]).Cross(objPos[2] - objPos[0]);
                 faceNormal = Deki3D::TransformDirection(normalMatrix, faceNormal);
                 if (faceNormal.LengthSquared() > 0.0f)
+                {
                     faceNormal.Normalize();
+                }
                 const float d = -faceNormal.Dot(m_LightDir);
                 const float lit = m_Config.ambient + (d > 0.0f ? d : 0.0f) * (1.0f - m_Config.ambient);
                 cv[0].light = cv[1].light = cv[2].light = lit;
@@ -471,8 +570,7 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
     }
 }
 
-void Raster3D::EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c,
-                            uint16_t materialIndex)
+void Raster3D::EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c, uint16_t materialIndex)
 {
     // Near-clip only. The left, right, top and bottom planes are handled by
     // clamping the screen bounding box, which is cheaper and just as correct
@@ -491,7 +589,9 @@ void Raster3D::EmitTriangle(const ClipVertex& a, const ClipVertex& b, const Clip
         const float dNext = Dist(next);
 
         if (dCur >= 0.0f)
+        {
             out[outCount++] = cur;
+        }
 
         if ((dCur >= 0.0f) != (dNext >= 0.0f))
         {
@@ -507,12 +607,16 @@ void Raster3D::EmitTriangle(const ClipVertex& a, const ClipVertex& b, const Clip
             v.color = cur.color;  // vertex colour is not interpolated across the cut
             out[outCount++] = v;
             if (outCount == 4)
+            {
                 break;
+            }
         }
     }
 
     if (outCount >= 3)
+    {
         ProjectAndBin(out, outCount, materialIndex);
+    }
 }
 
 void Raster3D::ProjectAndBin(const ClipVertex* poly, int count, uint16_t materialIndex)
@@ -557,16 +661,22 @@ void Raster3D::ProjectAndBin(const ClipVertex* poly, int count, uint16_t materia
         // signed area once Y points down.
         const Material3D& material = m_Materials[materialIndex];
         if (m_Config.backfaceCull && !material.doubleSided && area2 >= 0.0f)
+        {
             continue;
+        }
         if (area2 == 0.0f)
+        {
             continue;
+        }
 
         // The filler's inside test is "all three edge functions >= 0", which
         // needs positive area. Front faces are negative by the rule above, so
         // they are the ones that get flipped; a double-sided back face is
         // already positive and is left alone.
         if (area2 < 0.0f)
+        {
             std::swap(tri.v[1], tri.v[2]);
+        }
 
         ++m_Stats.trianglesClipped;
         Bin(tri);
@@ -590,7 +700,9 @@ void Raster3D::Bin(const RasterTri& tri)
     int maxX = std::min(static_cast<int>(m_Width) - 1, static_cast<int>(std::ceil(maxXf)));
     int maxY = std::min(static_cast<int>(m_Height) - 1, static_cast<int>(std::ceil(maxYf)));
     if (minX > maxX || minY > maxY)
+    {
         return;
+    }
 
     const uint32_t index = static_cast<uint32_t>(m_Tris.size());
     m_Tris.push_back(tri);
@@ -616,7 +728,9 @@ void Raster3D::StartWorkers(int count)
 {
     StopWorkers();
     if (count <= 0)
+    {
         return;
+    }
     m_StopWorkers = false;
     m_WorkerStats.assign(static_cast<size_t>(count), RasterStats{});
     m_WorkerHasWork.assign(static_cast<size_t>(count), 0);
@@ -626,20 +740,26 @@ void Raster3D::StartWorkers(int count)
     m_WorkersBusy = 0;
     m_Workers.reserve(static_cast<size_t>(count));
     for (int i = 0; i < count; ++i)
+    {
         m_Workers.emplace_back([this, i] { WorkerLoop(i); });
+    }
 }
 
 void Raster3D::StopWorkers()
 {
     if (m_Workers.empty())
+    {
         return;
+    }
     {
         std::lock_guard<std::mutex> lock(m_WorkMutex);
         m_StopWorkers = true;
     }
     m_WorkReady.notify_all();
     for (std::thread& worker : m_Workers)
+    {
         worker.join();
+    }
     m_Workers.clear();
     m_WorkerStats.clear();
     m_WorkerHasWork.clear();
@@ -651,11 +771,12 @@ void Raster3D::WorkerLoop(int index)
     {
         {
             std::unique_lock<std::mutex> lock(m_WorkMutex);
-            m_WorkReady.wait(lock, [this, index] {
-                return m_StopWorkers || m_WorkerHasWork[static_cast<size_t>(index)] != 0;
-            });
+            m_WorkReady.wait(lock, [this, index]
+                             { return m_StopWorkers || m_WorkerHasWork[static_cast<size_t>(index)] != 0; });
             if (m_StopWorkers)
+            {
                 return;
+            }
             m_WorkerHasWork[static_cast<size_t>(index)] = 0;
         }
 
@@ -668,7 +789,9 @@ void Raster3D::WorkerLoop(int index)
         {
             std::lock_guard<std::mutex> lock(m_WorkMutex);
             if (--m_WorkersBusy == 0)
+            {
                 m_WorkDone.notify_one();
+            }
         }
     }
 }
@@ -676,7 +799,9 @@ void Raster3D::WorkerLoop(int index)
 void Raster3D::EndFrame()
 {
     if (!m_Buffer)
+    {
         return;
+    }
 
     const int tileCount = m_TilesX * m_TilesY;
     const int threads = static_cast<int>(m_TileDepth.size());
@@ -692,13 +817,17 @@ void Raster3D::EndFrame()
     // and another all the work. Striding spreads a cluster across all of them.
     const int workerCount = static_cast<int>(m_Workers.size());
     for (RasterStats& s : m_WorkerStats)
+    {
         s.Reset();
+    }
 
     {
         std::lock_guard<std::mutex> lock(m_WorkMutex);
         m_WorkersBusy = workerCount;
         for (char& hasWork : m_WorkerHasWork)
+        {
             hasWork = 1;
+        }
     }
     m_WorkReady.notify_all();
 
@@ -726,14 +855,18 @@ void Raster3D::FillTileRange(int start, int stride, uint16_t* tileDepth, RasterS
 {
     const int tileCount = m_TilesX * m_TilesY;
     for (int index = start; index < tileCount; index += stride)
+    {
         FillTile(index % m_TilesX, index / m_TilesX, tileDepth, stats);
+    }
 }
 
 void Raster3D::FillTile(int tileX, int tileY, uint16_t* tileDepth, RasterStats& stats)
 {
     const std::vector<uint32_t>& bin = m_Bins[static_cast<size_t>(tileY) * m_TilesX + tileX];
     if (bin.empty())
+    {
         return;
+    }
 
     const int tile = m_Config.tileSize;
     const int originX = tileX * tile;
@@ -742,17 +875,16 @@ void Raster3D::FillTile(int tileX, int tileY, uint16_t* tileDepth, RasterStats& 
     const int maxY = std::min(originY + tile, static_cast<int>(m_Height)) - 1;
 
     // Reset this thread's scratch buffer and reuse it for every tile it takes.
-    std::fill(tileDepth, tileDepth + static_cast<size_t>(tile) * tile,
-              static_cast<uint16_t>(kDepthMax));
+    std::fill(tileDepth, tileDepth + static_cast<size_t>(tile) * tile, static_cast<uint16_t>(kDepthMax));
 
     for (uint32_t index : bin)
-        FillTriangleInTile(m_Tris[index], originX, originY, maxX, maxY, tileDepth, originX,
-                           originY, stats);
+    {
+        FillTriangleInTile(m_Tris[index], originX, originY, maxX, maxY, tileDepth, originX, originY, stats);
+    }
 }
 
-void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY,
-                                  uint16_t* tileDepth, int tileOriginX, int tileOriginY,
-                                  RasterStats& stats)
+void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY, uint16_t* tileDepth,
+                                  int tileOriginX, int tileOriginY, RasterStats& stats)
 {
     const ScreenVertex& v0 = tri.v[0];
     const ScreenVertex& v1 = tri.v[1];
@@ -768,7 +900,9 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     int bMinY = std::max(minY, static_cast<int>(std::floor(loY)));
     int bMaxY = std::min(maxY, static_cast<int>(std::ceil(hiY)));
     if (bMinX > bMaxX || bMinY > bMaxY)
+    {
         return;
+    }
 
     // floor+cast rather than lrint: lrint honours the current rounding mode,
     // so it stays a libm call, while floor is one instruction.
@@ -786,9 +920,8 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     const int32_t Px = bMinX * kSubScale + kSubScale / 2;
     const int32_t Py = bMinY * kSubScale + kSubScale / 2;
 
-    auto Edge = [](int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t px, int32_t py) -> int64_t {
-        return static_cast<int64_t>(bx - ax) * (py - ay) - static_cast<int64_t>(by - ay) * (px - ax);
-    };
+    auto Edge = [](int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t px, int32_t py) -> int64_t
+    { return static_cast<int64_t>(bx - ax) * (py - ay) - static_cast<int64_t>(by - ay) * (px - ax); };
 
     int64_t rowE0 = Edge(X1, Y1, X2, Y2, Px, Py);  // weight of v0
     int64_t rowE1 = Edge(X2, Y2, X0, Y0, Px, Py);  // weight of v1
@@ -805,13 +938,13 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
 
     const float area2 = (v1.x - v0.x) * (v2.y - v0.y) - (v2.x - v0.x) * (v1.y - v0.y);
     if (area2 == 0.0f)
+    {
         return;
+    }
     const float invArea = 1.0f / area2;
 
-    const Gradient gInvW = MakeGradient(v0.invW, v1.invW, v2.invW,
-                                        v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
-    const Gradient gZ = MakeGradient(v0.z, v1.z, v2.z,
-                                     v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
+    const Gradient gInvW = MakeGradient(v0.invW, v1.invW, v2.invW, v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
+    const Gradient gZ = MakeGradient(v0.z, v1.z, v2.z, v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
     // Perspective-correct interpolates u/w and v/w, which are linear in screen
     // space, and divides back at the span endpoints. Affine interpolates u and
     // v themselves, which are not linear in screen space: that error IS the
@@ -821,15 +954,11 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     auto VertexV = [](const ScreenVertex& v) { return v.invW != 0.0f ? v.vOverW / v.invW : 0.0f; };
 
     const Gradient gU =
-        affine ? MakeGradient(VertexU(v0), VertexU(v1), VertexU(v2),
-                              v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea)
-               : MakeGradient(v0.uOverW, v1.uOverW, v2.uOverW,
-                              v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
+        affine ? MakeGradient(VertexU(v0), VertexU(v1), VertexU(v2), v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea)
+               : MakeGradient(v0.uOverW, v1.uOverW, v2.uOverW, v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
     const Gradient gV =
-        affine ? MakeGradient(VertexV(v0), VertexV(v1), VertexV(v2),
-                              v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea)
-               : MakeGradient(v0.vOverW, v1.vOverW, v2.vOverW,
-                              v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
+        affine ? MakeGradient(VertexV(v0), VertexV(v1), VertexV(v2), v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea)
+               : MakeGradient(v0.vOverW, v1.vOverW, v2.vOverW, v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
 
     const Material3D& mat = m_Materials[tri.materialIndex];
     const Texture3D* tex = mat.texture;
@@ -863,7 +992,9 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
         {
             const bool inside = (e0 >= 0) && (e1 >= 0) && (e2 >= 0);
             if (inside && spanStart < 0)
+            {
                 spanStart = px;
+            }
             if ((!inside || px == bMaxX) && spanStart >= 0)
             {
                 const int spanEnd = inside ? px : px - 1;
@@ -916,10 +1047,17 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     // Depth, also stepped with adds.
                     const float z0 = Eval(gZ, fx0, fy);
                     const float z1 = Eval(gZ, fx1, fy);
-                    auto ToDepth = [](float ndcZ) -> int32_t {
+                    auto ToDepth = [](float ndcZ) -> int32_t
+                    {
                         float d = (ndcZ * 0.5f + 0.5f) * static_cast<float>(kDepthMax);
-                        if (d < 0.0f) d = 0.0f;
-                        if (d > static_cast<float>(kDepthMax)) d = static_cast<float>(kDepthMax);
+                        if (d < 0.0f)
+                        {
+                            d = 0.0f;
+                        }
+                        if (d > static_cast<float>(kDepthMax))
+                        {
+                            d = static_cast<float>(kDepthMax);
+                        }
                         return static_cast<int32_t>(d * (1 << kDepthFrac));
                     };
                     int32_t z = ToDepth(z0);
@@ -937,8 +1075,12 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     span.depthRow = tileDepth + static_cast<size_t>(py - tileOriginY) * tileStride - tileOriginX;
                     span.x0 = runX;
                     span.x1 = chunkEnd;
-                    span.u = u; span.v = v; span.z = z;
-                    span.du = du; span.dv = dv; span.dz = dz;
+                    span.u = u;
+                    span.v = v;
+                    span.z = z;
+                    span.du = du;
+                    span.dv = dv;
+                    span.dz = dz;
                     span.tex = tex;
                     span.alphaTest = mat.alphaTest;
                     span.lit = lit;
@@ -947,7 +1089,9 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     span.flatR = static_cast<uint8_t>(flatRgba & 0xFF);
                     span.flatG = static_cast<uint8_t>((flatRgba >> 8) & 0xFF);
                     span.flatB = static_cast<uint8_t>((flatRgba >> 16) & 0xFF);
-                    span.uMask = uMask; span.vMask = vMask; span.wShift = wShift;
+                    span.uMask = uMask;
+                    span.vMask = vMask;
+                    span.wShift = wShift;
                     span.depthTest = m_Config.depthTest;
                     span.depthWrite = m_Config.depthWrite;
 

@@ -36,8 +36,14 @@ struct Corner
 
     bool operator<(const Corner& o) const
     {
-        if (position != o.position) return position < o.position;
-        if (uv != o.uv) return uv < o.uv;
+        if (position != o.position)
+        {
+            return position < o.position;
+        }
+        if (uv != o.uv)
+        {
+            return uv < o.uv;
+        }
         return normal < o.normal;
     }
 };
@@ -47,17 +53,22 @@ struct Corner
 bool ResolveIndex(int raw, size_t declared, int& out)
 {
     if (raw > 0)
+    {
         out = raw - 1;
+    }
     else if (raw < 0)
+    {
         out = static_cast<int>(declared) + raw;
+    }
     else
+    {
         return false;  // 0 is not a valid .obj index
+    }
     return out >= 0 && static_cast<size_t>(out) < declared;
 }
 
 /// "12", "12/4", "12//7" or "12/4/7".
-bool ParseCorner(const std::string& token, size_t positions, size_t uvs, size_t normals,
-                 Corner& out)
+bool ParseCorner(const std::string& token, size_t positions, size_t uvs, size_t normals, Corner& out)
 {
     int parts[3] = { 0, 0, 0 };
     int partCount = 0;
@@ -65,21 +76,27 @@ bool ParseCorner(const std::string& token, size_t positions, size_t uvs, size_t 
     while (partCount < 3)
     {
         const size_t slash = token.find('/', start);
-        const std::string piece = token.substr(start, slash == std::string::npos
-                                                          ? std::string::npos
-                                                          : slash - start);
+        const std::string piece = token.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
         parts[partCount++] = piece.empty() ? 0 : std::atoi(piece.c_str());
         if (slash == std::string::npos)
+        {
             break;
+        }
         start = slash + 1;
     }
 
     if (!ResolveIndex(parts[0], positions, out.position))
+    {
         return false;
+    }
     if (parts[1] != 0 && !ResolveIndex(parts[1], uvs, out.uv))
+    {
         out.uv = -1;
+    }
     if (parts[2] != 0 && !ResolveIndex(parts[2], normals, out.normal))
+    {
         out.normal = -1;
+    }
     return true;
 }
 
@@ -88,20 +105,26 @@ bool ParseCorner(const std::string& token, size_t positions, size_t uvs, size_t 
 uint16_t FitPowerOfTwo(int value, int cap)
 {
     if (value > cap)
+    {
         value = cap;
+    }
     if (value < 1)
+    {
         value = 1;
+    }
     uint16_t size = 1;
     while (static_cast<int>(size) * 2 <= value)
+    {
         size = static_cast<uint16_t>(size * 2);
+    }
     return size;
 }
 
 /// Box-filter down to the target size, keeping 8-bit RGBA. Averaging rather
 /// than point sampling, because these textures are shrunk a long way and a
 /// point-sampled reduction aliases badly.
-void ResampleRgba(const std::vector<uint8_t>& rgba, int srcW, int srcH,
-                  uint16_t dstW, uint16_t dstH, std::vector<uint8_t>& out)
+void ResampleRgba(const std::vector<uint8_t>& rgba, int srcW, int srcH, uint16_t dstW, uint16_t dstH,
+                  std::vector<uint8_t>& out)
 {
     out.resize(static_cast<size_t>(dstW) * dstH * 4);
 
@@ -128,7 +151,9 @@ void ResampleRgba(const std::vector<uint8_t>& rgba, int srcW, int srcH,
                 }
             }
             if (n == 0)
+            {
                 n = 1;
+            }
             uint8_t* d = out.data() + (static_cast<size_t>(y) * dstW + x) * 4;
             d[0] = static_cast<uint8_t>(r / n);
             d[1] = static_cast<uint8_t>(g / n);
@@ -151,10 +176,26 @@ void EncodeTexels(const std::vector<uint8_t>& rgba, TexelFormat format, std::vec
         uint8_t* d = out.data() + i * TexelBytes(format);
         switch (format)
         {
-            case TexelFormat::RGB565: d[0] = v565 & 0xFF; d[1] = v565 >> 8; break;
-            case TexelFormat::RGB565A8: d[0] = v565 & 0xFF; d[1] = v565 >> 8; d[2] = a; break;
-            case TexelFormat::RGB888: d[0] = r; d[1] = g; d[2] = b; break;
-            case TexelFormat::RGBA8888: d[0] = r; d[1] = g; d[2] = b; d[3] = a; break;
+            case TexelFormat::RGB565:
+                d[0] = v565 & 0xFF;
+                d[1] = v565 >> 8;
+                break;
+            case TexelFormat::RGB565A8:
+                d[0] = v565 & 0xFF;
+                d[1] = v565 >> 8;
+                d[2] = a;
+                break;
+            case TexelFormat::RGB888:
+                d[0] = r;
+                d[1] = g;
+                d[2] = b;
+                break;
+            case TexelFormat::RGBA8888:
+                d[0] = r;
+                d[1] = g;
+                d[2] = b;
+                d[3] = a;
+                break;
             case TexelFormat::ALPHA8: d[0] = a; break;
         }
     }
@@ -163,8 +204,12 @@ void EncodeTexels(const std::vector<uint8_t>& rgba, TexelFormat format, std::vec
 bool HasTransparentTexel(const std::vector<uint8_t>& rgba)
 {
     for (size_t i = 3; i < rgba.size(); i += 4)
+    {
         if (rgba[i] < 128)
+        {
             return true;
+        }
+    }
     return false;
 }
 
@@ -189,7 +234,9 @@ std::map<std::string, MtlEntry> ParseMaterialLibrary(const std::string& mtlText)
     while (std::getline(in, line))
     {
         if (!line.empty() && line.back() == '\r')
+        {
             line.pop_back();
+        }
         std::istringstream ls(line);
         std::string keyword;
         ls >> keyword;
@@ -199,7 +246,9 @@ std::map<std::string, MtlEntry> ParseMaterialLibrary(const std::string& mtlText)
             current.clear();
             ls >> current;
             if (!current.empty())
+            {
                 materials.emplace(current, MtlEntry{});
+            }
         }
         else if (current.empty())
         {
@@ -211,20 +260,28 @@ std::map<std::string, MtlEntry> ParseMaterialLibrary(const std::string& mtlText)
             // last token on the line is the one wanted.
             std::string token, last;
             while (ls >> token)
+            {
                 last = token;
+            }
             materials[current].diffuseMap = last;
         }
         else if (keyword == "Kd")
         {
             float r = 1.0f, g = 1.0f, b = 1.0f;
             ls >> r >> g >> b;
-            auto channel = [](float v) -> uint32_t {
-                if (v < 0.0f) v = 0.0f;
-                if (v > 1.0f) v = 1.0f;
+            auto channel = [](float v) -> uint32_t
+            {
+                if (v < 0.0f)
+                {
+                    v = 0.0f;
+                }
+                if (v > 1.0f)
+                {
+                    v = 1.0f;
+                }
                 return static_cast<uint32_t>(v * 255.0f + 0.5f);
             };
-            materials[current].tint =
-                0xFF000000u | (channel(b) << 16) | (channel(g) << 8) | channel(r);
+            materials[current].tint = 0xFF000000u | (channel(b) << 16) | (channel(g) << 8) | channel(r);
         }
         else if (keyword == "d" || keyword == "Tr")
         {
@@ -244,19 +301,23 @@ std::map<std::string, MtlEntry> ParseMaterialLibrary(const std::string& mtlText)
 std::string ResolveRelative(const std::string& baseDirectory, const std::string& relative)
 {
     if (baseDirectory.empty())
+    {
         return relative;
+    }
     std::string joined = baseDirectory;
     if (joined.back() != '/' && joined.back() != '\\')
+    {
         joined += '/';
+    }
     joined += relative;
     return joined;
 }
 
 }  // namespace
 
-bool CompileObjToMesh(const std::string& objText, const std::string& baseDirectory,
-                      const ImageDecoder& decodeImage, std::vector<uint8_t>& outBlob,
-                      std::string& error, const TextureFormatChooser& chooseFormat, int maxTextureSize)
+bool CompileObjToMesh(const std::string& objText, const std::string& baseDirectory, const ImageDecoder& decodeImage,
+                      std::vector<uint8_t>& outBlob, std::string& error, const TextureFormatChooser& chooseFormat,
+                      int maxTextureSize)
 {
     error.clear();
     outBlob.clear();
@@ -282,13 +343,15 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     std::vector<uint16_t> indices;
     std::string materialLibrary;
 
-    auto beginSubmesh = [&](const std::string& materialName) {
+    auto beginSubmesh = [&](const std::string& materialName)
+    {
         if (!submeshes.empty())
         {
-            submeshes.back().indexCount =
-                static_cast<uint32_t>(indices.size()) - submeshes.back().firstIndex;
+            submeshes.back().indexCount = static_cast<uint32_t>(indices.size()) - submeshes.back().firstIndex;
             if (submeshes.back().indexCount == 0)
+            {
                 submeshes.pop_back();  // usemtl with no faces after it
+            }
         }
         Range r;
         r.firstIndex = static_cast<uint32_t>(indices.size());
@@ -315,9 +378,13 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     {
         ++lineNumber;
         if (!line.empty() && line.back() == '\r')
+        {
             line.pop_back();
+        }
         if (line.empty() || line[0] == '#')
+        {
             continue;
+        }
 
         std::istringstream ls(line);
         std::string keyword;
@@ -345,7 +412,9 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
         else if (keyword == "mtllib")
         {
             if (materialLibrary.empty())
+            {
                 ls >> materialLibrary;
+            }
         }
         else if (keyword == "usemtl")
         {
@@ -356,7 +425,9 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
         else if (keyword == "f")
         {
             if (submeshes.empty())
+            {
                 beginSubmesh("");  // a file with no usemtl is still one submesh
+            }
 
             std::vector<uint16_t> face;
             std::string token;
@@ -391,7 +462,9 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                 face.push_back(index);
             }
             if (overflowed)
+            {
                 break;
+            }
 
             // Fan triangulation: correct for the convex polygons .obj files
             // carry in practice, and it preserves winding.
@@ -416,10 +489,11 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     }
     if (!submeshes.empty())
     {
-        submeshes.back().indexCount =
-            static_cast<uint32_t>(indices.size()) - submeshes.back().firstIndex;
+        submeshes.back().indexCount = static_cast<uint32_t>(indices.size()) - submeshes.back().firstIndex;
         if (submeshes.back().indexCount == 0)
+        {
             submeshes.pop_back();
+        }
     }
 
     const bool hadNormals = !normals.empty();
@@ -496,7 +570,9 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
         {
             material.tint = found->second.tint;
             if (found->second.alphaTest)
+            {
                 material.flags |= MeshMaterial_AlphaTest;
+            }
 
             // No texture coordinates means nothing to sample with, so the
             // image is not worth carrying.
@@ -508,14 +584,15 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                 {
                     material.textureIndex = cached->second;
                     if (textureCutsOut[static_cast<size_t>(cached->second)])
+                    {
                         material.flags |= MeshMaterial_AlphaTest;
+                    }
                 }
                 else
                 {
                     int srcW = 0, srcH = 0;
                     std::vector<uint8_t> rgba;
-                    if (decodeImage(ResolveRelative(baseDirectory, map), srcW, srcH, rgba) &&
-                        srcW > 0 && srcH > 0 &&
+                    if (decodeImage(ResolveRelative(baseDirectory, map), srcW, srcH, rgba) && srcW > 0 && srcH > 0 &&
                         rgba.size() >= static_cast<size_t>(srcW) * srcH * 4)
                     {
                         MeshFileTexture texture{};
@@ -535,7 +612,9 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                                                 format == TexelFormat::ALPHA8;
                         const bool cutsOut = transparent && keepsAlpha;
                         if (cutsOut)
+                        {
                             material.flags |= MeshMaterial_AlphaTest;
+                        }
 
                         std::vector<uint8_t> pixels;
                         EncodeTexels(scaled, format, pixels);
@@ -557,7 +636,9 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     header.version = kMeshFileVersion;
     header.attributes = MeshAttribute_Position | MeshAttribute_Normal;
     if (hasUVs)
+    {
         header.attributes |= MeshAttribute_UV;
+    }
     header.vertexCount = static_cast<uint32_t>(outPositions.size());
     header.indexCount = static_cast<uint32_t>(indices.size());
     header.submeshCount = static_cast<uint16_t>(submeshes.size());
@@ -571,9 +652,12 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     float hi[3] = { lo[0], lo[1], lo[2] };
     for (const Vec3& p : outPositions)
     {
-        lo[0] = std::min(lo[0], p.x); hi[0] = std::max(hi[0], p.x);
-        lo[1] = std::min(lo[1], p.y); hi[1] = std::max(hi[1], p.y);
-        lo[2] = std::min(lo[2], p.z); hi[2] = std::max(hi[2], p.z);
+        lo[0] = std::min(lo[0], p.x);
+        hi[0] = std::max(hi[0], p.x);
+        lo[1] = std::min(lo[1], p.y);
+        hi[1] = std::max(hi[1], p.y);
+        lo[2] = std::min(lo[2], p.z);
+        hi[2] = std::max(hi[2], p.z);
     }
     std::memcpy(header.boundsMin, lo, sizeof(lo));
     std::memcpy(header.boundsMax, hi, sizeof(hi));
@@ -582,7 +666,8 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     outBlob.reserve(sizeof(header) + vertexBytes + indices.size() * sizeof(uint16_t) +
                     submeshes.size() * sizeof(Submesh3D));
 
-    auto append = [&outBlob](const void* data, size_t size) {
+    auto append = [&outBlob](const void* data, size_t size)
+    {
         const uint8_t* bytes = static_cast<const uint8_t*>(data);
         outBlob.insert(outBlob.end(), bytes, bytes + size);
     };
@@ -593,7 +678,9 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
         append(&outPositions[i], sizeof(float) * 3);
         append(&outNormals[i], sizeof(float) * 3);
         if (hasUVs)
+        {
             append(&outUVs[i], sizeof(float) * 2);
+        }
     }
     append(indices.data(), indices.size() * sizeof(uint16_t));
     for (const Range& r : submeshes)
@@ -606,11 +693,17 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
         append(&sub, sizeof(sub));
     }
     for (const MeshFileMaterial& material : outMaterials)
+    {
         append(&material, sizeof(material));
+    }
     for (const MeshFileTexture& texture : outTextures)
+    {
         append(&texture, sizeof(texture));
+    }
     if (!texturePixels.empty())
+    {
         append(texturePixels.data(), texturePixels.size());
+    }
 
     return true;
 }

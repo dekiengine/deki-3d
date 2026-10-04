@@ -41,8 +41,8 @@ namespace Deki3D
 ///
 /// Returns false with `error` set on malformed input, or when the mesh needs
 /// more than 65535 vertices, which the 16-bit index buffer cannot address.
-using ImageDecoder = std::function<bool(const std::string& absolutePath, int& outWidth,
-                                        int& outHeight, std::vector<uint8_t>& outRgba)>;
+using ImageDecoder =
+    std::function<bool(const std::string& absolutePath, int& outWidth, int& outHeight, std::vector<uint8_t>& outRgba)>;
 
 /// A mesh texture's cap when its model sets no Max Size: at RGB565 a 256 x 256
 /// texture is 128 KB, already more than a small board wants resident.
@@ -53,9 +53,8 @@ using TextureFormatChooser = std::function<TexelFormat(bool hasAlpha)>;
 
 /// `maxTextureSize` caps the texture's larger side (its Max Size); the stored
 /// sides are the largest powers of two within it.
-bool CompileObjToMesh(const std::string& objText, const std::string& baseDirectory,
-                      const ImageDecoder& decodeImage, std::vector<uint8_t>& outBlob,
-                      std::string& error, const TextureFormatChooser& chooseFormat = {},
+bool CompileObjToMesh(const std::string& objText, const std::string& baseDirectory, const ImageDecoder& decodeImage,
+                      std::vector<uint8_t>& outBlob, std::string& error, const TextureFormatChooser& chooseFormat = {},
                       int maxTextureSize = kDefaultMeshTextureSize);
 
 }  // namespace Deki3D

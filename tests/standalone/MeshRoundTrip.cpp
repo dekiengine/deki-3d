@@ -35,7 +35,9 @@ void Check(bool ok, const char* what)
 {
     std::printf("  %s  %s\n", ok ? "ok  " : "FAIL", what);
     if (!ok)
+    {
         ++g_Failures;
+    }
 }
 
 // A unit cube: eight corners, six quad faces, normals and texture
@@ -68,7 +70,9 @@ int main()
     std::string error;
     Check(CompileObjToMesh(kCubeObj, "", {}, blob, error), "a cube compiles");
     if (!error.empty())
+    {
         std::printf("        error: %s\n", error.c_str());
+    }
 
     MeshAsset mesh;
     Check(mesh.LoadFromMemory(blob.data(), blob.size()), "the blob loads back");
@@ -118,8 +122,7 @@ int main()
         std::vector<uint8_t> bad = blob;
         MeshFileHeader h{};
         std::memcpy(&h, bad.data(), sizeof(h));
-        const size_t indexOffset =
-            sizeof(MeshFileHeader) + static_cast<size_t>(h.vertexCount) * h.vertexStride;
+        const size_t indexOffset = sizeof(MeshFileHeader) + static_cast<size_t>(h.vertexCount) * h.vertexStride;
         const uint16_t rogue = 9999;
         std::memcpy(bad.data() + indexOffset, &rogue, sizeof(rogue));
         MeshAsset m;
@@ -128,10 +131,8 @@ int main()
     {
         std::string err;
         std::vector<uint8_t> out;
-        Check(!CompileObjToMesh("v 0 0 0\nv 1 0 0\n", "", {}, out, err),
-              "a file with no faces is refused");
-        Check(!CompileObjToMesh("v 0 0 0\nf 1 2 3\n", "", {}, out, err),
-              "an out-of-range face is refused");
+        Check(!CompileObjToMesh("v 0 0 0\nv 1 0 0\n", "", {}, out, err), "a file with no faces is refused");
+        Check(!CompileObjToMesh("v 0 0 0\nf 1 2 3\n", "", {}, out, err), "an out-of-range face is refused");
     }
 
     std::printf("\nTextures\n");
@@ -145,11 +146,13 @@ int main()
         std::ofstream(dir / "cube.mtl") << "newmtl shell\nmap_Kd brick.png\n";
 
         bool decoderCalled = false;
-        auto decoder = [&decoderCalled](const std::string& path, int& w, int& h,
-                                        std::vector<uint8_t>& rgba) {
+        auto decoder = [&decoderCalled](const std::string& path, int& w, int& h, std::vector<uint8_t>& rgba)
+        {
             decoderCalled = true;
             if (path.find("brick.png") == std::string::npos)
+            {
                 return false;
+            }
             w = 12;
             h = 6;
             rgba.assign(static_cast<size_t>(w) * h * 4, 0);
@@ -168,8 +171,7 @@ int main()
 
         std::vector<uint8_t> out;
         std::string err;
-        Check(CompileObjToMesh(textured, dir.string(), decoder, out, err),
-              "a textured model compiles");
+        Check(CompileObjToMesh(textured, dir.string(), decoder, out, err), "a textured model compiles");
         Check(decoderCalled, "the material library led to the image");
 
         MeshAsset m;
@@ -187,12 +189,10 @@ int main()
 
         // Without a decoder the same model still compiles, just untextured.
         std::vector<uint8_t> bare;
-        Check(CompileObjToMesh(textured, dir.string(), {}, bare, err),
-              "no decoder still compiles");
+        Check(CompileObjToMesh(textured, dir.string(), {}, bare, err), "no decoder still compiles");
         MeshAsset m2;
         m2.LoadFromMemory(bare.data(), bare.size());
-        Check(m2.MaterialCount() == 1 && m2.Materials()[0].texture == nullptr,
-              "and carries no texture");
+        Check(m2.MaterialCount() == 1 && m2.Materials()[0].texture == nullptr, "and carries no texture");
 
         fs::remove_all(dir);
     }
@@ -205,16 +205,17 @@ int main()
         const fs::path dir = fs::temp_directory_path() / "deki-3d-multimat-test";
         fs::remove_all(dir);
         fs::create_directories(dir);
-        std::ofstream(dir / "m.mtl")
-            << "newmtl red\nKd 1 1 1\nmap_Kd red.png\n"
-               "newmtl alsored\nKd 1 1 1\nmap_Kd red.png\n"
-               "newmtl plain\nKd 0.0 1.0 0.0\nd 0.5\n";
+        std::ofstream(dir / "m.mtl") << "newmtl red\nKd 1 1 1\nmap_Kd red.png\n"
+                                        "newmtl alsored\nKd 1 1 1\nmap_Kd red.png\n"
+                                        "newmtl plain\nKd 0.0 1.0 0.0\nd 0.5\n";
 
         int decodeCount = 0;
-        auto decoder = [&decodeCount](const std::string& path, int& w, int& h,
-                                      std::vector<uint8_t>& rgba) {
+        auto decoder = [&decodeCount](const std::string& path, int& w, int& h, std::vector<uint8_t>& rgba)
+        {
             if (path.find("red.png") == std::string::npos)
+            {
                 return false;
+            }
             ++decodeCount;
             w = h = 4;
             rgba.assign(static_cast<size_t>(w) * h * 4, 0);
@@ -228,7 +229,9 @@ int main()
 
         std::string obj = "mtllib m.mtl\n";
         for (int i = 0; i < 9; ++i)
+        {
             obj += "v " + std::to_string(i) + " 0 0\n";
+        }
         obj += "vt 0 0\nvt 1 0\nvt 1 1\n";
         obj += "usemtl red\nf 1/1 2/2 3/3\n";
         obj += "usemtl alsored\nf 4/1 5/2 6/3\n";
@@ -238,7 +241,9 @@ int main()
         std::string err;
         Check(CompileObjToMesh(obj, dir.string(), decoder, out, err), "it compiles");
         if (!err.empty())
+        {
             std::printf("        error: %s\n", err.c_str());
+        }
 
         MeshAsset m;
         Check(m.LoadFromMemory(out.data(), out.size()), "it loads back");
@@ -256,8 +261,7 @@ int main()
             const Material3D& alsoRed = mats[m.View().submeshes[1].materialIndex];
             const Material3D& plain = mats[m.View().submeshes[2].materialIndex];
 
-            Check(red.texture != nullptr && alsoRed.texture != nullptr,
-                  "both textured groups got a texture");
+            Check(red.texture != nullptr && alsoRed.texture != nullptr, "both textured groups got a texture");
             Check(red.texture == alsoRed.texture, "and they share the one texture");
             Check(plain.texture == nullptr, "the untextured group has none");
             Check((plain.tint & 0x00FFFFFFu) == 0x0000FF00u, "its Kd became a green tint");
@@ -279,11 +283,9 @@ int main()
         cfg.tileSize = 32;
         Raster3D r;
         const Deki::Mat4 vp = Mul(Perspective(1.0f, 1.0f, 0.1f, 100.0f),
-                                  LookAt(Deki::Vector3(0, 0, 5), Deki::Vector3(0, 0, 0),
-                                         Deki::Vector3(0, 1, 0)));
+                                  LookAt(Deki::Vector3(0, 0, 5), Deki::Vector3(0, 0, 0), Deki::Vector3(0, 1, 0)));
         r.BeginFrame(reinterpret_cast<uint8_t*>(fb.data()), W, H, Deki::ColorFormat::RGB565, cfg);
-        r.DrawMesh(view, &mat, 1, Mul(vp, Compose(0, 0, 0, 0.4f, 0.7f, 0, 1, 1, 1)),
-                   Deki::Mat4::Identity());
+        r.DrawMesh(view, &mat, 1, Mul(vp, Compose(0, 0, 0, 0.4f, 0.7f, 0, 1, 1, 1)), Deki::Mat4::Identity());
         r.EndFrame();
 
         Check(r.Stats().trianglesIn == 12, "all twelve triangles reached the rasteriser");

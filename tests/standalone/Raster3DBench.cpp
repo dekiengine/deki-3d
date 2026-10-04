@@ -59,21 +59,13 @@ MeshData MakeCube(int divisions)
     // Six faces, each a grid of `divisions` quads a side. Winding is
     // counter-clockwise seen from outside, which is what the rasteriser
     // treats as front-facing.
-    const Vector3 faceNormals[6] = {
-        Vector3(0, 0, 1), Vector3(0, 0, -1), Vector3(1, 0, 0),
-        Vector3(-1, 0, 0), Vector3(0, 1, 0), Vector3(0, -1, 0)
-    };
-    const Vector3 faceU[6] = {
-        Vector3(1, 0, 0), Vector3(-1, 0, 0), Vector3(0, 0, -1),
-        Vector3(0, 0, 1), Vector3(1, 0, 0), Vector3(1, 0, 0)
-    };
-    const Vector3 faceV[6] = {
-        Vector3(0, 1, 0), Vector3(0, 1, 0), Vector3(0, 1, 0),
-        Vector3(0, 1, 0), Vector3(0, 0, -1), Vector3(0, 0, 1)
-    };
-    const uint32_t faceColors[6] = {
-        0xFF4040FFu, 0xFF40FF40u, 0xFFFF4040u, 0xFF40FFFFu, 0xFFFF40FFu, 0xFFFFFF40u
-    };
+    const Vector3 faceNormals[6] = { Vector3(0, 0, 1),  Vector3(0, 0, -1), Vector3(1, 0, 0),
+                                     Vector3(-1, 0, 0), Vector3(0, 1, 0),  Vector3(0, -1, 0) };
+    const Vector3 faceU[6] = { Vector3(1, 0, 0), Vector3(-1, 0, 0), Vector3(0, 0, -1),
+                               Vector3(0, 0, 1), Vector3(1, 0, 0),  Vector3(1, 0, 0) };
+    const Vector3 faceV[6] = { Vector3(0, 1, 0), Vector3(0, 1, 0),  Vector3(0, 1, 0),
+                               Vector3(0, 1, 0), Vector3(0, 0, -1), Vector3(0, 0, 1) };
+    const uint32_t faceColors[6] = { 0xFF4040FFu, 0xFF40FF40u, 0xFFFF4040u, 0xFF40FFFFu, 0xFFFF40FFu, 0xFFFFFF40u };
 
     for (int f = 0; f < 6; ++f)
     {
@@ -127,11 +119,13 @@ struct CheckerTexture
         const int size = 1 << shift;
         pixels.resize(static_cast<size_t>(size) * size);
         for (int y = 0; y < size; ++y)
+        {
             for (int x = 0; x < size; ++x)
             {
                 const bool on = ((x >> 3) ^ (y >> 3)) & 1;
                 pixels[static_cast<size_t>(y) * size + x] = on ? 0xFFFF : 0x2104;
             }
+        }
         view.pixels = reinterpret_cast<const uint8_t*>(pixels.data());
         view.palette = nullptr;
         view.width = static_cast<uint16_t>(size);
@@ -187,8 +181,14 @@ void CorrectnessChecks()
     // Two quads facing the camera, the red one nearer. Depth must decide.
     MeshData near = MakeCube(1);
     MeshData far = MakeCube(1);
-    for (auto& v : near.vertices) v.color = 0xFF0000FFu;   // red
-    for (auto& v : far.vertices) v.color = 0xFF00FF00u;    // green
+    for (auto& v : near.vertices)
+    {
+        v.color = 0xFF0000FFu;  // red
+    }
+    for (auto& v : far.vertices)
+    {
+        v.color = 0xFF00FF00u;  // green
+    }
 
     Material3D mat;
     mat.shading = ShadingModel::Unlit;
@@ -211,8 +211,7 @@ void CorrectnessChecks()
 
     // Backface culling: a cube seen from outside shows three faces at most,
     // so the number of triangles surviving the clip is well under the total.
-    Check(r.Stats().trianglesClipped < r.Stats().trianglesIn,
-          "backfaces are culled before binning");
+    Check(r.Stats().trianglesClipped < r.Stats().trianglesIn, "backfaces are culled before binning");
 
     WritePpm("raster_depth.ppm", fb, W, H);
 
@@ -239,8 +238,7 @@ void CorrectnessChecks()
             c.tileSize = 32;
             c.threadCount = pass == 0 ? 1 : 4;
             Raster3D rr;
-            rr.BeginFrame(reinterpret_cast<uint8_t*>(target.data()), TW, TH,
-                          Deki::ColorFormat::RGB565, c);
+            rr.BeginFrame(reinterpret_cast<uint8_t*>(target.data()), TW, TH, Deki::ColorFormat::RGB565, c);
             rr.DrawMesh(mesh.View(), &m, 1, Mul(tvp, model), Mat4::Identity());
             rr.EndFrame();
             (pass == 0 ? singleWritten : manyWritten) = rr.Stats().pixelsWritten;
@@ -268,8 +266,7 @@ void CorrectnessChecks()
                 c.threadCount = threads;
                 for (int frame = 0; frame < 3; ++frame)
                 {
-                    rr.BeginFrame(reinterpret_cast<uint8_t*>(target.data()), TW, TH,
-                                  Deki::ColorFormat::RGB565, c);
+                    rr.BeginFrame(reinterpret_cast<uint8_t*>(target.data()), TW, TH, Deki::ColorFormat::RGB565, c);
                     rr.DrawMesh(mesh.View(), &m, 1, Mul(tvp, model), Mat4::Identity());
                     rr.EndFrame();
                 }
@@ -289,14 +286,13 @@ void CorrectnessChecks()
         Material3D m;
         m.shading = ShadingModel::Unlit;
 
-        const Mat4 cvp = Mul(Perspective(1.0f, 1.0f, 0.1f, 100.0f),
-                             LookAt(Vector3(0, 0, 4), Vector3(0, 0, 0), Vector3(0, 1, 0)));
+        const Mat4 cvp =
+            Mul(Perspective(1.0f, 1.0f, 0.1f, 100.0f), LookAt(Vector3(0, 0, 4), Vector3(0, 0, 0), Vector3(0, 1, 0)));
         RasterConfig c;
         c.tileSize = 32;
 
         Raster3D a;
-        a.BeginFrame(reinterpret_cast<uint8_t*>(onscreen.data()), CW, CH,
-                     Deki::ColorFormat::RGB565, c);
+        a.BeginFrame(reinterpret_cast<uint8_t*>(onscreen.data()), CW, CH, Deki::ColorFormat::RGB565, c);
         a.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(0, 0, 0)), Mat4::Identity());
         a.EndFrame();
         Check(a.Stats().meshesCulled == 0, "a mesh in view is not culled");
@@ -305,8 +301,7 @@ void CorrectnessChecks()
         // The same frame, plus meshes far outside every plane. The picture
         // must be identical and they must all have been skipped.
         Raster3D b;
-        b.BeginFrame(reinterpret_cast<uint8_t*>(withOffscreen.data()), CW, CH,
-                     Deki::ColorFormat::RGB565, c);
+        b.BeginFrame(reinterpret_cast<uint8_t*>(withOffscreen.data()), CW, CH, Deki::ColorFormat::RGB565, c);
         b.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(0, 0, 0)), Mat4::Identity());
         // Past each of the six planes. The far one has to clear 100 units
         // measured from the camera at z = 4, not from the origin; -90 is
@@ -314,19 +309,18 @@ void CorrectnessChecks()
         const Vector3 aside[] = { Vector3(-40, 0, 0), Vector3(40, 0, 0),   Vector3(0, -40, 0),
                                   Vector3(0, 40, 0),  Vector3(0, 0, -500), Vector3(0, 0, 40) };
         for (const Vector3& offset : aside)
-            b.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(offset.x, offset.y, offset.z)),
-                       Mat4::Identity());
+        {
+            b.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(offset.x, offset.y, offset.z)), Mat4::Identity());
+        }
         b.EndFrame();
 
         Check(b.Stats().meshesCulled == 6, "six off-screen meshes were all culled");
-        Check(b.Stats().trianglesIn == a.Stats().trianglesIn,
-              "and cost no triangle work at all");
+        Check(b.Stats().trianglesIn == a.Stats().trianglesIn, "and cost no triangle work at all");
         Check(onscreen == withOffscreen, "the picture is unchanged by what was culled");
 
         // A mesh straddling the edge must survive: half of it is visible.
         Raster3D d;
-        d.BeginFrame(reinterpret_cast<uint8_t*>(withOffscreen.data()), CW, CH,
-                     Deki::ColorFormat::RGB565, c);
+        d.BeginFrame(reinterpret_cast<uint8_t*>(withOffscreen.data()), CW, CH, Deki::ColorFormat::RGB565, c);
         d.DrawMesh(cube.View(), &m, 1, Mul(cvp, Translate(1.4f, 0, 0)), Mat4::Identity());
         d.EndFrame();
         Check(d.Stats().meshesCulled == 0, "a mesh straddling the edge is kept");
@@ -357,8 +351,8 @@ struct Result
     double MsPerFrame() const { return msClear + msGeometry + msFill; }
 };
 
-Result TimeFrames(int width, int height, const MeshData& mesh, const Material3D& mat,
-                  const RasterConfig& cfg, int frames, const char* ppmPath)
+Result TimeFrames(int width, int height, const MeshData& mesh, const Material3D& mat, const RasterConfig& cfg,
+                  int frames, const char* ppmPath)
 {
     std::vector<uint16_t> fb(static_cast<size_t>(width) * height, 0);
     Raster3D r;
@@ -373,9 +367,8 @@ Result TimeFrames(int width, int height, const MeshData& mesh, const Material3D&
     r.EndFrame();
 
     using Clock = std::chrono::steady_clock;
-    auto Ns = [](Clock::duration d) {
-        return static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(d).count());
-    };
+    auto Ns = [](Clock::duration d)
+    { return static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(d).count()); };
 
     double clearNs = 0, geomNs = 0, fillNs = 0;
     uint64_t pixels = 0;
@@ -407,7 +400,9 @@ Result TimeFrames(int width, int height, const MeshData& mesh, const Material3D&
     }
 
     if (ppmPath)
+    {
         WritePpm(ppmPath, fb, width, height);
+    }
 
     Result res;
     res.msClear = clearNs / frames / 1e6;
@@ -427,8 +422,7 @@ int main()
     CorrectnessChecks();
 
     std::printf("\nTimings (this desktop, one core, -O2)\n");
-    std::printf("%-33s %8s %7s %7s %7s %8s %8s\n",
-                "case", "ms/frame", "clear", "geom", "fill", "ns/pixel", "ns/tri");
+    std::printf("%-33s %8s %7s %7s %7s %8s %8s\n", "case", "ms/frame", "clear", "geom", "fill", "ns/pixel", "ns/tri");
 
     CheckerTexture checker(6);  // 64x64
     Material3D textured;
@@ -476,26 +470,25 @@ int main()
     deviceTwoThreads.threadCount = 2;
 
     const Case cases[] = {
-        { "320x240 low poly, textured",   320, 240, &lowPoly,  &textured,     device,       300, "raster_320.ppm" },
-        { "320x240 low poly, affine",     320, 240, &lowPoly,  &textured,     affine,       300, "raster_affine.ppm" },
-        { "320x240 low poly, retro snap", 320, 240, &lowPoly,  &textured,     retro,        300, "raster_retro.ppm" },
-        { "320x240 low poly, vertex lit", 320, 240, &lowPoly,  &texturedLit,  device,       300, nullptr },
-        { "320x240 mid poly, textured",   320, 240, &midPoly,  &textured,     device,       200, nullptr },
-        { "320x240 high poly, textured",  320, 240, &highPoly, &textured,     device,       100, nullptr },
-        { "1920x1080 low poly, textured", 1920, 1080, &lowPoly, &textured,    desktopTiles, 100, "raster_1080.ppm" },
-        { "1920x1080 mid poly, textured", 1920, 1080, &midPoly, &textured,    desktopTiles, 60,  nullptr },
-        { "1920x1080 high poly, textured",1920, 1080, &highPoly, &textured,   desktopTiles, 40,  nullptr },
-        { "1920x1080 low poly, 2 threads", 1920, 1080, &lowPoly, &textured,    twoThreads,   100, nullptr },
-        { "1920x1080 low poly, 4 threads", 1920, 1080, &lowPoly, &textured,    fourThreads,  100, nullptr },
-        { "320x240 low poly, 2 threads",   320, 240, &lowPoly,  &textured,     deviceTwoThreads, 300, nullptr },
+        { "320x240 low poly, textured", 320, 240, &lowPoly, &textured, device, 300, "raster_320.ppm" },
+        { "320x240 low poly, affine", 320, 240, &lowPoly, &textured, affine, 300, "raster_affine.ppm" },
+        { "320x240 low poly, retro snap", 320, 240, &lowPoly, &textured, retro, 300, "raster_retro.ppm" },
+        { "320x240 low poly, vertex lit", 320, 240, &lowPoly, &texturedLit, device, 300, nullptr },
+        { "320x240 mid poly, textured", 320, 240, &midPoly, &textured, device, 200, nullptr },
+        { "320x240 high poly, textured", 320, 240, &highPoly, &textured, device, 100, nullptr },
+        { "1920x1080 low poly, textured", 1920, 1080, &lowPoly, &textured, desktopTiles, 100, "raster_1080.ppm" },
+        { "1920x1080 mid poly, textured", 1920, 1080, &midPoly, &textured, desktopTiles, 60, nullptr },
+        { "1920x1080 high poly, textured", 1920, 1080, &highPoly, &textured, desktopTiles, 40, nullptr },
+        { "1920x1080 low poly, 2 threads", 1920, 1080, &lowPoly, &textured, twoThreads, 100, nullptr },
+        { "1920x1080 low poly, 4 threads", 1920, 1080, &lowPoly, &textured, fourThreads, 100, nullptr },
+        { "320x240 low poly, 2 threads", 320, 240, &lowPoly, &textured, deviceTwoThreads, 300, nullptr },
     };
 
     for (const Case& c : cases)
     {
         const Result r = TimeFrames(c.w, c.h, *c.mesh, *c.mat, c.cfg, c.frames, c.ppm);
-        std::printf("%-33s %8.3f %7.3f %7.3f %7.3f %8.2f %8.1f\n", c.name,
-                    r.MsPerFrame(), r.msClear, r.msGeometry, r.msFill,
-                    r.nsPerPixel, r.nsPerTri);
+        std::printf("%-33s %8.3f %7.3f %7.3f %7.3f %8.2f %8.1f\n", c.name, r.MsPerFrame(), r.msClear, r.msGeometry,
+                    r.msFill, r.nsPerPixel, r.nsPerTri);
     }
 
     std::printf("\n%d check(s) failed\n", g_Failures);

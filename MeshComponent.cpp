@@ -22,8 +22,7 @@ struct PrimitiveStorage
     std::vector<Submesh3D> submeshes;
 };
 
-void AddQuad(PrimitiveStorage& s, const Deki::Vector3& origin,
-             const Deki::Vector3& du, const Deki::Vector3& dv,
+void AddQuad(PrimitiveStorage& s, const Deki::Vector3& origin, const Deki::Vector3& du, const Deki::Vector3& dv,
              const Deki::Vector3& normal)
 {
     const uint16_t base = static_cast<uint16_t>(s.vertices.size());
@@ -60,8 +59,7 @@ void BuildCube(PrimitiveStorage& s)
 
 void BuildQuad(PrimitiveStorage& s)
 {
-    AddQuad(s, Deki::Vector3(-1, -1, 0), Deki::Vector3(2, 0, 0), Deki::Vector3(0, 2, 0),
-            Deki::Vector3(0, 0, 1));
+    AddQuad(s, Deki::Vector3(-1, -1, 0), Deki::Vector3(2, 0, 0), Deki::Vector3(0, 2, 0), Deki::Vector3(0, 0, 1));
 }
 
 void BuildPyramid(PrimitiveStorage& s)
@@ -77,7 +75,9 @@ void BuildPyramid(PrimitiveStorage& s)
         const V& b = corners[(i + 1) % 4];
         V n = (b - a).Cross(apex - a);
         if (n.LengthSquared() > 0.0f)
+        {
             n.Normalize();
+        }
 
         const uint16_t base = static_cast<uint16_t>(s.vertices.size());
         const V tri[3] = { a, b, apex };
@@ -92,8 +92,7 @@ void BuildPyramid(PrimitiveStorage& s)
             v.color = 0xFFFFFFFFu;
             s.vertices.push_back(v);
         }
-        s.indices.insert(s.indices.end(), { base, static_cast<uint16_t>(base + 1),
-                                            static_cast<uint16_t>(base + 2) });
+        s.indices.insert(s.indices.end(), { base, static_cast<uint16_t>(base + 1), static_cast<uint16_t>(base + 2) });
     }
 }
 
@@ -123,15 +122,16 @@ const Deki3D::Mesh3D* MeshComponent::Resolve() const
             if (!reported)
             {
                 reported = true;
-                DEKI_LOG_WARNING("MeshComponent: the mesh asset '%s' did not load; drawing nothing",
-                                 mesh.guid.c_str());
+                DEKI_LOG_WARNING("MeshComponent: the mesh asset '%s' did not load; drawing nothing", mesh.guid.c_str());
             }
         }
         return (asset && asset->Valid()) ? &asset->View() : nullptr;
     }
 
     if (m_Storage && m_BuiltPrimitive == primitive)
+    {
         return &m_Mesh;
+    }
 
     PrimitiveStorage* storage = static_cast<PrimitiveStorage*>(m_Storage);
     if (!storage)
@@ -174,13 +174,15 @@ const Deki3D::Mesh3D* MeshComponent::Resolve() const
 const Deki3D::MeshAsset* MeshComponent::Asset() const
 {
     if (!mesh.HasGuid())
+    {
         return nullptr;
+    }
     const Deki3D::MeshAsset* asset = mesh.Get();
     return (asset && asset->Valid()) ? asset : nullptr;
 }
 
-bool MeshComponent::RenderContent(const Deki::Object*, QuadBlit::Source&, float&, float&,
-                                  uint8_t&, uint8_t&, uint8_t&, uint8_t&)
+bool MeshComponent::RenderContent(const Deki::Object*, QuadBlit::Source&, float&, float&, uint8_t&, uint8_t&, uint8_t&,
+                                  uint8_t&)
 {
     return false;  // Mesh3DPass draws this; see the note in the header.
 }

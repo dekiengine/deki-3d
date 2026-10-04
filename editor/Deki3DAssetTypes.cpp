@@ -36,7 +36,6 @@
 #include <string>
 #include <vector>
 
-
 namespace fs = std::filesystem;
 
 namespace DekiEditor
@@ -60,12 +59,16 @@ TextureSettings ReadModelTextureSettings(const std::string& absolutePath)
 {
     std::ifstream dataFile(absolutePath + ".data");
     if (!dataFile.is_open())
+    {
         return {};
+    }
     try
     {
         const nlohmann::json data = nlohmann::json::parse(dataFile);
         if (data.contains("settings") && data["settings"].contains("texture"))
+        {
             return ReadTextureSettings(data["settings"]["texture"]);
+        }
     }
     catch (const nlohmann::json::exception&)
     {
@@ -74,12 +77,11 @@ TextureSettings ReadModelTextureSettings(const std::string& absolutePath)
 }
 
 /// The format a model's texture is stored in for `target`.
-Deki3D::TexelFormat ChooseTexelFormat(const TextureSettings& settings, const AssetExportTarget& target,
-                                      bool hasAlpha)
+Deki3D::TexelFormat ChooseTexelFormat(const TextureSettings& settings, const AssetExportTarget& target, bool hasAlpha)
 {
     // TexelFormat is numbered as TextureFormat.
-    const TextureFormat f = ResolveTextureFormat(settings.format, settings.TargetFormat(target.platformId),
-                                                 target.colorFormat, hasAlpha);
+    const TextureFormat f =
+        ResolveTextureFormat(settings.format, settings.TargetFormat(target.platformId), target.colorFormat, hasAlpha);
     return static_cast<Deki3D::TexelFormat>(static_cast<uint8_t>(f));
 }
 
@@ -100,11 +102,13 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
     // model itself, and decoding an image is the editor's job, so both are
     // supplied here rather than reached for inside the parser.
     const std::string baseDirectory = fs::path(absolutePath).parent_path().string();
-    auto decodeImage = [](const std::string& imagePath, int& width, int& height,
-                          std::vector<uint8_t>& rgba) {
+    auto decodeImage = [](const std::string& imagePath, int& width, int& height, std::vector<uint8_t>& rgba)
+    {
         DecodedImage decoded;
         if (!DecodeImageFile(imagePath, decoded))
+        {
             return false;
+        }
         width = decoded.width;
         height = decoded.height;
         rgba = std::move(decoded.rgba);
@@ -131,28 +135,31 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
         return false;
     }
     out.write(reinterpret_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.size()));
-    DEKI_LOG_DEBUG("Deki3D: compiled '%s' to %zu bytes",
-                   fs::path(absolutePath).filename().string().c_str(), blob.size());
+    DEKI_LOG_DEBUG("Deki3D: compiled '%s' to %zu bytes", fs::path(absolutePath).filename().string().c_str(),
+                   blob.size());
     return true;
 }
 
 /// Compile one .obj into the cache, stored for the editor's target. Failure
 /// leaves no cache file, so the component's asset stays unresolved and the
 /// pass draws nothing rather than drawing something wrong.
-void HandleObjSync(const std::string& absolutePath, const std::string& guid,
-                   const std::string& projectPath)
+void HandleObjSync(const std::string& absolutePath, const std::string& guid, const std::string& projectPath)
 {
     const AssetPipeline* pipeline = AssetPipeline::Instance();
     const AssetExportTarget target = pipeline ? pipeline->GetEditorTarget() : AssetExportTarget{};
     const fs::path cachePath = fs::path(GetCacheDirectory(projectPath)) / guid;
     if (!CompileObjFile(absolutePath, target, cachePath.string()))
+    {
         return;
+    }
 
     // The compiled blob lives in the cache under the source's own GUID, so
     // point the asset manager at it. Without this the GUID resolves to the
     // .obj text, and MeshAsset rejects that as not being a mesh.
     if (auto* assets = Deki::AssetManager::Get())
+    {
         assets->RegisterGuid(guid, guid);
+    }
 }
 
 /// Re-point every already-compiled model at its cache entry. The sync handler
@@ -162,20 +169,25 @@ void RegisterCompiledMeshes(AssetPipeline* pipeline, const std::string& projectP
 {
     auto* assets = Deki::AssetManager::Get();
     if (!pipeline || !assets)
+    {
         return;
+    }
 
     const fs::path cacheDir(GetCacheDirectory(projectPath));
     for (const auto& entry : pipeline->GetAllAssets())
     {
         const std::string& relativePath = entry.first;
-        if (relativePath.size() < 4 ||
-            relativePath.compare(relativePath.size() - 4, 4, ".obj") != 0)
+        if (relativePath.size() < 4 || relativePath.compare(relativePath.size() - 4, 4, ".obj") != 0)
+        {
             continue;
+        }
 
         const std::string& guid = entry.second.guid;
         std::error_code ec;
         if (!guid.empty() && fs::exists(cacheDir / guid, ec))
+        {
             assets->RegisterGuid(guid, guid);
+        }
     }
 }
 
@@ -188,16 +200,16 @@ struct Deki3DAssetRegistrar
     {
         AssetTypeRegistry::Instance().RegisterCategory(".obj", AssetCategory::Data);
 
-        AssetPipeline::OnStarted([](AssetPipeline* pipeline) {
-            pipeline->RegisterSyncHandler(".obj", HandleObjSync);
-            pipeline->RegisterExportEncoder(".obj", [](const AssetExportContext& ctx) {
-                return CompileObjFile(ctx.absolutePath, ctx.target, ctx.outPath);
+        AssetPipeline::OnStarted(
+            [](AssetPipeline* pipeline)
+            {
+                pipeline->RegisterSyncHandler(".obj", HandleObjSync);
+                pipeline->RegisterExportEncoder(".obj", [](const AssetExportContext& ctx)
+                                                { return CompileObjFile(ctx.absolutePath, ctx.target, ctx.outPath); });
             });
-        });
 
-        AssetPipeline::OnImportComplete([](AssetPipeline* pipeline) {
-            RegisterCompiledMeshes(pipeline, pipeline->GetProjectPath());
-        });
+        AssetPipeline::OnImportComplete([](AssetPipeline* pipeline)
+                                        { RegisterCompiledMeshes(pipeline, pipeline->GetProjectPath()); });
     }
 };
 static Deki3DAssetRegistrar s_deki3DAssetRegistrar;

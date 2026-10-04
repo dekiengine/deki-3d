@@ -39,7 +39,9 @@ inline Mat4 Mul(const Mat4& a, const Mat4& b)
         {
             float sum = 0.0f;
             for (int k = 0; k < 4; ++k)
+            {
                 sum += a.m[k][r] * b.m[c][k];
+            }
             out.m[c][r] = sum;
         }
     }
@@ -120,9 +122,8 @@ inline Mat4 RotateZ(float radians)
 
 /// A Deki object's transform as a matrix: scale, then R = Rz * Ry * Rx, then
 /// translation. `rotationZ` is the object's `rotation`.
-inline Mat4 Compose(float x, float y, float z,
-                    float rotationX, float rotationY, float rotationZ,
-                    float scaleX, float scaleY, float scaleZ)
+inline Mat4 Compose(float x, float y, float z, float rotationX, float rotationY, float rotationZ, float scaleX,
+                    float scaleY, float scaleZ)
 {
     Mat4 r = Mul(RotateZ(rotationZ), Mul(RotateY(rotationY), RotateX(rotationX)));
     return Mul(Translate(x, y, z), Mul(r, Scale(scaleX, scaleY, scaleZ)));
@@ -135,7 +136,9 @@ inline Mat4 Perspective(float fovY, float aspect, float nearZ, float farZ)
     Mat4 m;
     const float t = std::tan(fovY * 0.5f);
     if (t == 0.0f || aspect == 0.0f || nearZ == farZ)
+    {
         return m;  // identity rather than infinities on a degenerate camera
+    }
 
     const float f = 1.0f / t;
     m.m[0][0] = f / aspect;
@@ -154,14 +157,22 @@ inline Mat4 LookAt(const Vector3& eye, const Vector3& target, const Vector3& up)
     Vector3 s = f.Cross(up);                        // right
     const float sLen = s.Length();
     if (sLen <= 0.0f)
+    {
         return Mat4::Identity();  // degenerate: forward parallel to up
+    }
     s = s / sLen;
     const Vector3 u = s.Cross(f);  // true up
 
     Mat4 m;
-    m.m[0][0] = s.x;  m.m[1][0] = s.y;  m.m[2][0] = s.z;
-    m.m[0][1] = u.x;  m.m[1][1] = u.y;  m.m[2][1] = u.z;
-    m.m[0][2] = -f.x; m.m[1][2] = -f.y; m.m[2][2] = -f.z;
+    m.m[0][0] = s.x;
+    m.m[1][0] = s.y;
+    m.m[2][0] = s.z;
+    m.m[0][1] = u.x;
+    m.m[1][1] = u.y;
+    m.m[2][1] = u.z;
+    m.m[0][2] = -f.x;
+    m.m[1][2] = -f.y;
+    m.m[2][2] = -f.z;
     m.m[3][0] = -s.Dot(eye);
     m.m[3][1] = -u.Dot(eye);
     m.m[3][2] = f.Dot(eye);

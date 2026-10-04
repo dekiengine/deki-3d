@@ -32,6 +32,7 @@ std::vector<uint8_t> SourceRgba(bool holes)
 {
     std::vector<uint8_t> rgba(kTex * kTex * 4);
     for (int y = 0; y < kTex; ++y)
+    {
         for (int x = 0; x < kTex; ++x)
         {
             uint8_t* p = &rgba[(y * kTex + x) * 4];
@@ -41,6 +42,7 @@ std::vector<uint8_t> SourceRgba(bool holes)
             p[2] = (right != bottom) ? 220 : 20;
             p[3] = (holes && right) ? 0 : 255;
         }
+    }
     return rgba;
 }
 
@@ -55,10 +57,26 @@ std::vector<uint8_t> Encode(const std::vector<uint8_t>& rgba, TexelFormat format
         uint8_t* d = &out[i * TexelBytes(format)];
         switch (format)
         {
-            case TexelFormat::RGB565: d[0] = v & 0xFF; d[1] = v >> 8; break;
-            case TexelFormat::RGB565A8: d[0] = v & 0xFF; d[1] = v >> 8; d[2] = a; break;
-            case TexelFormat::RGB888: d[0] = r; d[1] = g; d[2] = b; break;
-            case TexelFormat::RGBA8888: d[0] = r; d[1] = g; d[2] = b; d[3] = a; break;
+            case TexelFormat::RGB565:
+                d[0] = v & 0xFF;
+                d[1] = v >> 8;
+                break;
+            case TexelFormat::RGB565A8:
+                d[0] = v & 0xFF;
+                d[1] = v >> 8;
+                d[2] = a;
+                break;
+            case TexelFormat::RGB888:
+                d[0] = r;
+                d[1] = g;
+                d[2] = b;
+                break;
+            case TexelFormat::RGBA8888:
+                d[0] = r;
+                d[1] = g;
+                d[2] = b;
+                d[3] = a;
+                break;
             case TexelFormat::ALPHA8: d[0] = a; break;
         }
     }
@@ -72,11 +90,15 @@ void ReadPixel(const std::vector<uint8_t>& fb, Deki::ColorFormat format, int x, 
     const uint8_t* p = &fb[(static_cast<size_t>(y) * kSize + x) * bpp];
     if (format == Deki::ColorFormat::RGB888)
     {
-        rgb[0] = p[0]; rgb[1] = p[1]; rgb[2] = p[2];
+        rgb[0] = p[0];
+        rgb[1] = p[1];
+        rgb[2] = p[2];
     }
     else if (format == Deki::ColorFormat::ARGB8888)
     {
-        rgb[0] = p[2]; rgb[1] = p[1]; rgb[2] = p[0];
+        rgb[0] = p[2];
+        rgb[1] = p[1];
+        rgb[2] = p[0];
     }
     else
     {
@@ -153,7 +175,8 @@ TEST(RasterFormats, EveryTextureIntoEveryFramebufferMatches)
 {
     const std::vector<uint8_t> rgba = SourceRgba(false);
     const std::vector<uint8_t> refTexels = Encode(rgba, TexelFormat::RGB565);
-    const std::vector<uint8_t> reference = Render(View(refTexels, TexelFormat::RGB565), Deki::ColorFormat::RGB565, false);
+    const std::vector<uint8_t> reference =
+        Render(View(refTexels, TexelFormat::RGB565), Deki::ColorFormat::RGB565, false);
 
     int covered = 0;
     for (TexelFormat tf : kColourTexels)
@@ -163,18 +186,23 @@ TEST(RasterFormats, EveryTextureIntoEveryFramebufferMatches)
         {
             const std::vector<uint8_t> fb = Render(View(texels, tf), target, false);
             for (int y = 0; y < kSize; ++y)
+            {
                 for (int x = 0; x < kSize; ++x)
                 {
                     int want[3], got[3];
                     ReadPixel(reference, Deki::ColorFormat::RGB565, x, y, want);
                     ReadPixel(fb, target, x, y, got);
                     for (int c = 0; c < 3; ++c)
-                        ASSERT_LE(std::abs(want[c] - got[c]), 8)
-                            << "texel " << static_cast<int>(tf) << " target " << static_cast<int>(target) << " at "
-                            << x << "," << y;
+                    {
+                        ASSERT_LE(std::abs(want[c] - got[c]), 8) << "texel " << static_cast<int>(tf) << " target "
+                                                                 << static_cast<int>(target) << " at " << x << "," << y;
+                    }
                     if (want[0] || want[1] || want[2])
+                    {
                         ++covered;
+                    }
                 }
+            }
         }
     }
     EXPECT_GT(covered, 0) << "the quad drew nothing";
@@ -233,7 +261,8 @@ TEST(RasterFormats, Alpha8DrawsTheMaterialColourWhereCovered)
 TEST(MeshFile, Version3StillLoads)
 {
     std::vector<uint8_t> blob;
-    auto put = [&](const void* p, size_t n) {
+    auto put = [&](const void* p, size_t n)
+    {
         const uint8_t* b = static_cast<const uint8_t*>(p);
         blob.insert(blob.end(), b, b + n);
     };
@@ -274,15 +303,15 @@ TEST(MeshFile, Version3StillLoads)
 // with transparent texels turns the material's alpha test on.
 TEST(MeshFile, ImporterStoresTheChosenFormat)
 {
-    const char* obj =
-        "mtllib m.mtl\n"
-        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-        "vt 0 0\nvt 1 0\nvt 0 1\n"
-        "usemtl a\n"
-        "f 1/1 2/2 3/3\n";
+    const char* obj = "mtllib m.mtl\n"
+                      "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                      "vt 0 0\nvt 1 0\nvt 0 1\n"
+                      "usemtl a\n"
+                      "f 1/1 2/2 3/3\n";
     const std::string mtl = "newmtl a\nmap_Kd t.png\n";
     // A decoder that serves the .mtl's texture from memory: 8x8 with holes.
-    auto decode = [](const std::string&, int& w, int& h, std::vector<uint8_t>& rgba) {
+    auto decode = [](const std::string&, int& w, int& h, std::vector<uint8_t>& rgba)
+    {
         w = h = kTex;
         rgba = SourceRgba(true);
         return true;
@@ -300,10 +329,13 @@ TEST(MeshFile, ImporterStoresTheChosenFormat)
     {
         std::vector<uint8_t> blob;
         std::string error;
-        ASSERT_TRUE(CompileObjToMesh(obj, dir, decode, blob, error, [&](bool hasAlpha) {
-            EXPECT_TRUE(hasAlpha);
-            return format;
-        })) << error;
+        ASSERT_TRUE(CompileObjToMesh(obj, dir, decode, blob, error,
+                                     [&](bool hasAlpha)
+                                     {
+                                         EXPECT_TRUE(hasAlpha);
+                                         return format;
+                                     }))
+            << error;
         MeshAsset mesh;
         ASSERT_TRUE(mesh.LoadFromMemory(blob.data(), blob.size()));
         const Material3D& m = mesh.Materials()[0];

@@ -7,7 +7,10 @@
 
 // The 2D camera the renderer is drawing through; its owner may carry the 3D
 // settings, or the scene may.
-namespace DekiRendering { class CameraComponent; }
+namespace DekiRendering
+{
+class CameraComponent;
+}
 namespace Deki3D
 {
 

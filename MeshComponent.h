@@ -24,7 +24,8 @@ enum class MeshPrimitive : uint8_t
 };
 
 DEKI_CATEGORY("3D")
-DEKI_DESCRIPTION("Draws a 3D mesh. The object's transform places it, and the scene camera must be Perspective to see it.")
+DEKI_DESCRIPTION(
+    "Draws a 3D mesh. The object's transform places it, and the scene camera must be Perspective to see it.")
 DEKI_FORMER_NAME("MeshComponent")
 class DEKI_3D_API MeshComponent : public DekiRendering::RendererComponent
 {
@@ -32,7 +33,8 @@ public:
     MeshComponent();
     ~MeshComponent() override;
 
-    DEKI_TOOLTIP("A compiled mesh asset. Assign an imported model here; leave it empty to draw the primitive below instead.")
+    DEKI_TOOLTIP(
+        "A compiled mesh asset. Assign an imported model here; leave it empty to draw the primitive below instead.")
     DEKI_EXPORT
     Deki::AssetRef<Deki3D::MeshAsset> mesh;
 
@@ -44,7 +46,8 @@ public:
     DEKI_EXPORT
     Deki::Color tintColor;
 
-    DEKI_TOOLTIP("Unlit is flat colour. Vertex lit shades each vertex against the scene light. Flat shades whole triangles, which is the faceted look.")
+    DEKI_TOOLTIP("Unlit is flat colour. Vertex lit shades each vertex against the scene light. Flat shades whole "
+                 "triangles, which is the faceted look.")
     DEKI_EXPORT
     Deki3D::ShadingModel shading = Deki3D::ShadingModel::VertexLit;
 
@@ -65,10 +68,8 @@ public:
     /// pixels that can be blitted, so Mesh3DPass rasterises it instead. The
     /// component still derives from RendererComponent because that is what
     /// puts it in the renderer's sort, next to the sprites.
-    bool RenderContent(const Deki::Object* owner, QuadBlit::Source& outSource,
-                       float& outPivotX, float& outPivotY,
-                       uint8_t& outTintR, uint8_t& outTintG, uint8_t& outTintB,
-                       uint8_t& outTintA) override;
+    bool RenderContent(const Deki::Object* owner, QuadBlit::Source& outSource, float& outPivotX, float& outPivotY,
+                       uint8_t& outTintR, uint8_t& outTintG, uint8_t& outTintB, uint8_t& outTintA) override;
 
 private:
     mutable MeshPrimitive m_BuiltPrimitive = static_cast<MeshPrimitive>(0xFF);

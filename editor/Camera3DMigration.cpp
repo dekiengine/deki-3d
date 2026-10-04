@@ -39,19 +39,29 @@ void MigrateCamera3D(nlohmann::json& components)
     for (auto& comp : components)
     {
         if (!comp.is_object())
+        {
             continue;
+        }
         const std::string type = comp.value("type", "");
         if (IsOldCamera3D(type))
+        {
             old3d = &comp;
+        }
         else if (IsCamera(type))
+        {
             camera = &comp;
+        }
     }
     if (!old3d)
+    {
         return;
+    }
 
     nlohmann::json& oldProps = (*old3d)["properties"];
     if (!oldProps.is_object())
+    {
         oldProps = nlohmann::json::object();
+    }
     (*old3d)["type"] = "Deki3D::Mesh3DSettings";
 
     if (!camera)
@@ -59,8 +69,10 @@ void MigrateCamera3D(nlohmann::json& components)
         // The lens has nowhere to go on this object. Drop it rather than keep
         // keys Mesh3DSettings no longer has, and say which scene camera to set.
         if (oldProps.contains("fieldOfView") || oldProps.contains("nearPlane") || oldProps.contains("farPlane"))
+        {
             DEKI_LOG_WARNING("A Camera3DComponent on an object without a camera became Mesh3DSettings; set the "
                              "scene camera's Projection to Perspective and its field of view by hand");
+        }
         oldProps.erase("fieldOfView");
         oldProps.erase("nearPlane");
         oldProps.erase("farPlane");
@@ -69,13 +81,20 @@ void MigrateCamera3D(nlohmann::json& components)
 
     nlohmann::json& camProps = (*camera)["properties"];
     if (!camProps.is_object())
+    {
         camProps = nlohmann::json::object();
-    const struct { const char* key; float oldDefault; } lens[] = {
-        { "fieldOfView", 60.0f }, { "nearPlane", 0.1f }, { "farPlane", 100.0f } };
+    }
+    const struct
+    {
+        const char* key;
+        float oldDefault;
+    } lens[] = { { "fieldOfView", 60.0f }, { "nearPlane", 0.1f }, { "farPlane", 100.0f } };
     for (const auto& l : lens)
     {
         if (!camProps.contains(l.key))
+        {
             camProps[l.key] = oldProps.contains(l.key) ? oldProps[l.key] : nlohmann::json(l.oldDefault);
+        }
         oldProps.erase(l.key);
     }
     camProps["projection"] = "Perspective";

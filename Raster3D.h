@@ -101,14 +101,14 @@ public:
 
     /// Point at a framebuffer and start collecting geometry. The buffer is
     /// not cleared: the caller owns the background, as it does in the 2D path.
-    void BeginFrame(uint8_t* buffer, int32_t width, int32_t height,
-                    Deki::ColorFormat format, const RasterConfig& config);
+    void BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::ColorFormat format,
+                    const RasterConfig& config);
 
     /// Transform, clip and bin one mesh. `mvp` takes object space to clip
     /// space; `normalMatrix` takes object-space normals to world space and is
     /// only read by the lit shading models.
-    void DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_t materialCount,
-                  const Deki::Mat4& mvp, const Deki::Mat4& normalMatrix);
+    void DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_t materialCount, const Deki::Mat4& mvp,
+                  const Deki::Mat4& normalMatrix);
 
     /// Fill every tile. Nothing reaches the framebuffer before this.
     void EndFrame();
@@ -149,8 +149,7 @@ private:
         float light;
     };
 
-    void EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c,
-                      uint16_t materialIndex);
+    void EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c, uint16_t materialIndex);
     void ProjectAndBin(const ClipVertex* poly, int count, uint16_t materialIndex);
     void Bin(const RasterTri& tri);
     /// Fill every `stride`-th tile of the row-major grid starting at `start`,
@@ -159,9 +158,8 @@ private:
     /// concurrently safe.
     void FillTileRange(int start, int stride, uint16_t* tileDepth, RasterStats& stats);
     void FillTile(int tileX, int tileY, uint16_t* tileDepth, RasterStats& stats);
-    void FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY,
-                            uint16_t* tileDepth, int tileOriginX, int tileOriginY,
-                            RasterStats& stats);
+    void FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY, uint16_t* tileDepth,
+                            int tileOriginX, int tileOriginY, RasterStats& stats);
 
     uint8_t* m_Buffer = nullptr;
     int32_t m_Width = 0;
