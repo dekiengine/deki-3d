@@ -19,6 +19,8 @@ alongside one that has them.
 - Reading version 3 mesh files (before 0.17.0). The editor builds them again.
 - The loader for `Camera3DComponent`, the 3D camera of scenes saved before
   0.17.0. Open and save such a scene with 0.17 first.
+- The former names from before 0.16.0 (bare class names, and deki-gpio's
+  `DekiEsp32::ESP32PinSetup`). A scene that old is upgraded with 0.17 first.
 
 ## 0.17.0
 

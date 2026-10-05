@@ -25,7 +25,6 @@ enum class MeshPrimitive : uint8_t
 DEKI_CATEGORY("3D")
 DEKI_DESCRIPTION(
     "Draws a 3D mesh. The object's transform places it, and the scene camera must be Perspective to see it.")
-DEKI_FORMER_NAME("MeshComponent")
 class DEKI_3D_API MeshComponent : public DekiRendering::RendererComponent
 {
 public:
