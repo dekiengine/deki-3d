@@ -15,8 +15,6 @@ namespace Deki3D
 /// defaults below.
 DEKI_CATEGORY("3D")
 DEKI_DESCRIPTION("How the 3D pass draws: tiles, texture and vertex switches, light and threads.")
-DEKI_FORMER_NAME("Deki3D::Camera3DComponent")
-DEKI_FORMER_NAME("Camera3DComponent")
 class DEKI_3D_API Mesh3DSettings : public Deki::Component
 {
 public:

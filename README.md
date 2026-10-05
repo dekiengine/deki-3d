@@ -26,9 +26,7 @@ hardware FPU that means emulation is only paid at vertex rate.
   With an orthographic camera, meshes are not drawn.
 - `Mesh3DSettings` sets how the pass draws: tile size, the retro switches, the
   light and the fill threads. Put one anywhere in the scene; without one the
-  pass uses its declared defaults. It was `Camera3DComponent` before 0.18, and
-  the editor moves an old one's field of view onto the camera when it loads the
-  scene.
+  pass uses its declared defaults.
 
 ## Models
 

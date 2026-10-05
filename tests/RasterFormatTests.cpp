@@ -1,7 +1,7 @@
 // Tests that deki-3d reads every texture format and writes every framebuffer
 // format: the same textured quad comes out the same colours in each (within
-// what the narrower formats can hold), alpha cuts out where the material asks,
-// and version 3 mesh files still load.
+// what the narrower formats can hold), and alpha cuts out where the material
+// asks.
 
 #include <gtest/gtest.h>
 
@@ -251,48 +251,6 @@ TEST(RasterFormats, Alpha8DrawsTheMaterialColourWhereCovered)
     ReadPixel(fb, Deki::ColorFormat::ARGB8888, kSize * 3 / 4, kSize / 4, right);
     EXPECT_EQ(left[0], 255);  // the white vertex colour and tint
     EXPECT_EQ(right[0], 0);
-}
-
-// A version 3 file (no format in the texture table) still loads, as RGB565.
-TEST(MeshFile, Version3StillLoads)
-{
-    std::vector<uint8_t> blob;
-    auto put = [&](const void* p, size_t n)
-    {
-        const uint8_t* b = static_cast<const uint8_t*>(p);
-        blob.insert(blob.end(), b, b + n);
-    };
-
-    MeshFileHeader h{};
-    std::memcpy(h.magic, "DMSH", 4);
-    h.version = 3;
-    h.attributes = MeshAttributePosition;
-    h.vertexCount = 3;
-    h.indexCount = 3;
-    h.vertexStride = 12;
-    h.materialCount = 1;
-    h.textureCount = 1;
-    h.texturePixelBytes = 2 * 2 * 2;
-    put(&h, sizeof(h));
-    const float positions[9] = { 0, 0, 0, 1, 0, 0, 0, 1, 0 };
-    put(positions, sizeof(positions));
-    const uint16_t indices[3] = { 0, 1, 2 };
-    put(indices, sizeof(indices));
-    const MeshFileMaterial material{ 0, 0, 0xFFFFFFFFu };
-    put(&material, sizeof(material));
-    const MeshFileTextureV3 texture{ 2, 2, 0 };
-    put(&texture, sizeof(texture));
-    const uint16_t pixels[4] = { 0xF800, 0x07E0, 0x001F, 0xFFFF };
-    put(pixels, sizeof(pixels));
-
-    MeshAsset mesh;
-    ASSERT_TRUE(mesh.LoadFromMemory(blob.data(), blob.size()));
-    ASSERT_EQ(mesh.TextureCount(), 1);
-    const Texture3D* t = mesh.Materials()[0].texture;
-    ASSERT_NE(t, nullptr);
-    EXPECT_TRUE(t->Valid());
-    EXPECT_EQ(t->format, TexelFormat::RGB565);
-    EXPECT_EQ(reinterpret_cast<const uint16_t*>(t->pixels)[0], 0xF800);
 }
 
 // The importer stores a texture in the format it is asked for, and a texture

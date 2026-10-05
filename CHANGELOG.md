@@ -15,6 +15,11 @@ alongside one that has them.
 - The functions the editor finds by name are PascalCase: Deki3DRegisterComponents, Deki3DGetAutoComponentCount, Deki3DEnsureRegistered and the rest. Built against engine ABI 21; a build of this package from before does not load and is rebuilt.
 - Renamed: `MeshAttribute_Position` and the other mesh flags are `MeshAttributePosition`, ...; `MeshMaterial_AlphaTest` is `MeshMaterialAlphaTest`; `AssetTypeName` is `kAssetTypeName`.
 
+### Removed
+- Reading version 3 mesh files (before 0.17.0). The editor builds them again.
+- The loader for `Camera3DComponent`, the 3D camera of scenes saved before
+  0.17.0. Open and save such a scene with 0.17 first.
+
 ## 0.17.0
 
 ### Added

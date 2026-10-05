@@ -126,11 +126,10 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
         DEKI_LOG_WARNING("MeshAsset: not a mesh (bad magic)");
         return false;
     }
-    if (header.version < kMeshFileOldestVersion || header.version > kMeshFileVersion)
+    if (header.version != kMeshFileVersion)
     {
-        DEKI_LOG_WARNING("MeshAsset: version %u, this build reads %u to %u; rebuild the asset",
-                         static_cast<unsigned>(header.version), static_cast<unsigned>(kMeshFileOldestVersion),
-                         static_cast<unsigned>(kMeshFileVersion));
+        DEKI_LOG_WARNING("MeshAsset: version %u, this build reads %u; rebuild the asset",
+                         static_cast<unsigned>(header.version), static_cast<unsigned>(kMeshFileVersion));
         return false;
     }
     if (header.vertexCount == 0 || header.indexCount == 0 || header.vertexStride == 0)
@@ -220,23 +219,9 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     }
     for (uint16_t i = 0; i < header.textureCount; ++i)
     {
-        if (header.version >= 4)
+        if (!cursor.Take(&fileTextures.Data()[i], sizeof(MeshFileTexture)))
         {
-            if (!cursor.Take(&fileTextures.Data()[i], sizeof(MeshFileTexture)))
-            {
-                return Fail("truncated texture table");
-            }
-        }
-        else
-        {
-            MeshFileTextureV3 old{};
-            if (!cursor.Take(&old, sizeof(old)))
-            {
-                return Fail("truncated texture table");
-            }
-            fileTextures.Data()[i] = MeshFileTexture{
-                old.width, old.height, old.byteOffset, static_cast<uint8_t>(TexelFormat::RGB565), { 0, 0, 0 }
-            };
+            return Fail("truncated texture table");
         }
     }
 
