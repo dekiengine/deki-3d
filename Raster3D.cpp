@@ -227,7 +227,7 @@ uint32_t FillSpan(const SpanArgs& a)
 
             if constexpr (kClassic565)
             {
-                uint16_t color = a.flat565;
+                uint16_t color = a.flat565;  // a value; stored in memory's byte order
                 if constexpr (K == TexKind::Palette)
                 {
                     const uint8_t idx = a.tex->pixels[texel];
@@ -242,7 +242,7 @@ uint32_t FillSpan(const SpanArgs& a)
                 }
                 else if constexpr (K == TexKind::RGB565)
                 {
-                    color = reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel];
+                    color = DekiPixel::FromMemory565(reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel]);
                     if (a.alphaTest && color == 0xF81F)  // magenta is the hole
                     {
                         write = false;
@@ -254,7 +254,7 @@ uint32_t FillSpan(const SpanArgs& a)
                     {
                         color = Shade565(color, a.shade);
                     }
-                    reinterpret_cast<uint16_t*>(a.fbRow)[x] = color;
+                    reinterpret_cast<uint16_t*>(a.fbRow)[x] = DekiPixel::ToMemory565(color);
                 }
             }
             else
@@ -274,7 +274,7 @@ uint32_t FillSpan(const SpanArgs& a)
                 }
                 else if constexpr (K == TexKind::RGB565)
                 {
-                    const uint16_t c = reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel];
+                    const uint16_t c = DekiPixel::FromMemory565(reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel]);
                     if (a.alphaTest && c == 0xF81F)
                     {
                         write = false;

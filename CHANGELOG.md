@@ -8,6 +8,13 @@ breaking change bumps the minor across the editor, the engine and every
 package together, so a package with no changes of its own is still released
 alongside one that has them.
 
+## Unreleased
+
+### Added
+- Big-endian RGB565 (`DEKI_RGB565_BIG_ENDIAN`): a mesh's RGB565 and RGB565A8 textures
+  are swapped into memory's byte order when it loads, and the rasteriser
+  reads and writes 565 in that order.
+
 ## 0.18.0
 
 ### Changed

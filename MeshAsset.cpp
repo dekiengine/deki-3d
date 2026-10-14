@@ -1,4 +1,5 @@
 #include "MeshAsset.h"
+#include "deki-rendering/PixelFormat.h"
 
 #include <deki/LogSystem.h>
 
@@ -285,6 +286,23 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
             view.height = t.height;
             view.widthShift = static_cast<uint8_t>(wShift);
             view.heightShift = static_cast<uint8_t>(hShift);
+
+            // The file keeps RGB565 low byte first; a big-endian board draws
+            // from it in its own order. Once per run of pixels, should two
+            // textures share one.
+            if (format == TexelFormat::RGB565 || format == TexelFormat::RGB565A8)
+            {
+                bool converted = false;
+                for (uint16_t pi = 0; pi < ti; ++pi)
+                {
+                    converted = converted || m_Textures.Data()[pi].pixels == view.pixels;
+                }
+                if (!converted)
+                {
+                    DekiPixel::FileToMemory565(m_TexturePixels.Data() + t.byteOffset,
+                                               static_cast<size_t>(t.width) * t.height, static_cast<size_t>(texel));
+                }
+            }
         }
         else
         {

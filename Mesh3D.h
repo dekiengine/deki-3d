@@ -69,8 +69,8 @@ enum class TexelFormat : uint8_t
 {
     RGB888 = 0,    // 3 bytes: R, G, B
     RGBA8888 = 1,  // 4 bytes: R, G, B, A
-    RGB565 = 2,    // 2 bytes, little-endian 565
-    RGB565A8 = 3,  // 3 bytes: 565 lo, 565 hi, A
+    RGB565 = 2,    // 2 bytes of 565: little-endian in the file, Deki::kRGB565BigEndian's order once loaded
+    RGB565A8 = 3,  // 3 bytes: 565 as RGB565, then A
     ALPHA8 = 4,    // 1 byte of coverage; the colour is the material tint
 };
 

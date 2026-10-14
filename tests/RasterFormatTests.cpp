@@ -13,6 +13,7 @@
 #include "../MeshAsset.h"
 #include "../Raster3D.h"
 #include "../editor/ObjImporter.h"
+#include "deki-rendering/PixelFormat.h"
 
 using namespace Deki3D;
 
@@ -43,7 +44,8 @@ std::vector<uint8_t> SourceRgba(bool holes)
     return rgba;
 }
 
-// The texels of `rgba` in `format`, as the importer stores them.
+// The texels of `rgba` in `format`, as the importer stores them and then as
+// MeshAsset holds them once loaded (RGB565 in memory's byte order).
 std::vector<uint8_t> Encode(const std::vector<uint8_t>& rgba, TexelFormat format)
 {
     std::vector<uint8_t> out(kTex * kTex * TexelBytes(format));
@@ -77,6 +79,10 @@ std::vector<uint8_t> Encode(const std::vector<uint8_t>& rgba, TexelFormat format
             case TexelFormat::ALPHA8: d[0] = a; break;
         }
     }
+    if (format == TexelFormat::RGB565 || format == TexelFormat::RGB565A8)
+    {
+        DekiPixel::FileToMemory565(out.data(), kTex * kTex, TexelBytes(format));
+    }
     return out;
 }
 
@@ -99,7 +105,7 @@ void ReadPixel(const std::vector<uint8_t>& fb, Deki::ColorFormat format, int x, 
     }
     else
     {
-        const uint16_t v = static_cast<uint16_t>(p[0] | (p[1] << 8));
+        const uint16_t v = DekiPixel::Load565(p);
         rgb[0] = ((v >> 11) & 0x1F) << 3;
         rgb[1] = ((v >> 5) & 0x3F) << 2;
         rgb[2] = (v & 0x1F) << 3;
