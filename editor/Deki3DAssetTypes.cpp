@@ -17,6 +17,7 @@
 #include <deki-editor/AssetTypeRegistry.h>
 #include <deki-editor/EditorExtension.h>
 #include <deki-editor/EditorRegistry.h>
+#include <deki-editor/Localization.h>
 #include <deki-editor/AssetData.h>
 #include <deki-editor/Paths.h>
 #include <deki-editor/TextureImporter.h>
@@ -43,7 +44,7 @@ class MeshAssetType : public AssetTypeEditor
 {
 public:
     const char* GetTypeName() const override { return "Mesh"; }
-    const char* GetDisplayName() const override { return "Mesh"; }
+    const char* GetDisplayName() const override { return TrMark("Mesh"); }
     std::vector<std::string> GetExtensions() const override { return { ".obj" }; }
 };
 
