@@ -25,17 +25,19 @@
 var NAVTREE =
 [
   [ "deki-3d", "index.html", [
-    [ "Components", "index.html#autotoc_md0", null ],
-    [ "Feature flags", "index.html#autotoc_md1", null ],
-    [ "Component reference", "index.html#autotoc_md2", [
-      [ "Camera3DComponent", "index.html#c-camera3dcomponent", null ],
+    [ "Components", "index.html#components", null ],
+    [ "Feature flags", "index.html#feature-flags", null ],
+    [ "Component reference", "index.html#component-reference", [
+      [ "Mesh3DSettings", "index.html#c-mesh3dsettings", null ],
       [ "MeshComponent", "index.html#c-meshcomponent", null ]
     ] ],
-    [ "Changelog", "index.html#autotoc_md3", [
-      [ "Unreleased", "index.html#autotoc_md4", null ],
-      [ "Fixed", "index.html#autotoc_md5", null ],
-      [ "0.16.0", "index.html#autotoc_md6", null ],
-      [ "Changed", "index.html#autotoc_md7", null ]
+    [ "Changelog", "index.html#changelog", [
+      [ "0.19.0", "index.html#autotoc_md0", null ],
+      [ "Changed", "index.html#autotoc_md1", null ],
+      [ "Added", "index.html#autotoc_md2", null ],
+      [ "0.18.0", "index.html#autotoc_md3", null ],
+      [ "Changed", "index.html#autotoc_md4", null ],
+      [ "Removed", "index.html#autotoc_md5", null ]
     ] ]
   ] ]
 ];
