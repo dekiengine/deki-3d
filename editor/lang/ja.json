@@ -30,5 +30,8 @@
     "Tile Size": "タイルサイズ",
     "Tile edge in pixels. The depth buffer is one tile, so 32 costs 2 KB and suits a microcontroller, while a desktop can afford 128 or more.": "タイルの辺の長さ (ピクセル) です。深度バッファは 1 タイル分なので、32 なら 2 KB で済みマイコンに向きます。デスクトップなら 128 以上でも問題ありません。",
     "Fill Threads": "塗りのスレッド数",
-    "How many threads fill the screen on a device or simulator build. Tiles are independent, so this is the one part that scales with cores: 1 starts no threads at all, 2 suits a dual-core board, and above the core count it stops helping. The editor always previews with one thread, since it loads packages as unloadable DLLs; the picture is identical either way.": "デバイスやシミュレーターのビルドで画面を塗るスレッドの数です。タイルは互いに独立しているので、ここはコア数に応じて速くなる唯一の部分です。1 ではスレッドをまったく起動せず、2 はデュアルコアのボードに向き、コア数を超えると効果がなくなります。エディターはパッケージをアンロード可能な DLL として読み込むため、プレビューは常に 1 スレッドで行います。どちらでも絵は同じです。"
+    "How many threads fill the screen on a device or simulator build. Tiles are independent, so this is the one part that scales with cores: 1 starts no threads at all, 2 suits a dual-core board, and above the core count it stops helping. The editor always previews with one thread, since it loads packages as unloadable DLLs; the picture is identical either way.": "デバイスやシミュレーターのビルドで画面を塗るスレッドの数です。タイルは互いに独立しているので、ここはコア数に応じて速くなる唯一の部分です。1 ではスレッドをまったく起動せず、2 はデュアルコアのボードに向き、コア数を超えると効果がなくなります。エディターはパッケージをアンロード可能な DLL として読み込むため、プレビューは常に 1 スレッドで行います。どちらでも絵は同じです。",
+    "3D": "3D",
+    "Draws a 3D mesh. The object's transform places it, and the scene camera must be Perspective to see it.": "3D メッシュを描きます。位置はオブジェクトのトランスフォームで決まります。表示するには、シーンのカメラを透視投影にする必要があります。",
+    "How the 3D pass draws: tiles, texture and vertex switches, light and threads.": "3D パスの描き方です。タイル、テクスチャと頂点のスイッチ、ライト、スレッドを設定します。"
 }

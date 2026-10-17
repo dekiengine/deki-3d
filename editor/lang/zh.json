@@ -30,5 +30,8 @@
     "Tile Size": "分块大小",
     "Tile edge in pixels. The depth buffer is one tile, so 32 costs 2 KB and suits a microcontroller, while a desktop can afford 128 or more.": "分块边长，单位为像素。深度缓冲只有一个分块大小，因此 32 只占 2 KB，适合微控制器；桌面平台可以用 128 或更大。",
     "Fill Threads": "填充线程数",
-    "How many threads fill the screen on a device or simulator build. Tiles are independent, so this is the one part that scales with cores: 1 starts no threads at all, 2 suits a dual-core board, and above the core count it stops helping. The editor always previews with one thread, since it loads packages as unloadable DLLs; the picture is identical either way.": "在设备或模拟器构建中填充屏幕的线程数。各分块相互独立，因此这是唯一能随核心数提速的部分：1 表示完全不启动线程，2 适合双核开发板，超过核心数后便不再有帮助。编辑器以可卸载的 DLL 形式加载包，因此预览始终使用一个线程；两种方式画面完全相同。"
+    "How many threads fill the screen on a device or simulator build. Tiles are independent, so this is the one part that scales with cores: 1 starts no threads at all, 2 suits a dual-core board, and above the core count it stops helping. The editor always previews with one thread, since it loads packages as unloadable DLLs; the picture is identical either way.": "在设备或模拟器构建中填充屏幕的线程数。各分块相互独立，因此这是唯一能随核心数提速的部分：1 表示完全不启动线程，2 适合双核开发板，超过核心数后便不再有帮助。编辑器以可卸载的 DLL 形式加载包，因此预览始终使用一个线程；两种方式画面完全相同。",
+    "3D": "3D",
+    "Draws a 3D mesh. The object's transform places it, and the scene camera must be Perspective to see it.": "绘制 3D 网格。由对象的变换决定其位置；场景相机必须为透视模式才能看到它。",
+    "How the 3D pass draws: tiles, texture and vertex switches, light and threads.": "3D 渲染通道的绘制方式：分块、纹理与顶点开关、光照和线程。"
 }
