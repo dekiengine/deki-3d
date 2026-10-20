@@ -9,8 +9,10 @@
 #include "deki-rendering/DekiRenderer.h"  // DekiRendering::RenderContext
 #include "deki-rendering/DekiRenderPassRegistry.h"
 
+#include <deki/Engine.h>
 #include <deki/Object.h>
 #include <deki/Scene.h>
+#include <deki/SceneSystem.h>
 
 #include <cmath>
 
@@ -93,7 +95,51 @@ bool IsPerspective(const DekiRendering::CameraComponent& c)
     return c.projection == Deki::ProjectionMode::Perspective;
 }
 
+/// True when an active MeshComponent lies in an active subtree of `object`:
+/// one the renderer would hand the pass.
+bool HasActiveMesh(const Deki::Object* object)
+{
+    if (!object || !object->IsActive())
+    {
+        return false;
+    }
+    if (object->GetComponent<MeshComponent>())
+    {
+        return true;
+    }
+    for (const Deki::Object* child : object->GetChildren())
+    {
+        if (HasActiveMesh(child))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
+
+bool Mesh3DPass::DrawsInStrips(Deki::Scene* scene) const
+{
+    if (scene)
+    {
+        for (const Deki::Object* root : scene->GetObjects())
+        {
+            if (HasActiveMesh(root))
+            {
+                return false;
+            }
+        }
+    }
+    for (const Deki::Object* object : Deki::Engine::GetInstance().GetSceneSystem().GetPersistentObjects())
+    {
+        if (HasActiveMesh(object))
+        {
+            return false;
+        }
+    }
+    return true;
+}
 
 void Mesh3DPass::BeginFrame(DekiRendering::RenderContext& ctx)
 {

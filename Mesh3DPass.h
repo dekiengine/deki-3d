@@ -44,6 +44,11 @@ public:
     void Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx) override;
     void EndFrame(DekiRendering::RenderContext& ctx) override;
 
+    /// No while the scene has an active mesh: the rasteriser projects and
+    /// tiles the whole frame, so a frame with meshes is drawn whole (see
+    /// DekiRenderer::DrawsInStrips). A scene without one draws in strips.
+    bool DrawsInStrips(Deki::Scene* scene) const override;
+
 private:
     /// Fills the tiles for everything binned so far and starts a fresh batch.
     void Flush();
