@@ -19,8 +19,8 @@ namespace Deki3D
 /// A pass, not a renderer: the engine holds exactly one renderer, chosen in
 /// project settings, so a separate 3D renderer would rule out 2D. As a pass, a
 /// mesh is one more item in the renderer's sort. It draws at its sorting
-/// position, 2D interface composites on top, and the camera, clipping and
-/// dirty rectangles keep working.
+/// position, 2D interface composites on top, and the camera and clipping keep
+/// working.
 ///
 /// Nothing reaches the framebuffer until the tiles are filled, which lets the
 /// depth buffer be one tile instead of one screen. So the pass batches
