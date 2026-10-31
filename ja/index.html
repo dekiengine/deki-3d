@@ -57,7 +57,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">deki-3d<span id="projectnumber">&#160;0.21.0</span>
+   <div id="projectname">deki-3d<span id="projectnumber">&#160;0.22.0</span>
    </div>
    <div id="projectbrief">Deki パッケージリファレンス</div>
   </td>
@@ -115,7 +115,7 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('index.html',''
 <img src="deki-3d.png" alt=""/>
 </div>
     <p>レンダーパスとして動くソフトウェアラスタライズの 3D：メッシュ、透視投影カメラ、.obj インポート。2D と 1 つのフレームバッファを共有します。</p>
-<p>リポジトリ: <a href="https://github.com/dekiengine/deki-3d">github.com/dekiengine/deki-3d</a> · 最新リリース: 0.19.0 · エンジン 0.19.0 以降が必要 · 依存: <a href="https://dekiengine.github.io/deki-rendering/ja/">deki-rendering</a></p>
+<p>リポジトリ: <a href="https://github.com/dekiengine/deki-3d">github.com/dekiengine/deki-3d</a> · 最新リリース: 0.22.0 · エンジン 0.22.0 以降が必要 · 依存: <a href="https://dekiengine.github.io/deki-rendering/ja/">deki-rendering</a></p>
 <p><span class="tt">DekiEditor --packages-add deki-3d &lt;project&gt;</span> か、パッケージマネージャーからインストールします。エンジン自身のコンポーネントと C++ API は <a href="https://dekiengine.github.io/docs/ja/">Deki のドキュメント</a>にあります。</p>
 <p>エディターでは <b>3D</b> と表示されます。</p>
 <h1 class="doxsection"><a class="anchor" id="components"></a>
@@ -184,38 +184,28 @@ MeshComponent</h2>
 変更履歴</h1>
 <p>変更履歴は英語です。</p>
 <h2 class="doxsection"><a class="anchor" id="autotoc_md0"></a>
-0.19.0</h2>
+0.22.0</h2>
 <h2 class="doxsection"><a class="anchor" id="autotoc_md1"></a>
+Changed</h2>
+<ul>
+<li><span class="tt">minEngine</span> 0.22.0: built against engine 0.22.0. A build of this package from before does not load and is rebuilt.</li>
+</ul>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md2"></a>
+0.19.0</h2>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md3"></a>
 Changed</h2>
 <ul>
 <li><span class="tt">minEngine</span> 0.19.0: built against engine 0.19.0, whose component metadata records the package each class is in. A build of this package from before does not load and is rebuilt.</li>
 </ul>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md2"></a>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md4"></a>
 Added</h2>
 <ul>
 <li>Japanese, Simplified Chinese and Korean: <span class="tt">editor/lang/ja.json</span>, <span class="tt">zh.json</span> and <span class="tt">ko.json</span> translate the names, tooltips and enum values this package's components show in the Inspector.</li>
 <li>The package's editor text goes through the editor's translation (<span class="tt">Tr</span>), so it shows in the editor's language. Needs the editor release that adds <span class="tt">Localization.h</span>; raise <span class="tt">minEngine</span> to it when releasing.</li>
 </ul>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md3"></a>
-0.18.0</h2>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md4"></a>
-Changed</h2>
-<ul>
-<li><span class="tt">minEngine</span> 0.18.0. Reflection ABI 21: the package must be rebuilt.</li>
-<li><b>Names follow the code style</b> (deki-engine/docs/codestyle): types, functions and enum values are PascalCase, constants kPascalCase, members m_PascalCase, locals and parameters camelCase. The code is formatted with clang-format 22.</li>
-<li>The functions the editor finds by name are PascalCase: Deki3DRegisterComponents, Deki3DGetAutoComponentCount, Deki3DEnsureRegistered and the rest. Built against engine ABI 21; a build of this package from before does not load and is rebuilt.</li>
-<li>Renamed: <span class="tt">MeshAttribute_Position</span> and the other mesh flags are <span class="tt">MeshAttributePosition</span>, ...; <span class="tt">MeshMaterial_AlphaTest</span> is <span class="tt">MeshMaterialAlphaTest</span>; <span class="tt">AssetTypeName</span> is <span class="tt">kAssetTypeName</span>.</li>
-</ul>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md5"></a>
-Removed</h2>
-<ul>
-<li>Reading version 3 mesh files (before 0.17.0). The editor builds them again.</li>
-<li>The loader for <span class="tt">Camera3DComponent</span>, the 3D camera of scenes saved before 0.17.0. Open and save such a scene with 0.17 first.</li>
-<li>The former names from before 0.16.0 (bare class names, and deki-gpio's <span class="tt">DekiEsp32::ESP32PinSetup</span>). A scene that old is upgraded with 0.17 first.</li>
-</ul>
 <p>それ以前のリリース: <a href="https://github.com/dekiengine/deki-3d/blob/master/CHANGELOG.md">CHANGELOG.md</a></p>
 <hr  />
-<p>パッケージのリフレクションデータから生成しています (エンジン 0.21.0)。プロパティ名はシーンファイルで使われるキーです。名前を変えても別名が残ります (<a href="https://github.com/dekiengine/deki-editor/blob/master/COMPATIBILITY.md">互換性</a>)。 </p>
+<p>パッケージのリフレクションデータから生成しています (エンジン 0.22.0)。プロパティ名はシーンファイルで使われるキーです。名前を変えても別名が残ります (<a href="https://github.com/dekiengine/deki-editor/blob/master/COMPATIBILITY.md">互換性</a>)。 </p>
 </div></div><!-- PageDoc -->
 <a href="doxygen_crawl.html"></a>
 </div><!-- contents -->
