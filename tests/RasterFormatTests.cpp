@@ -13,6 +13,7 @@
 #include "../MeshAsset.h"
 #include "../Raster3D.h"
 #include "../editor/ObjImporter.h"
+#include "deki-rendering/PixelFormat.h"
 
 using namespace Deki3D;
 
@@ -77,6 +78,12 @@ std::vector<uint8_t> Encode(const std::vector<uint8_t>& rgba, TexelFormat format
             case TexelFormat::ALPHA8: d[0] = a; break;
         }
     }
+    // And in memory's byte order, as MeshAsset holds them once loaded: high
+    // byte first in the big-endian build.
+    if (format == TexelFormat::RGB565 || format == TexelFormat::RGB565A8)
+    {
+        DekiPixel::FileToMemory565(out.data(), static_cast<size_t>(kTex) * kTex, TexelBytes(format));
+    }
     return out;
 }
 
@@ -99,7 +106,7 @@ void ReadPixel(const std::vector<uint8_t>& fb, Deki::ColorFormat format, int x, 
     }
     else
     {
-        const uint16_t v = static_cast<uint16_t>(p[0] | (p[1] << 8));
+        const uint16_t v = DekiPixel::Load565(p);  // in memory's byte order
         rgb[0] = ((v >> 11) & 0x1F) << 3;
         rgb[1] = ((v >> 5) & 0x3F) << 2;
         rgb[2] = (v & 0x1F) << 3;
@@ -296,5 +303,8 @@ TEST(MeshFile, ImporterStoresTheChosenFormat)
         ASSERT_NE(m.texture, nullptr);
         EXPECT_EQ(m.texture->format, format);
         EXPECT_EQ(m.alphaTest, format == TexelFormat::RGBA8888) << "only a format that keeps alpha cuts out";
+        // Loaded, the texels are in memory's byte order, as Encode makes them.
+        const std::vector<uint8_t> expected = Encode(SourceRgba(true), format);
+        EXPECT_EQ(std::memcmp(m.texture->pixels, expected.data(), expected.size()), 0);
     }
 }

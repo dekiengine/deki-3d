@@ -8,6 +8,15 @@ breaking change bumps the minor across the editor, the engine and every
 package together, so a package with no changes of its own is still released
 alongside one that has them.
 
+## Unreleased
+
+### Fixed
+- Big-endian boards (`DEKI_RGB565_BIG_ENDIAN`): RGB565 into an RGB565
+  framebuffer came out byte-swapped, while every other framebuffer format was
+  right. Meshes now hold RGB565 and RGB565A8 textures in memory's byte order
+  once loaded, as images do, and the rasteriser reads and writes 565 values
+  in that order. Nothing changes on little-endian boards.
+
 ## 0.22.0
 
 ### Changed

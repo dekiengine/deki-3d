@@ -2,6 +2,8 @@
 
 #include <deki/LogSystem.h>
 
+#include "deki-rendering/PixelFormat.h"
+
 #include <cstdint>
 #include <cstring>
 
@@ -276,6 +278,25 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
 
         if (knownFormat && wShift >= 0 && hShift >= 0 && bytes > 0 && fits)
         {
+            // The file keeps RGB565 low byte first; draw from memory's order,
+            // high byte first on a big-endian board. Once per pixel run, even
+            // if two textures share it: a second swap would undo the first.
+            if (format == TexelFormat::RGB565 || format == TexelFormat::RGB565A8)
+            {
+                bool converted = false;
+                for (uint16_t prev = 0; prev < ti && !converted; ++prev)
+                {
+                    const MeshFileTexture& p = fileTextures.Data()[prev];
+                    converted = p.byteOffset == t.byteOffset && m_Textures.Data()[prev].Valid() &&
+                                (m_Textures.Data()[prev].format == TexelFormat::RGB565 ||
+                                 m_Textures.Data()[prev].format == TexelFormat::RGB565A8);
+                }
+                if (!converted)
+                {
+                    DekiPixel::FileToMemory565(m_TexturePixels.Data() + t.byteOffset,
+                                               static_cast<size_t>(t.width) * t.height, static_cast<size_t>(texel));
+                }
+            }
             view.pixels = m_TexturePixels.Data() + t.byteOffset;
             view.palette = nullptr;
             view.format = format;

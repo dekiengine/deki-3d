@@ -200,7 +200,10 @@ inline void Shade8(uint8_t& r, uint8_t& g, uint8_t& b, uint32_t shade)
 ///
 /// An RGB565 framebuffer with a flat, palette or RGB565 texture uses 565
 /// arithmetic and magenta holes; this path must stay pixel-identical, since
-/// the RGB565 device output depends on it. Everything else reads texels into
+/// the RGB565 device output depends on it. The arithmetic is on 565 values;
+/// texels and the framebuffer hold them in memory's byte order
+/// (DekiPixel::ToMemory565), so they are converted on the way in and out,
+/// which costs nothing unless the board is big-endian. Everything else reads texels into
 /// 8-bit channels and writes them in the framebuffer's format through the 2D
 /// blitter's pixel helpers. With alphaTest, a texel whose alpha is below half
 /// is a hole.
@@ -242,7 +245,7 @@ uint32_t FillSpan(const SpanArgs& a)
                 }
                 else if constexpr (K == TexKind::RGB565)
                 {
-                    color = reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel];
+                    color = DekiPixel::FromMemory565(reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel]);
                     if (a.alphaTest && color == 0xF81F)  // magenta is the hole
                     {
                         write = false;
@@ -254,7 +257,7 @@ uint32_t FillSpan(const SpanArgs& a)
                     {
                         color = Shade565(color, a.shade);
                     }
-                    reinterpret_cast<uint16_t*>(a.fbRow)[x] = color;
+                    reinterpret_cast<uint16_t*>(a.fbRow)[x] = DekiPixel::ToMemory565(color);
                 }
             }
             else
@@ -274,7 +277,7 @@ uint32_t FillSpan(const SpanArgs& a)
                 }
                 else if constexpr (K == TexKind::RGB565)
                 {
-                    const uint16_t c = reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel];
+                    const uint16_t c = DekiPixel::FromMemory565(reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel]);
                     if (a.alphaTest && c == 0xF81F)
                     {
                         write = false;
