@@ -8,6 +8,7 @@
 #include "deki-rendering/CameraComponent.h"
 #include "deki-rendering/DekiRenderer.h"  // DekiRendering::RenderContext
 #include "deki-rendering/DekiRenderPassRegistry.h"
+#include "deki-rendering/QuadBlit.h"  // NoteWritten
 
 #include <deki/LogSystem.h>
 #include <deki/Object.h>
@@ -274,15 +275,26 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     m_Pending = false;
 }
 
+void Mesh3DPass::EndBatch()
+{
+    m_Backend->EndFrame();
+    // Where the 2D is drawn on the GPU, what the batch wrote into the buffer
+    // goes over the 2D before it and under the 2D after.
+    if (m_Pending && m_Backend->WritesBuffer())
+    {
+        QuadBlit::NoteWritten(m_Buffer);
+    }
+    m_Pending = false;
+}
+
 void Mesh3DPass::Flush()
 {
     if (!m_Pending)
     {
         return;
     }
-    m_Backend->EndFrame();
+    EndBatch();
     m_Backend->BeginFrame(m_Buffer, m_Width, m_Height, m_Format, m_Config);
-    m_Pending = false;
 }
 
 void Mesh3DPass::PreExecute(Deki::Object* obj, DekiRendering::RenderContext& ctx)
@@ -401,9 +413,8 @@ void Mesh3DPass::EndFrame(DekiRendering::RenderContext& ctx)
     {
         return;
     }
-    m_Backend->EndFrame();  // whatever the last run of meshes left binned
+    EndBatch();  // whatever the last run of meshes left binned
     m_Active = false;
-    m_Pending = false;
 }
 
 }  // namespace Deki3D

@@ -27,6 +27,12 @@ alongside one that has them.
 - `Mesh3D::revision` and `Texture3D::revision`, which change with the data so
   a GPU backend can keep its uploads. Mesh assets and the built-in primitives
   set them (`NextRevision()`).
+- `Mesh3DBackend::WritesBuffer`: whether a batch reached the frame through
+  the buffer. Where the 2D is drawn on the GPU too (deki-rendering's
+  `QuadBlit::BlitSink`), `Mesh3DPass` tells it after a batch that did (the
+  software rasteriser, a GPU backend reading back), so the meshes stay
+  between the 2D drawn before and after them. The pass itself says it writes
+  nothing (`RenderPass::WritesBuffer`).
 
 ### Fixed
 - Tint colours were packed in the wrong byte order (`ToRGBA8888` where

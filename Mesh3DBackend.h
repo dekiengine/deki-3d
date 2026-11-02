@@ -98,6 +98,14 @@ public:
 
     /// Finishes the batch. Nothing need reach the framebuffer before this.
     virtual void EndFrame() = 0;
+
+    /// Whether the batch's meshes reach the frame through the buffer: the
+    /// software rasteriser's do, and a GPU backend's that it reads back. A
+    /// GPU backend drawing straight into a frame the display builds on the
+    /// GPU writes none. Asked after EndFrame; where the 2D is drawn on the
+    /// GPU too (QuadBlit::BlitSink), what a batch wrote is composed over that
+    /// frame in its place. The default is yes.
+    virtual bool WritesBuffer() const { return true; }
 };
 
 /// How a package offers a GPU backend. `create` returns null when the GPU

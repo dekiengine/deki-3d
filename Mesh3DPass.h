@@ -49,9 +49,16 @@ public:
     void Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx) override;
     void EndFrame(DekiRendering::RenderContext& ctx) override;
 
+    /// It writes into the buffer only when a batch of meshes ends, and then
+    /// says so itself (QuadBlit::NoteWritten), and only if its backend wrote
+    /// there: the GPU's, drawing into the display's frame, does not.
+    bool WritesBuffer() const override { return false; }
+
 private:
     /// Fills the tiles for everything binned so far and starts a fresh batch.
     void Flush();
+    /// Ends the batch, telling a GPU drawing the 2D what it wrote.
+    void EndBatch();
     /// Works out the projection, once per frame, when the first object arrives.
     void Start(const Deki::Object* sceneObject);
     /// The GPU backend, made on first use; null where there is none.
