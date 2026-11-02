@@ -17,6 +17,10 @@ alongside one that has them.
   header (`Raster3D.h` still includes it).
 - `Mesh3DSettings.renderer`: Auto (the GPU where the build has a backend),
   Software or GPU.
+- `Mesh3DSettings.composeOnGpu` and `RasterConfig::composeOnGpu`: a GPU
+  backend may draw straight into a frame the display builds on the GPU,
+  leaving the CPU buffer with only the 2D drawn after the meshes. On by
+  default; off for a scene that reads the whole frame back.
 - `Mesh3D::revision` and `Texture3D::revision`, which change with the data so
   a GPU backend can keep its uploads. Mesh assets and the built-in primitives
   set them (`NextRevision()`).

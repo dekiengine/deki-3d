@@ -230,6 +230,9 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     m_Config.lightDirection =
         Deki::Vector3(std::sin(yaw) * std::cos(pitch), -std::sin(pitch), -std::cos(yaw) * std::cos(pitch));
     m_Config.ambient = cam3d.ambient;
+    // Only when each frame starts from a clear: a frame kept from the last
+    // one must be whole in the buffer, not partly on the GPU.
+    m_Config.composeOnGpu = cam3d.composeOnGpu && m_Camera->clearEveryFrame;
 #ifdef DEKI_EDITOR
     // Must stay one thread inside the editor, whatever the scene asks for.
     // The editor unloads package DLLs for hot reload, and joining a thread

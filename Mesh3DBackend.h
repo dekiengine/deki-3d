@@ -52,6 +52,14 @@ struct RasterConfig
     /// they append to shared buffers. Software only.
     int threadCount = 1;
 
+    /// A GPU backend may build the frame on the GPU when the display presents
+    /// through one (deki-gl's GLPresenter): the meshes then draw straight into
+    /// the frame between layers of 2D, and the buffer is left transparent
+    /// after a batch, holding only the 2D drawn since. Off, the backend writes
+    /// its pixels into the buffer, which then holds the whole picture, as
+    /// anything that reads the frame back afterwards needs.
+    bool composeOnGpu = true;
+
     /// Direction the one directional light travels, for the lit shading
     /// models. The backend normalises it.
     Deki::Vector3 lightDirection = Deki::Vector3(-0.4f, -0.8f, -0.45f);

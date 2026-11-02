@@ -35,8 +35,15 @@ public:
     DEKI_EXPORT
     Mesh3DRenderer renderer = Mesh3DRenderer::Auto;
 
-    DEKI_TOOLTIP("Tile edge in pixels. Software only. The depth buffer is one tile, so 32 costs 2 KB and suits a microcontroller, "
-                 "while a desktop can afford 128 or more.")
+    DEKI_TOOLTIP("GPU only: build the frame on the GPU where the display presents through it, drawing the meshes "
+                 "straight into it between layers of 2D instead of reading them back. Much faster on a handheld. "
+                 "Turn it off if something later in the frame reads the whole picture back from the frame buffer "
+                 "(a full-screen effect pass); with it on, that buffer holds only the 2D drawn after the meshes.")
+    DEKI_EXPORT
+    bool composeOnGpu = true;
+
+    DEKI_TOOLTIP("Tile edge in pixels. Software only. The depth buffer is one tile, so 32 costs 2 KB and suits a "
+                 "microcontroller, while a desktop can afford 128 or more.")
     DEKI_RANGE(8, 512)
     DEKI_EXPORT
     int32_t tileSize = 32;
