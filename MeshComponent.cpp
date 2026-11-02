@@ -2,6 +2,8 @@
 
 #include <deki/LogSystem.h>
 
+#include "Mesh3DBackend.h"  // NextRevision
+
 #include <vector>
 
 namespace Deki3D
@@ -164,6 +166,7 @@ const Deki3D::Mesh3D* MeshComponent::Resolve() const
     m_Mesh.submeshCount = static_cast<uint16_t>(storage->submeshes.size());
     m_Mesh.boundsMin = Deki::Vector3(-1, -1, -1);
     m_Mesh.boundsMax = Deki::Vector3(1, 1, 1);
+    m_Mesh.revision = NextRevision();
 
     m_BuiltPrimitive = primitive;
     return &m_Mesh;

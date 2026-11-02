@@ -26,6 +26,7 @@
 #include <deki/Vector.h>
 
 #include "Mesh3D.h"
+#include "Mesh3DBackend.h"  // RasterConfig, RasterStats
 
 #include <condition_variable>
 #include <cstdint>
@@ -36,56 +37,11 @@
 namespace Deki3D
 {
 
-struct RasterConfig
-{
-    /// Tile edge in pixels. The per-tile depth buffer is tileSize^2 * 2 bytes.
-    int tileSize = 32;
-
-    /// Splits each span and does the perspective divide at the split points,
-    /// interpolating linearly between. The divide then costs once per
-    /// `spanSubdivision` pixels instead of once per pixel, so correct
-    /// texturing is nearly as cheap as affine.
-    bool perspectiveCorrect = true;
-    int spanSubdivision = 16;
-
-    /// Rounds projected vertices to whole pixels, for the PlayStation look
-    /// (its transform was integer).
-    bool vertexSnap = false;
-
-    bool backfaceCull = true;
-    bool depthTest = true;
-    bool depthWrite = true;
-
-    /// How many threads fill tiles. Tiles are independent and each owns its
-    /// depth buffer, so the fill scales without coordination. 1 starts no
-    /// threads, for a single-core target; 2 suits a dual-core microcontroller.
-    /// Transform, clipping and binning stay on the calling thread, because
-    /// they append to shared buffers.
-    int threadCount = 1;
-
-    /// Direction the one directional light travels, for the lit shading
-    /// models. The rasteriser normalises it.
-    Deki::Vector3 lightDirection = Deki::Vector3(-0.4f, -0.8f, -0.45f);
-    float ambient = 0.25f;
-};
-
-struct RasterStats
-{
-    uint32_t meshesCulled = 0;      // skipped whole, their bounds being off-screen
-    uint32_t trianglesIn = 0;       // handed to DrawMesh
-    uint32_t trianglesClipped = 0;  // survived near-clip and culling
-    uint32_t trianglesBinned = 0;   // counted once per tile they touch
-    uint32_t pixelsTested = 0;      // reached the depth test
-    uint32_t pixelsWritten = 0;     // passed it and were shaded
-
-    void Reset() { *this = RasterStats{}; }
-};
-
-class Raster3D
+class Raster3D : public Mesh3DBackend
 {
 public:
     Raster3D() = default;
-    ~Raster3D();
+    ~Raster3D() override;
 
     // Non-copyable: it owns worker threads.
     Raster3D(const Raster3D&) = delete;
@@ -94,16 +50,16 @@ public:
     /// Targets a framebuffer and starts collecting geometry. The buffer is
     /// not cleared: the caller owns the background, as in the 2D path.
     void BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::ColorFormat format,
-                    const RasterConfig& config);
+                    const RasterConfig& config) override;
 
     /// Transforms, clips and bins one mesh. `mvp` takes object space to clip
     /// space; `normalMatrix` takes object-space normals to world space and is
     /// read only by the lit shading models.
     void DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_t materialCount, const Deki::Mat4& mvp,
-                  const Deki::Mat4& normalMatrix);
+                  const Deki::Mat4& normalMatrix) override;
 
     /// Fills every tile. Nothing reaches the framebuffer before this.
-    void EndFrame();
+    void EndFrame() override;
 
     const RasterStats& Stats() const { return m_Stats; }
     const RasterConfig& Config() const { return m_Config; }

@@ -103,6 +103,9 @@ struct Texture3D
     // Holes, for a material with alphaTest: palette index 0, RGB565 magenta,
     // or alpha below half for the formats that carry alpha.
     bool hasAlpha = false;
+    // Changes whenever the data behind the pointers does (NextRevision()), so
+    // a GPU backend can keep its upload. 0: not tracked, uploaded each use.
+    uint32_t revision = 0;
 
     bool Valid() const { return pixels != nullptr && width > 0 && height > 0; }
 };
@@ -141,6 +144,10 @@ struct Mesh3D
     // Object-space bounds, for culling before anything is transformed.
     Deki::Vector3 boundsMin;
     Deki::Vector3 boundsMax;
+
+    // Changes whenever the data behind the pointers does (NextRevision()), so
+    // a GPU backend can keep its upload. 0: not tracked, uploaded each draw.
+    uint32_t revision = 0;
 
     const void* VertexAt(uint32_t index) const
     {

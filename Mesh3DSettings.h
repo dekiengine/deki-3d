@@ -5,8 +5,18 @@
 #include <deki/Component.h>
 #include <deki/reflection/Property.h>
 
+#include <cstdint>
+
 namespace Deki3D
 {
+
+/// What draws the meshes (Mesh3DBackend.h).
+enum class Mesh3DRenderer : uint8_t
+{
+    Auto = 0,      // the GPU where the build has one, software elsewhere
+    Software = 1,  // always the software rasteriser
+    Gpu = 2,       // the GPU; software, with a warning, where there is none
+};
 
 /// How the 3D pass draws: tile size, the retro switches, the light and the fill
 /// threads. The projection belongs to the scene's camera
@@ -18,7 +28,14 @@ DEKI_DESCRIPTION("How the 3D pass draws: tiles, texture and vertex switches, lig
 class DEKI_3D_API Mesh3DSettings : public Deki::Component
 {
 public:
-    DEKI_TOOLTIP("Tile edge in pixels. The depth buffer is one tile, so 32 costs 2 KB and suits a microcontroller, "
+    DEKI_TOOLTIP("What draws the meshes. Auto uses the GPU where the build has one (the deki-3d-gl package on a "
+                 "platform with OpenGL) and the software rasteriser everywhere else. Software is the exact picture a "
+                 "board without a GPU shows, so choose it to preview one in the editor; GPU is far faster where "
+                 "there is one.")
+    DEKI_EXPORT
+    Mesh3DRenderer renderer = Mesh3DRenderer::Auto;
+
+    DEKI_TOOLTIP("Tile edge in pixels. Software only. The depth buffer is one tile, so 32 costs 2 KB and suits a microcontroller, "
                  "while a desktop can afford 128 or more.")
     DEKI_RANGE(8, 512)
     DEKI_EXPORT
@@ -50,9 +67,9 @@ public:
     DEKI_EXPORT
     float ambient = 0.25f;
 
-    DEKI_TOOLTIP("How many threads fill the screen on a device or simulator build. Tiles are independent, so this is "
-                 "the one part that scales with cores: 1 starts no threads at all, 2 suits a dual-core board, and "
-                 "above the core count it stops helping. The editor always previews with one thread, since it loads "
+    DEKI_TOOLTIP("Software only: how many threads fill the screen on a device or simulator build. Tiles are "
+                 "independent, so this is the one part that scales with cores: 1 starts no threads at all, 2 suits a "
+                 "dual-core board, and above the core count it stops helping. The editor always previews with one thread, since it loads "
                  "packages as unloadable DLLs; the picture is identical either way.")
     DEKI_RANGE(1, 16)
     DEKI_EXPORT

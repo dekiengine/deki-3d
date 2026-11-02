@@ -24,8 +24,8 @@ hardware FPU that means emulation is only paid at vertex rate.
 - The scene camera (`DekiRendering::CameraComponent`) draws meshes when its
   Projection is Perspective; its field of view and clip planes live there.
   With an orthographic camera, meshes are not drawn.
-- `Mesh3DSettings` sets how the pass draws: tile size, the retro switches, the
-  light and the fill threads. Put one anywhere in the scene; without one the
+- `Mesh3DSettings` sets how the pass draws: the renderer, tile size, the retro
+  switches, the light and the fill threads. Put one anywhere in the scene; without one the
   pass uses its declared defaults.
 
 ## Models
@@ -63,6 +63,15 @@ unloads deadlocks the Windows loader.
 `vertexSnap` gives you its vertex jitter. Both are there for the look: correct
 texturing divides once per span rather than per pixel, so affine only buys
 about a tenth.
+
+## On the GPU
+
+Install `deki-3d-gl` as well and, where the platform provides `opengl`, the
+same meshes draw on the GPU (OpenGL ES 3.0, or desktop OpenGL 3.3 on Windows):
+the same picture, many times faster. `Mesh3DSettings.renderer` chooses: Auto
+(the GPU where there is one), Software, or GPU. The pass talks to either
+through `Mesh3DBackend`, and a GPU backend is provided by another package
+rather than linked, so this one still builds for boards without a GPU.
 
 ## Requires
 

@@ -39,6 +39,11 @@ public:
                DekiRendering::RenderPassHooks::Execute | DekiRendering::RenderPassHooks::EndFrame;
     }
 
+    Mesh3DPass() = default;
+    ~Mesh3DPass() override;
+    Mesh3DPass(const Mesh3DPass&) = delete;
+    Mesh3DPass& operator=(const Mesh3DPass&) = delete;
+
     void BeginFrame(DekiRendering::RenderContext& ctx) override;
     void PreExecute(Deki::Object* obj, DekiRendering::RenderContext& ctx) override;
     void Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx) override;
@@ -49,8 +54,19 @@ private:
     void Flush();
     /// Works out the projection, once per frame, when the first object arrives.
     void Start(const Deki::Object* sceneObject);
+    /// The GPU backend, made on first use; null where there is none.
+    Mesh3DBackend* Gpu();
 
     Raster3D m_Raster;
+    // What draws this frame: m_Raster, or m_Gpu.
+    Mesh3DBackend* m_Backend = &m_Raster;
+    // Made by the GPU backend's provider and destroyed only through it, while
+    // m_GpuGeneration is still current; after that the provider has gone and
+    // took it along.
+    Mesh3DBackend* m_Gpu = nullptr;
+    const GpuBackendProvider* m_GpuProvider = nullptr;
+    uint32_t m_GpuGeneration = 0;
+    bool m_GpuUnavailable = false;  // tried and failed under this generation
     RasterConfig m_Config;
     // Rebuilt per object from the mesh's materials and the component's
     // overrides. A member, so its storage is reused across objects and frames.

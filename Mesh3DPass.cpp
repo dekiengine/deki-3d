@@ -9,6 +9,7 @@
 #include "deki-rendering/DekiRenderer.h"  // DekiRendering::RenderContext
 #include "deki-rendering/DekiRenderPassRegistry.h"
 
+#include <deki/LogSystem.h>
 #include <deki/Object.h>
 #include <deki/Scene.h>
 
@@ -94,6 +95,41 @@ bool IsPerspective(const DekiRendering::CameraComponent& c)
 }
 
 }  // namespace
+
+Mesh3DPass::~Mesh3DPass()
+{
+    // Only while its provider is the one that made it: a provider that went
+    // away has destroyed it already.
+    if (m_Gpu && m_GpuProvider && GpuBackendGeneration() == m_GpuGeneration)
+    {
+        m_GpuProvider->destroy(m_Gpu);
+    }
+}
+
+Mesh3DBackend* Mesh3DPass::Gpu()
+{
+    const uint32_t generation = GpuBackendGeneration();
+    if (generation != m_GpuGeneration)
+    {
+        // The provider was set or removed since. Whatever the old one made is
+        // gone or not ours to touch, so start over with the current one.
+        m_Gpu = nullptr;
+        m_GpuProvider = nullptr;
+        m_GpuUnavailable = false;
+        m_GpuGeneration = generation;
+    }
+    if (!m_Gpu && !m_GpuUnavailable)
+    {
+        m_GpuProvider = GetGpuBackendProvider();
+        m_Gpu = m_GpuProvider ? m_GpuProvider->create() : nullptr;
+        m_GpuUnavailable = m_Gpu == nullptr;
+        if (m_Gpu)
+        {
+            DEKI_LOG_INFO("Mesh3DPass: drawing meshes with %s", m_GpuProvider->name);
+        }
+    }
+    return m_Gpu;
+}
 
 void Mesh3DPass::BeginFrame(DekiRendering::RenderContext& ctx)
 {
@@ -208,7 +244,29 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     m_Config.threadCount = cam3d.fillThreads;
 #endif
 
-    m_Raster.BeginFrame(m_Buffer, m_Width, m_Height, m_Format, m_Config);
+    // The GPU unless the scene asks for software or there is none. A scene
+    // that insists on the GPU where there is none still draws, in software,
+    // and says why once.
+    m_Backend = &m_Raster;
+    if (cam3d.renderer != Mesh3DRenderer::Software)
+    {
+        if (Mesh3DBackend* gpu = Gpu())
+        {
+            m_Backend = gpu;
+        }
+        else if (cam3d.renderer == Mesh3DRenderer::Gpu)
+        {
+            static bool s_Warned = false;
+            if (!s_Warned)
+            {
+                s_Warned = true;
+                DEKI_LOG_WARNING("Mesh3DPass: the scene asks for the GPU, but this build has no GPU backend (install "
+                                 "deki-3d-gl on a platform with OpenGL); drawing in software");
+            }
+        }
+    }
+
+    m_Backend->BeginFrame(m_Buffer, m_Width, m_Height, m_Format, m_Config);
     m_Active = true;
     m_Pending = false;
 }
@@ -219,8 +277,8 @@ void Mesh3DPass::Flush()
     {
         return;
     }
-    m_Raster.EndFrame();
-    m_Raster.BeginFrame(m_Buffer, m_Width, m_Height, m_Format, m_Config);
+    m_Backend->EndFrame();
+    m_Backend->BeginFrame(m_Buffer, m_Width, m_Height, m_Format, m_Config);
     m_Pending = false;
 }
 
@@ -311,8 +369,8 @@ void Mesh3DPass::Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx)
     const Deki::Mat4 normalMatrix = RotateZ(obj->GetWorldRotation());
 #endif
 
-    m_Raster.DrawMesh(*geometry, m_Materials.data(), static_cast<uint16_t>(m_Materials.size()),
-                      Mul(m_ViewProjection, model), normalMatrix);
+    m_Backend->DrawMesh(*geometry, m_Materials.data(), static_cast<uint16_t>(m_Materials.size()),
+                        Mul(m_ViewProjection, model), normalMatrix);
     m_Pending = true;
 }
 
@@ -323,7 +381,7 @@ void Mesh3DPass::EndFrame(DekiRendering::RenderContext& ctx)
     {
         return;
     }
-    m_Raster.EndFrame();  // whatever the last run of meshes left binned
+    m_Backend->EndFrame();  // whatever the last run of meshes left binned
     m_Active = false;
     m_Pending = false;
 }

@@ -10,6 +10,17 @@ alongside one that has them.
 
 ## Unreleased
 
+### Added
+- `Mesh3DBackend`: what draws the pass's meshes. `Raster3D` is one; a GPU
+  backend is another, provided by a package such as `deki-3d-gl` through
+  `SetGpuBackendProvider`. `RasterConfig` and `RasterStats` moved to its
+  header (`Raster3D.h` still includes it).
+- `Mesh3DSettings.renderer`: Auto (the GPU where the build has a backend),
+  Software or GPU.
+- `Mesh3D::revision` and `Texture3D::revision`, which change with the data so
+  a GPU backend can keep its uploads. Mesh assets and the built-in primitives
+  set them (`NextRevision()`).
+
 ### Fixed
 - Big-endian boards (`DEKI_RGB565_BIG_ENDIAN`): RGB565 into an RGB565
   framebuffer came out byte-swapped, while every other framebuffer format was

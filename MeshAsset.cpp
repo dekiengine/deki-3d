@@ -2,6 +2,7 @@
 
 #include <deki/LogSystem.h>
 
+#include "Mesh3DBackend.h"  // NextRevision
 #include "deki-rendering/PixelFormat.h"
 
 #include <cstdint>
@@ -315,6 +316,10 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
                              static_cast<unsigned>(t.width), static_cast<unsigned>(t.height),
                              static_cast<unsigned>(t.format), static_cast<unsigned>(t.byteOffset));
         }
+        if (view.Valid())
+        {
+            view.revision = NextRevision();
+        }
         m_Textures.Data()[ti] = view;
     }
 
@@ -356,6 +361,7 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     m_View.indices = m_Indices.Data();
     m_View.submeshes = m_Submeshes.Data();
     m_View.submeshCount = static_cast<uint16_t>(m_Submeshes.Count());
+    m_View.revision = NextRevision();
     return true;
 }
 
