@@ -67,13 +67,10 @@ private:
     Raster3D m_Raster;
     // What draws this frame: m_Raster, or m_Gpu.
     Mesh3DBackend* m_Backend = &m_Raster;
-    // Made by the GPU backend's provider and destroyed only through it, while
-    // m_GpuGeneration is still current; after that the provider has gone and
-    // took it along.
+    // Made by CreateGpuBackend, destroyed only by DestroyGpuBackend. Always
+    // null where the platform has no OpenGL.
     Mesh3DBackend* m_Gpu = nullptr;
-    const GpuBackendProvider* m_GpuProvider = nullptr;
-    uint32_t m_GpuGeneration = 0;
-    bool m_GpuUnavailable = false;  // tried and failed under this generation
+    bool m_GpuTried = false;
     RasterConfig m_Config;
     // Rebuilt per object from the mesh's materials and the component's
     // overrides. A member, so its storage is reused across objects and frames.

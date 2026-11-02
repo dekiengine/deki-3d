@@ -11,11 +11,12 @@ alongside one that has them.
 ## Unreleased
 
 ### Added
-- `Mesh3DBackend`: what draws the pass's meshes. `Raster3D` is one; a GPU
-  backend is another, provided by a package such as `deki-3d-gl` through
-  `SetGpuBackendProvider`. `RasterConfig` and `RasterStats` moved to its
+- `Mesh3DBackend`: what draws the pass's meshes. `Raster3D` is one;
+  `GLMesh3DBackend` draws them on the GPU, through OpenGL ES 3.0 or desktop
+  OpenGL 3.3, where the platform provides `opengl` (`DEKI_CAPABILITY_OPENGL`).
+  A board without it compiles none of it. `RasterConfig` and `RasterStats` moved to its
   header (`Raster3D.h` still includes it).
-- `Mesh3DSettings.renderer`: Auto (the GPU where the build has a backend),
+- `Mesh3DSettings.renderer`: Auto (the GPU where the platform has OpenGL),
   Software or GPU.
 - `MeshComponent.shader`, `shaderParams` and `shaderColor`, and the same on
   `Material3D`: a GPU shader for the mesh (deki-rendering's `ShaderAsset`).

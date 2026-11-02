@@ -28,8 +28,8 @@ DEKI_DESCRIPTION("How the 3D pass draws: tiles, texture and vertex switches, lig
 class DEKI_3D_API Mesh3DSettings : public Deki::Component
 {
 public:
-    DEKI_TOOLTIP("What draws the meshes. Auto uses the GPU where the build has one (the deki-3d-gl package on a "
-                 "platform with OpenGL) and the software rasteriser everywhere else. Software is the exact picture a "
+    DEKI_TOOLTIP("What draws the meshes. Auto uses the GPU where the platform has OpenGL and the software "
+                 "rasteriser everywhere else. Software is the exact picture a "
                  "board without a GPU shows, so choose it to preview one in the editor; GPU is far faster where "
                  "there is one.")
     DEKI_EXPORT

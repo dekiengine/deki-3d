@@ -1,16 +1,14 @@
 #pragma once
 
-// What draws Mesh3DPass's meshes: the software rasteriser (Raster3D), or a GPU
-// backend that another package provides (deki-3d-gl). Both take the same
-// frame - BeginFrame, DrawMesh per mesh, EndFrame - into the same CPU
-// framebuffer the 2D content draws into, so the pass, its sorting against 2D
-// and every scene work the same whichever one draws.
+// What draws Mesh3DPass's meshes: the software rasteriser (Raster3D), or the
+// GPU backend (GLMesh3DBackend). Both take the same frame - BeginFrame,
+// DrawMesh per mesh, EndFrame - into the same CPU framebuffer the 2D content
+// draws into, so the pass, its sorting against 2D and every scene work the
+// same whichever one draws.
 //
-// A GPU backend is provided rather than linked: deki-3d builds for boards
-// with no GPU, and the package that talks to a graphics API builds only
-// where the platform has one. In the editor that package is a DLL that can
-// unload before deki-3d does, so the backends it makes are its to destroy
-// (GpuBackendProvider), never the pass's.
+// The GPU backend exists only where the platform has OpenGL
+// (DEKI_CAPABILITY_OPENGL): a board without a GPU builds the software
+// rasteriser alone.
 
 #include <deki/Engine.h>  // Deki::ColorFormat
 #include <deki/Vector.h>
@@ -53,7 +51,7 @@ struct RasterConfig
     int threadCount = 1;
 
     /// A GPU backend may build the frame on the GPU when the display presents
-    /// through one (deki-gl's GLPresenter): the meshes then draw straight into
+    /// through one (deki-rendering's GLPresenter): the meshes then draw straight into
     /// the frame between layers of 2D, and the buffer is left transparent
     /// after a batch, holding only the 2D drawn since. Off, the backend writes
     /// its pixels into the buffer, which then holds the whole picture, as
@@ -108,24 +106,17 @@ public:
     virtual bool WritesBuffer() const { return true; }
 };
 
-/// How a package offers a GPU backend. `create` returns null when the GPU
-/// cannot be used here (no driver, no context), and the pass then draws in
-/// software. Only `destroy` may delete what `create` made.
-struct GpuBackendProvider
-{
-    const char* name;  // for the log, e.g. "OpenGL ES 3"
-    Mesh3DBackend* (*create)();
-    void (*destroy)(Mesh3DBackend* backend);
-};
-
-/// Installs the GPU backend's provider, or removes it with null. A provider
-/// going away must first destroy every backend it made: holders tell it is
-/// gone by GpuBackendGeneration() changing, and then drop their pointer
-/// without destroying it.
-DEKI_3D_API void SetGpuBackendProvider(const GpuBackendProvider* provider);
-DEKI_3D_API const GpuBackendProvider* GetGpuBackendProvider();
-/// Changes every time the provider is set or removed.
-DEKI_3D_API uint32_t GpuBackendGeneration();
+#ifdef DEKI_CAPABILITY_OPENGL
+/// A GPU backend (GLMesh3DBackend.cpp), or null when the GPU cannot be used
+/// here (no driver, no context): the pass then draws in software. Only
+/// DestroyGpuBackend may delete what this makes. At the end of the program,
+/// or when the editor unloads the package, the backends still alive go
+/// first, and DestroyGpuBackend on one of them does nothing.
+DEKI_3D_API Mesh3DBackend* CreateGpuBackend();
+DEKI_3D_API void DestroyGpuBackend(Mesh3DBackend* backend);
+/// For the log: "OpenGL 3.3" or "OpenGL ES 3.0".
+DEKI_3D_API const char* GpuBackendName();
+#endif
 
 /// A fresh, never-zero Mesh3D or Texture3D revision, for whoever builds one
 /// over new data. A GPU backend keeps uploads by revision.

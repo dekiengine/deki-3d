@@ -6,26 +6,8 @@ namespace Deki3D
 {
 namespace
 {
-const GpuBackendProvider* s_Provider = nullptr;
-uint32_t s_Generation = 0;
 std::atomic<uint32_t> s_Revision{ 0 };
 }  // namespace
-
-void SetGpuBackendProvider(const GpuBackendProvider* provider)
-{
-    s_Provider = provider;
-    ++s_Generation;
-}
-
-const GpuBackendProvider* GetGpuBackendProvider()
-{
-    return s_Provider;
-}
-
-uint32_t GpuBackendGeneration()
-{
-    return s_Generation;
-}
 
 uint32_t NextRevision()
 {

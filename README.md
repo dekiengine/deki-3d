@@ -66,12 +66,126 @@ about a tenth.
 
 ## On the GPU
 
-Install `deki-3d-gl` as well and, where the platform provides `opengl`, the
-same meshes draw on the GPU (OpenGL ES 3.0, or desktop OpenGL 3.3 on Windows):
-the same picture, many times faster. `Mesh3DSettings.renderer` chooses: Auto
-(the GPU where there is one), Software, or GPU. The pass talks to either
-through `Mesh3DBackend`, and a GPU backend is provided by another package
-rather than linked, so this one still builds for boards without a GPU.
+Where the platform provides `opengl`, the same meshes draw on the GPU (OpenGL
+ES 3.0, or desktop OpenGL 3.3 on Windows): the same picture, many times
+faster, and nothing to install. The backend (`GLMesh3DBackend`) is compiled
+only there (`DEKI_CAPABILITY_OPENGL`); a board without a GPU builds the
+software rasteriser alone. The pass talks to either through `Mesh3DBackend`.
+
+> **Experimental.** Run in the editor and a desktop simulator build on Windows
+> (desktop OpenGL 3.3); its tests compare it with the software rasteriser
+> picture for picture. Not yet run on a handheld.
+
+### How it fits
+
+The 2D content and the meshes share one sort order, as with the software
+rasteriser, and the scene format is unchanged. How the meshes reach the
+screen depends on the display:
+
+- **Into the presented frame.** Where the display presents through
+  deki-rendering's GL presenter (the desktop simulator does), the 2D drawn before a batch goes up as a layer at its first
+  mesh, the meshes draw straight into the frame the presenter is building,
+  and the CPU buffer starts over transparent for the 2D after them. Nothing
+  is read back.
+- **Read back.** Everywhere else (the editor, a display that shows a CPU
+  buffer), each batch draws into an off-screen framebuffer cleared to
+  transparent, and its end reads back the rectangle the meshes can have
+  touched and writes the pixels they drew over the 2D below.
+
+The log says which, once. OpenGL itself, and the context, come from
+deki-rendering: loaded at run time, so a machine without a driver logs why and its
+meshes draw in software.
+
+### Choosing the renderer
+
+`Mesh3DSettings.renderer` on the scene:
+
+- **Auto**, the default: the GPU where the platform has OpenGL and a
+  driver, the software rasteriser everywhere else.
+- **Software**: always the rasteriser. In the editor, this is the exact
+  picture a board without a GPU shows.
+- **GPU**: the GPU. Where there is none it still draws, in software, and says
+  so once.
+
+The editor always has OpenGL, so on Auto it previews on the GPU even while
+the active platform is a microcontroller. Pick Software to see that
+board's picture.
+
+### What it draws
+
+What the software rasteriser draws: the three shading models (Unlit,
+VertexLit, Flat) against the scene's one light, textures in every `Texture3D`
+format with the same holes (palette index 0, RGB565 magenta, alpha below half)
+when the material asks for the alpha test, and the retro switches
+(`perspectiveCorrect` off for affine texturing, `vertexSnap`).
+
+Where the GPU does better at no cost, it does: lighting and vertex colours are
+interpolated across a triangle, where the rasteriser takes its first vertex's,
+and light is not cut to 32 levels. On a cube, where each face has one normal,
+the pictures are the same.
+
+As in the rasteriser, a textured mesh draws its texels alone: the material
+tint and vertex colours apply to untextured and coverage-only (ALPHA8)
+meshes.
+
+### Shaders
+
+A `MeshComponent` can name a `.shader` (deki-rendering's `ShaderAsset`). It is
+GLSL ES 3.00 in up to three parts: anything before the first marker is shared,
+`// @vertex` starts what the vertex stage adds, `// @fragment` what the
+fragment stage adds.
+
+```glsl
+// A mesh that breathes and glows toward uColor.
+// @vertex
+vec3 Displace(vec3 position, vec3 normal)
+{
+    return position + normal * sin(uTime * uParams.y) * uParams.x;
+}
+
+// @fragment
+vec4 Shade(Fragment f)
+{
+    float glow = 0.5 + 0.5 * sin(uTime * uParams.y);
+    return vec4(mix(f.base.rgb, uColor.rgb * f.light, glow), 1.0);
+}
+```
+
+- `Displace(position, normal)`, optional, returns the object-space position.
+- `Shade(Fragment f)`, optional, returns the colour. `f.base` is what the
+  shading model would draw; `f.albedo` (texel or vertex colour times tint,
+  alpha the coverage), `f.uv`, `f.normal` (world space), `f.light` and
+  `f.pixel` are there to build on.
+- Uniforms: `uTime` (seconds), `uParams` and `uColor` (the component's
+  `shaderParams` and `shaderColor`), `uLightDir`, `uAmbient`, `uTexture`.
+
+Each shader is compiled once, the first time it draws. One that does not
+compile is logged with the compiler's message, at the file's line, and the
+mesh draws its shading model instead. Boards without a GPU ignore shaders.
+
+### Uploads
+
+Meshes and textures are uploaded once per `revision` (`Mesh3D::revision`,
+`Texture3D::revision`) and dropped after ten seconds unused. Mesh assets and
+the built-in primitives set it; geometry built by hand with revision 0 is
+uploaded every draw.
+
+### Platforms
+
+A platform gets the GPU backend when it provides `opengl`: its build then
+defines `DEKI_CAPABILITY_OPENGL`. The desktop simulator platform does; a
+handheld platform will once it exists. A board without it compiles none of
+the GPU code.
+
+### Speed
+
+On a desktop (RTX 2080), 400 vertex-lit cubes at 640x480: software 10.5 ms a
+frame, GPU 1.4 ms with the readback. The test
+`GLBackend.DISABLED_BenchmarkAgainstSoftware` measures it on any machine:
+
+```
+Deki3DTests --gtest_also_run_disabled_tests --gtest_filter=*Benchmark*
+```
 
 ## Requires
 

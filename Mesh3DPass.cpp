@@ -99,36 +99,27 @@ bool IsPerspective(const DekiRendering::CameraComponent& c)
 
 Mesh3DPass::~Mesh3DPass()
 {
-    // Only while its provider is the one that made it: a provider that went
-    // away has destroyed it already.
-    if (m_Gpu && m_GpuProvider && GpuBackendGeneration() == m_GpuGeneration)
+#ifdef DEKI_CAPABILITY_OPENGL
+    if (m_Gpu)
     {
-        m_GpuProvider->destroy(m_Gpu);
+        DestroyGpuBackend(m_Gpu);
     }
+#endif
 }
 
 Mesh3DBackend* Mesh3DPass::Gpu()
 {
-    const uint32_t generation = GpuBackendGeneration();
-    if (generation != m_GpuGeneration)
+#ifdef DEKI_CAPABILITY_OPENGL
+    if (!m_GpuTried)
     {
-        // The provider was set or removed since. Whatever the old one made is
-        // gone or not ours to touch, so start over with the current one.
-        m_Gpu = nullptr;
-        m_GpuProvider = nullptr;
-        m_GpuUnavailable = false;
-        m_GpuGeneration = generation;
-    }
-    if (!m_Gpu && !m_GpuUnavailable)
-    {
-        m_GpuProvider = GetGpuBackendProvider();
-        m_Gpu = m_GpuProvider ? m_GpuProvider->create() : nullptr;
-        m_GpuUnavailable = m_Gpu == nullptr;
+        m_GpuTried = true;
+        m_Gpu = CreateGpuBackend();
         if (m_Gpu)
         {
-            DEKI_LOG_INFO("Mesh3DPass: drawing meshes with %s", m_GpuProvider->name);
+            DEKI_LOG_INFO("Mesh3DPass: drawing meshes with %s", GpuBackendName());
         }
     }
+#endif
     return m_Gpu;
 }
 
@@ -264,8 +255,8 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
             if (!s_Warned)
             {
                 s_Warned = true;
-                DEKI_LOG_WARNING("Mesh3DPass: the scene asks for the GPU, but this build has no GPU backend (install "
-                                 "deki-3d-gl on a platform with OpenGL); drawing in software");
+                DEKI_LOG_WARNING("Mesh3DPass: the scene asks for the GPU, but this platform has no OpenGL; drawing "
+                                 "in software");
             }
         }
     }
