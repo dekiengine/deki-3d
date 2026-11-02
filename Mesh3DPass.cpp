@@ -344,7 +344,8 @@ void Mesh3DPass::Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx)
     // the object drawn, not part of the model file), and its double-sided
     // switch can only turn double-sided on.
     const Deki3D::MeshAsset* asset = mesh->Asset();
-    const uint32_t componentTint = mesh->tintColor.ToRGBA8888();
+    // 0xAABBGGRR, the order Material3D keeps colours in.
+    const uint32_t componentTint = mesh->tintColor.ToABGR8888();
 
     m_Materials.clear();
     if (asset && asset->MaterialCount() > 0)
@@ -356,11 +357,27 @@ void Mesh3DPass::Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx)
         m_Materials.emplace_back();
     }
 
+    // The component's shader draws every material, where a GPU draws them.
+    const DekiRendering::ShaderAsset* shader = mesh->shader.HasGuid() ? mesh->shader.Get() : nullptr;
+    const uint32_t shaderColor = mesh->shaderColor.ToABGR8888();
     for (Material3D& material : m_Materials)
     {
         material.tint = MultiplyTint(material.tint, componentTint);
         material.shading = mesh->shading;
         material.doubleSided = material.doubleSided || mesh->doubleSided;
+        material.shader = shader;
+        material.shaderParams = mesh->shaderParams;
+        material.shaderColor = shaderColor;
+    }
+    if (shader && m_Backend == &m_Raster)
+    {
+        static bool s_Warned = false;
+        if (!s_Warned)
+        {
+            s_Warned = true;
+            DEKI_LOG_WARNING("Mesh3DPass: '%s' has a shader, which only a GPU draws; drawing its shading model",
+                             obj->GetName().c_str());
+        }
     }
 
     // Rotation only for normals: uniform scale leaves them pointing the right

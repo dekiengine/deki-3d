@@ -17,6 +17,9 @@ alongside one that has them.
   header (`Raster3D.h` still includes it).
 - `Mesh3DSettings.renderer`: Auto (the GPU where the build has a backend),
   Software or GPU.
+- `MeshComponent.shader`, `shaderParams` and `shaderColor`, and the same on
+  `Material3D`: a GPU shader for the mesh (deki-rendering's `ShaderAsset`).
+  The software rasteriser draws the shading model and warns once.
 - `Mesh3DSettings.composeOnGpu` and `RasterConfig::composeOnGpu`: a GPU
   backend may draw straight into a frame the display builds on the GPU,
   leaving the CPU buffer with only the 2D drawn after the meshes. On by
@@ -26,6 +29,11 @@ alongside one that has them.
   set them (`NextRevision()`).
 
 ### Fixed
+- Tint colours were packed in the wrong byte order (`ToRGBA8888` where
+  materials keep 0xAABBGGRR), so any tint but white came out with its
+  channels swapped. With the default tint, opaque black, that turned every
+  mesh red. The default is now white, as its tooltip always said; a scene
+  that saved the old default now draws its meshes black, as it asks.
 - Big-endian boards (`DEKI_RGB565_BIG_ENDIAN`): RGB565 into an RGB565
   framebuffer came out byte-swapped, while every other framebuffer format was
   right. Meshes now hold RGB565 and RGB565A8 textures in memory's byte order

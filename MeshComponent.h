@@ -5,6 +5,7 @@
 #include "MeshAsset.h"
 
 #include "deki-rendering/RendererComponent.h"
+#include "deki-rendering/ShaderAsset.h"
 #include <deki/Color.h>
 #include <deki/assets/AssetRef.h>
 #include <deki/reflection/Property.h>
@@ -42,7 +43,7 @@ public:
 
     DEKI_TOOLTIP("Multiplies the mesh's own colours. White leaves them alone.")
     DEKI_EXPORT
-    Deki::Color tintColor;
+    Deki::Color tintColor = Deki::Color(255, 255, 255);
 
     DEKI_TOOLTIP("Unlit is flat colour. Vertex lit shades each vertex against the scene light. Flat shades whole "
                  "triangles, which is the faceted look.")
@@ -52,6 +53,20 @@ public:
     DEKI_TOOLTIP("Draw the inside of the mesh as well as the outside. Costs roughly double the fill.")
     DEKI_EXPORT
     bool doubleSided = false;
+
+    DEKI_TOOLTIP("A .shader that draws this mesh on the GPU. Its Shade() gets what the shading model above would "
+                 "draw and returns the colour; a Displace() moves the vertices. Boards without a GPU draw the "
+                 "shading model and ignore it.")
+    DEKI_EXPORT
+    Deki::AssetRef<DekiRendering::ShaderAsset> shader;
+
+    DEKI_TOOLTIP("Three numbers the shader reads as uParams: speeds, strengths, whatever it says it wants.")
+    DEKI_EXPORT
+    Deki::Vector3 shaderParams;
+
+    DEKI_TOOLTIP("A colour the shader reads as uColor.")
+    DEKI_EXPORT
+    Deki::Color shaderColor = Deki::Color(255, 255, 255);
 
     /// The assigned mesh asset once it has loaded; null before that or when a
     /// primitive is drawn. The pass reads its material table.

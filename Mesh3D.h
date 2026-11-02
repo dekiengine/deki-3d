@@ -15,6 +15,11 @@
 #include <cstddef>
 #include <cstdint>
 
+namespace DekiRendering
+{
+class ShaderAsset;
+}
+
 namespace Deki3D
 {
 
@@ -117,6 +122,13 @@ struct Material3D
     ShadingModel shading = ShadingModel::Unlit;
     bool doubleSided = false;
     bool alphaTest = false;  // discard texels the texture calls holes
+
+    // A GPU shader drawing this material (deki-rendering's ShaderAsset), and
+    // what it reads as uParams and uColor. The software rasteriser draws the
+    // shading model and ignores them.
+    const DekiRendering::ShaderAsset* shader = nullptr;
+    Deki::Vector3 shaderParams;
+    uint32_t shaderColor = 0xFFFFFFFFu;  // 0xAABBGGRR
 };
 
 /// A range of the index buffer drawn with one material, like one draw call.
