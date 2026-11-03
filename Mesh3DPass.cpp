@@ -8,13 +8,18 @@
 #include "deki-rendering/CameraComponent.h"
 #include "deki-rendering/DekiRenderer.h"  // DekiRendering::RenderContext
 #include "deki-rendering/DekiRenderPassRegistry.h"
+#include "deki-rendering/Light.h"
 #include "deki-rendering/QuadBlit.h"  // NoteWritten
 
 #include <deki/LogSystem.h>
 #include <deki/Object.h>
 #include <deki/Scene.h>
 
+#include <algorithm>
 #include <cmath>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
 namespace Deki3D
 {
@@ -215,13 +220,7 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     m_Config.perspectiveCorrect = cam3d.perspectiveCorrect;
     m_Config.vertexSnap = cam3d.vertexSnap;
 
-    // Yaw and pitch rather than a vector, so an author can swing the light
-    // around without normalising by hand. Yaw 0 puts it behind the viewer.
-    const float yaw = cam3d.lightYaw * kPi / 180.0f;
-    const float pitch = cam3d.lightPitch * kPi / 180.0f;
-    m_Config.lightDirection =
-        Deki::Vector3(std::sin(yaw) * std::cos(pitch), -std::sin(pitch), -std::cos(yaw) * std::cos(pitch));
-    m_Config.ambient = cam3d.ambient;
+    GatherLights(sceneObject);
     // Only when each frame starts from a clear: a frame kept from the last
     // one must be whole in the buffer, not partly on the GPU.
     m_Config.composeOnGpu = cam3d.composeOnGpu && m_Camera->clearEveryFrame;
@@ -264,6 +263,91 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     m_Backend->BeginFrame(m_Buffer, m_Width, m_Height, m_Format, m_Config);
     m_Active = true;
     m_Pending = false;
+}
+
+void Mesh3DPass::GatherLights(const Deki::Object* sceneObject)
+{
+    static std::vector<const DekiRendering::Light*> s_Found;
+    DekiRendering::Light::InScene(sceneObject->GetOwnerScene(), s_Found);
+    m_Lit = !s_Found.empty();
+    m_Config.ambient = Deki::Vector3(0.0f, 0.0f, 0.0f);
+    m_Config.lightCount = 0;
+
+    // The ambient adds up; the rest are lights of their own, the strongest
+    // kMaxLights of them if there are more.
+    static std::vector<std::pair<float, const DekiRendering::Light*>> s_Lights;
+    s_Lights.clear();
+    for (const DekiRendering::Light* light : s_Found)
+    {
+        if (!light->Shines())
+        {
+            continue;
+        }
+        const Deki::Vector3 color(light->color.r / 255.0f * light->intensity, light->color.g / 255.0f * light->intensity,
+                                  light->color.b / 255.0f * light->intensity);
+        if (light->type == DekiRendering::LightType::Ambient)
+        {
+            m_Config.ambient = m_Config.ambient + color;
+        }
+        else
+        {
+            s_Lights.emplace_back(color.x + color.y + color.z, light);
+        }
+    }
+    std::stable_sort(s_Lights.begin(), s_Lights.end(),
+                     [](const auto& a, const auto& b) { return a.first > b.first; });
+
+    for (size_t i = 0; i < s_Lights.size(); ++i)
+    {
+        const DekiRendering::Light& light = *s_Lights[i].second;
+        if (i >= static_cast<size_t>(RasterConfig::kMaxLights))
+        {
+            static std::unordered_set<std::string> s_Told;
+            const std::string& name = light.GetOwner()->GetName();
+            if (s_Told.insert(name).second)
+            {
+                DEKI_LOG_WARNING("Lights: '%s' does not light the meshes: they take the %d strongest lights, and it is "
+                                 "not one of them",
+                                 name.c_str(), RasterConfig::kMaxLights);
+            }
+            continue;
+        }
+        const Deki::Object* owner = light.GetOwner();
+        Light3D& l = m_Config.lights[m_Config.lightCount++];
+        l.color = Deki::Vector3(light.color.r / 255.0f * light.intensity, light.color.g / 255.0f * light.intensity,
+                                light.color.b / 255.0f * light.intensity);
+        if (light.type == DekiRendering::LightType::Directional)
+        {
+            // Yaw and pitch rather than a vector, so an author can swing the
+            // light around without normalising by hand. Yaw 0 puts it behind
+            // the viewer.
+            const float yaw = light.yaw * kPi / 180.0f;
+            const float pitch = light.pitch * kPi / 180.0f;
+            l.kind = Light3D::Kind::Directional;
+            l.direction =
+                Deki::Vector3(std::sin(yaw) * std::cos(pitch), -std::sin(pitch), -std::cos(yaw) * std::cos(pitch));
+            continue;
+        }
+#ifdef DEKI_TRANSFORM_3D
+        l.position = Deki::Vector3(owner->GetWorldX(), owner->GetWorldY(), owner->GetWorldZ());
+#else
+        l.position = Deki::Vector3(owner->GetWorldX(), owner->GetWorldY(), 0.0f);
+#endif
+        l.range = light.range;
+        if (light.type == DekiRendering::LightType::Point)
+        {
+            l.kind = Light3D::Kind::Point;
+            continue;
+        }
+        // A spot faces along its object's X axis, as in 2D, where that is
+        // the way its rotation turns it.
+        l.kind = Light3D::Kind::Spot;
+        l.direction = TransformDirection(CameraRotation(owner), Deki::Vector3(1.0f, 0.0f, 0.0f));
+        const float half = std::min(std::max(light.spotAngle, 1.0f), 179.0f) * 0.5f * kPi / 180.0f;
+        const float soft = std::min(std::max(light.spotSoftness, 0.0f), 1.0f);
+        l.cosOuter = std::cos(half);
+        l.cosInner = std::max(std::cos(half * (1.0f - soft)), l.cosOuter + 1e-4f);
+    }
 }
 
 void Mesh3DPass::EndBatch()
@@ -363,10 +447,23 @@ void Mesh3DPass::Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx)
     // The component's shader draws every material, where a GPU draws them.
     const DekiRendering::ShaderAsset* shader = mesh->shader.HasGuid() ? mesh->shader.Get() : nullptr;
     const uint32_t shaderColor = mesh->shaderColor.ToABGR8888();
+    // A scene without a Light is not lit: a lit mesh draws in its own
+    // colours, and says why once.
+    ShadingModel shading = mesh->shading;
+    if (!m_Lit && shading != ShadingModel::Unlit)
+    {
+        shading = ShadingModel::Unlit;
+        static std::unordered_set<std::string> s_Told;
+        if (s_Told.insert(obj->GetName()).second)
+        {
+            DEKI_LOG_WARNING("Lights: '%s' is lit, but the scene has no Light; it draws unlit until one is added",
+                             obj->GetName().c_str());
+        }
+    }
     for (Material3D& material : m_Materials)
     {
         material.tint = MultiplyTint(material.tint, componentTint);
-        material.shading = mesh->shading;
+        material.shading = shading;
         material.doubleSided = material.doubleSided || mesh->doubleSided;
         material.shader = shader;
         material.shaderParams = mesh->shaderParams;
@@ -393,7 +490,7 @@ void Mesh3DPass::Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx)
 #endif
 
     m_Backend->DrawMesh(*geometry, m_Materials.data(), static_cast<uint16_t>(m_Materials.size()),
-                        Mul(m_ViewProjection, model), normalMatrix);
+                        Mul(m_ViewProjection, model), normalMatrix, model);
     m_Pending = true;
 }
 

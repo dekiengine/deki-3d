@@ -45,8 +45,8 @@ public:
     DEKI_EXPORT
     Deki::Color tintColor = Deki::Color(255, 255, 255);
 
-    DEKI_TOOLTIP("Unlit is flat colour. Vertex lit shades each vertex against the scene light. Flat shades whole "
-                 "triangles, which is the faceted look.")
+    DEKI_TOOLTIP("Unlit is flat colour. Vertex lit shades each vertex by the scene's lights. Flat shades whole "
+                 "triangles, which is the faceted look. A scene without a Light draws every mesh unlit.")
     DEKI_EXPORT
     Deki3D::ShadingModel shading = Deki3D::ShadingModel::VertexLit;
 
@@ -82,6 +82,10 @@ public:
     /// puts it in the renderer's sort, next to the sprites.
     bool RenderContent(const Deki::Object* owner, QuadBlit::Source& outSource, float& outPivotX, float& outPivotY,
                        uint8_t& outTintR, uint8_t& outTintG, uint8_t& outTintB, uint8_t& outTintA) override;
+
+    /// A lit mesh lights itself: the 2D light is laid over the frame before
+    /// it draws, not over it.
+    bool LightsItself() const override { return shading != Deki3D::ShadingModel::Unlit; }
 
 private:
     mutable MeshPrimitive m_BuiltPrimitive = static_cast<MeshPrimitive>(0xFF);

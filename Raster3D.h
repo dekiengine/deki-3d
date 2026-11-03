@@ -53,10 +53,13 @@ public:
                     const RasterConfig& config) override;
 
     /// Transforms, clips and bins one mesh. `mvp` takes object space to clip
-    /// space; `normalMatrix` takes object-space normals to world space and is
-    /// read only by the lit shading models.
+    /// space; `normalMatrix` normals and `model` positions to world space,
+    /// read only by the lit shading models. A mesh is lit by the
+    /// kLightsPerMesh lights that reach it most.
     void DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_t materialCount, const Deki::Mat4& mvp,
-                  const Deki::Mat4& normalMatrix) override;
+                  const Deki::Mat4& normalMatrix, const Deki::Mat4& model = Deki::Mat4::Identity()) override;
+
+    static constexpr int kLightsPerMesh = 4;
 
     /// Fills every tile. Nothing reaches the framebuffer before this.
     void EndFrame() override;
@@ -75,7 +78,7 @@ private:
         float z;  // normalised device z in [-1, 1]
         float uOverW, vOverW;
         uint32_t color;
-        float light;
+        float lightR, lightG, lightB;
     };
 
     struct RasterTri
@@ -93,7 +96,7 @@ private:
         float x, y, z, w;
         float u, v;
         uint32_t color;
-        float light;
+        float lightR, lightG, lightB;
     };
 
     void EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c, uint16_t materialIndex);
@@ -112,8 +115,11 @@ private:
     int32_t m_Height = 0;
     Deki::ColorFormat m_Format = Deki::ColorFormat::RGB565;
     size_t m_BytesPerPixel = 2;  // of m_Format
-    RasterConfig m_Config;
-    Deki::Vector3 m_LightDir;
+    RasterConfig m_Config;  // its lights' directions normalised
+    // The lights of the mesh DrawMesh is on: the frame's that reach it most.
+    Light3D m_MeshLights[kLightsPerMesh];
+    int m_MeshLightCount = 0;
+    void PickLights(const Mesh3D& mesh, const Deki::Mat4& model);
 
     int m_TilesX = 0;
     int m_TilesY = 0;

@@ -56,6 +56,16 @@ inline uint16_t To565(uint32_t rgba)
     return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
 
+/// Scales an RGB565 pixel by a shade per channel in 0..64 (32 is the colour
+/// as it is), kept within each channel.
+inline uint16_t Shade565RGB(uint16_t c, uint32_t sr, uint32_t sg, uint32_t sb)
+{
+    const uint32_t r = std::min<uint32_t>(((c >> 11) * sr) >> 5, 31);
+    const uint32_t g = std::min<uint32_t>((((c >> 5) & 0x3Fu) * sg) >> 5, 63);
+    const uint32_t b = std::min<uint32_t>(((c & 0x1Fu) * sb) >> 5, 31);
+    return static_cast<uint16_t>((r << 11) | (g << 5) | b);
+}
+
 /// Scales an RGB565 pixel by shade in 0..32, with two multiplies, not three.
 inline uint16_t Shade565(uint16_t c, uint32_t shade)
 {
@@ -168,7 +178,11 @@ struct SpanArgs
     const Texture3D* tex;
     bool alphaTest;
     bool lit;
-    uint32_t shade;    // 0..32
+    // The light per channel, 0..64 (32 is the colour as it is); grey when
+    // the three are one value no brighter than the colour, which Shade565
+    // does with two multiplies.
+    uint32_t shadeR, shadeG, shadeB;
+    bool grey;
     uint16_t flat565;  // untextured colour, as RGB565 and as 8-bit channels
     uint8_t flatR, flatG, flatB;
     int uMask, vMask, wShift;
@@ -188,12 +202,13 @@ enum class TexKind
     ALPHA8
 };
 
-/// Scales 8-bit channels by shade in 0..32, as Shade565 does for a 565 pixel.
-inline void Shade8(uint8_t& r, uint8_t& g, uint8_t& b, uint32_t shade)
+/// Scales 8-bit channels by a shade each in 0..64, as Shade565RGB does for a
+/// 565 pixel.
+inline void Shade8(uint8_t& r, uint8_t& g, uint8_t& b, uint32_t sr, uint32_t sg, uint32_t sb)
 {
-    r = static_cast<uint8_t>((r * shade) >> 5);
-    g = static_cast<uint8_t>((g * shade) >> 5);
-    b = static_cast<uint8_t>((b * shade) >> 5);
+    r = static_cast<uint8_t>(std::min<uint32_t>((r * sr) >> 5, 255));
+    g = static_cast<uint8_t>(std::min<uint32_t>((g * sg) >> 5, 255));
+    b = static_cast<uint8_t>(std::min<uint32_t>((b * sb) >> 5, 255));
 }
 
 /// Fills one span and returns how many pixels it wrote.
@@ -255,7 +270,7 @@ uint32_t FillSpan(const SpanArgs& a)
                 {
                     if (a.lit)
                     {
-                        color = Shade565(color, a.shade);
+                        color = a.grey ? Shade565(color, a.shadeR) : Shade565RGB(color, a.shadeR, a.shadeG, a.shadeB);
                     }
                     reinterpret_cast<uint16_t*>(a.fbRow)[x] = DekiPixel::ToMemory565(color);
                 }
@@ -312,7 +327,7 @@ uint32_t FillSpan(const SpanArgs& a)
                 {
                     if (a.lit)
                     {
-                        Shade8(r, g, b, a.shade);
+                        Shade8(r, g, b, a.shadeR, a.shadeG, a.shadeB);
                     }
                     DekiPixel::WriteDstPixel<F>(a.fbRow, static_cast<size_t>(x), r, g, b, 255);
                 }
@@ -410,10 +425,14 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::
         m_Config.spanSubdivision = 1;
     }
 
-    m_LightDir = m_Config.lightDirection;
-    if (m_LightDir.LengthSquared() > 0.0f)
+    m_Config.lightCount = std::min(std::max(m_Config.lightCount, 0), RasterConfig::kMaxLights);
+    for (int i = 0; i < m_Config.lightCount; ++i)
     {
-        m_LightDir.Normalize();
+        Deki::Vector3& d = m_Config.lights[i].direction;
+        if (d.LengthSquared() > 0.0f)
+        {
+            d.Normalize();
+        }
     }
 
     const int tile = m_Config.tileSize;
@@ -467,7 +486,7 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::
 // ---------------------------------------------------------------------------
 
 void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_t materialCount, const Deki::Mat4& mvp,
-                        const Deki::Mat4& normalMatrix)
+                        const Deki::Mat4& normalMatrix, const Deki::Mat4& model)
 {
     if (!mesh.vertices || !mesh.indices || mesh.layout.positionOffset < 0)
     {
@@ -482,6 +501,8 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
     }
 
     const VertexLayout& layout = mesh.layout;
+    PickLights(mesh, model);
+    const Deki::Vector3 ambient = m_Config.ambient;
 
     for (uint16_t s = 0; s < mesh.submeshCount; ++s)
     {
@@ -529,7 +550,7 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
                 }
 
                 cv[k].color = layout.HasColors() ? ReadColor(vtx, layout.colorOffset) : 0xFFFFFFFFu;
-                cv[k].light = 1.0f;
+                cv[k].lightR = cv[k].lightG = cv[k].lightB = 1.0f;
 
                 if (layout.HasNormals())
                 {
@@ -548,8 +569,12 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
                     {
                         n.Normalize();
                     }
-                    const float d = -n.Dot(m_LightDir);
-                    cv[k].light = m_Config.ambient + (d > 0.0f ? d : 0.0f) * (1.0f - m_Config.ambient);
+                    float w = 1.0f;
+                    const Deki::Vector3 at = Deki3D::TransformPoint(model, objPos[k], w);
+                    const Deki::Vector3 light = LightAt(ambient, m_MeshLights, m_MeshLightCount, at, n);
+                    cv[k].lightR = light.x;
+                    cv[k].lightG = light.y;
+                    cv[k].lightB = light.z;
                 }
             }
             else if (shading == ShadingModel::Flat)
@@ -560,13 +585,59 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
                 {
                     faceNormal.Normalize();
                 }
-                const float d = -faceNormal.Dot(m_LightDir);
-                const float lit = m_Config.ambient + (d > 0.0f ? d : 0.0f) * (1.0f - m_Config.ambient);
-                cv[0].light = cv[1].light = cv[2].light = lit;
+                // At the face's middle, with its normal.
+                float w = 1.0f;
+                const Deki::Vector3 middle = (objPos[0] + objPos[1] + objPos[2]) * (1.0f / 3.0f);
+                const Deki::Vector3 at = Deki3D::TransformPoint(model, middle, w);
+                const Deki::Vector3 light = LightAt(ambient, m_MeshLights, m_MeshLightCount, at, faceNormal);
+                for (ClipVertex& v : cv)
+                {
+                    v.lightR = light.x;
+                    v.lightG = light.y;
+                    v.lightB = light.z;
+                }
             }
 
             EmitTriangle(cv[0], cv[1], cv[2], materialIndex);
         }
+    }
+}
+
+void Raster3D::PickLights(const Mesh3D& mesh, const Deki::Mat4& model)
+{
+    // Every light, if there are few enough; otherwise the ones that reach the
+    // mesh most, at its middle, allowing for its size.
+    m_MeshLightCount = 0;
+    if (m_Config.lightCount <= kLightsPerMesh)
+    {
+        for (int i = 0; i < m_Config.lightCount; ++i)
+        {
+            m_MeshLights[m_MeshLightCount++] = m_Config.lights[i];
+        }
+        return;
+    }
+    float w = 1.0f;
+    const Deki::Vector3 middle = Deki3D::TransformPoint(model, (mesh.boundsMin + mesh.boundsMax) * 0.5f, w);
+    const float size = (mesh.boundsMax - mesh.boundsMin).Length() * 0.5f;
+    float score[RasterConfig::kMaxLights];
+    int order[RasterConfig::kMaxLights];
+    for (int i = 0; i < m_Config.lightCount; ++i)
+    {
+        const Light3D& l = m_Config.lights[i];
+        const float strength = l.color.x + l.color.y + l.color.z;
+        float reach = 1.0f;
+        if (l.kind != Light3D::Kind::Directional)
+        {
+            const float d = std::max((l.position - middle).Length() - size, 0.0f);
+            reach = std::max(1.0f - (d * d) / (l.range * l.range), 0.0f);
+        }
+        score[i] = strength * reach;
+        order[i] = i;
+    }
+    std::sort(order, order + m_Config.lightCount, [&](int a, int b) { return score[a] > score[b]; });
+    for (int i = 0; i < kLightsPerMesh && score[order[i]] > 0.0f; ++i)
+    {
+        m_MeshLights[m_MeshLightCount++] = m_Config.lights[order[i]];
     }
 }
 
@@ -603,7 +674,9 @@ void Raster3D::EmitTriangle(const ClipVertex& a, const ClipVertex& b, const Clip
             v.w = cur.w + (next.w - cur.w) * t;
             v.u = cur.u + (next.u - cur.u) * t;
             v.v = cur.v + (next.v - cur.v) * t;
-            v.light = cur.light + (next.light - cur.light) * t;
+            v.lightR = cur.lightR + (next.lightR - cur.lightR) * t;
+            v.lightG = cur.lightG + (next.lightG - cur.lightG) * t;
+            v.lightB = cur.lightB + (next.lightB - cur.lightB) * t;
             v.color = cur.color;  // vertex colour is not interpolated across the cut
             out[outCount++] = v;
             if (outCount == 4)
@@ -636,7 +709,9 @@ void Raster3D::ProjectAndBin(const ClipVertex* poly, int count, uint16_t materia
         sv[i].uOverW = c.u * invW;
         sv[i].vOverW = c.v * invW;
         sv[i].color = c.color;
-        sv[i].light = c.light;
+        sv[i].lightR = c.lightR;
+        sv[i].lightG = c.lightG;
+        sv[i].lightB = c.lightB;
 
         if (m_Config.vertexSnap)
         {
@@ -1061,8 +1136,12 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     const int32_t zE = toDepth(z1);
                     const int32_t dz = (chunkLen > 1) ? static_cast<int32_t>((zE - z) * inv) : 0;
 
-                    const uint32_t shade =
-                        lit ? static_cast<uint32_t>(std::min(32.0f, std::max(0.0f, v0.light * 32.0f))) : 32u;
+                    // The light of the triangle's first vertex, per channel.
+                    auto toShade = [](float l)
+                    { return static_cast<uint32_t>(std::min(64.0f, std::max(0.0f, l * 32.0f))); };
+                    const uint32_t shadeR = lit ? toShade(v0.lightR) : 32u;
+                    const uint32_t shadeG = lit ? toShade(v0.lightG) : 32u;
+                    const uint32_t shadeB = lit ? toShade(v0.lightB) : 32u;
 
                     // Row bases, so the span indexes by x alone: a per-pixel
                     // multiply for the tile offset costs more than the depth
@@ -1081,7 +1160,10 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     span.tex = tex;
                     span.alphaTest = mat.alphaTest;
                     span.lit = lit;
-                    span.shade = shade;
+                    span.shadeR = shadeR;
+                    span.shadeG = shadeG;
+                    span.shadeB = shadeB;
+                    span.grey = shadeR == shadeG && shadeG == shadeB && shadeR <= 32u;
                     span.flat565 = flatColor;
                     span.flatR = static_cast<uint8_t>(flatRgba & 0xFF);
                     span.flatG = static_cast<uint8_t>((flatRgba >> 8) & 0xFF);

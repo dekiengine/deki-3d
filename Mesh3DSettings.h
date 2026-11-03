@@ -18,13 +18,13 @@ enum class Mesh3DRenderer : uint8_t
     Gpu = 2,       // the GPU; software, with a warning, where there is none
 };
 
-/// How the 3D pass draws: tile size, the retro switches, the light and the fill
-/// threads. The projection belongs to the scene's camera
-/// (DekiRendering::CameraComponent with Projection = Perspective). Put one
-/// anywhere in the scene, usually on the camera. Without one the pass uses the
-/// defaults below.
+/// How the 3D pass draws: the renderer, tile size, the retro switches and the
+/// fill threads. The projection belongs to the scene's camera
+/// (DekiRendering::CameraComponent with Projection = Perspective), and the
+/// light to the scene's Light components. Put one anywhere in the scene,
+/// usually on the camera. Without one the pass uses the defaults below.
 DEKI_CATEGORY("3D")
-DEKI_DESCRIPTION("How the 3D pass draws: tiles, texture and vertex switches, light and threads.")
+DEKI_DESCRIPTION("How the 3D pass draws: renderer, tiles, texture and vertex switches, threads.")
 class DEKI_3D_API Mesh3DSettings : public Deki::Component
 {
 public:
@@ -56,23 +56,6 @@ public:
     DEKI_TOOLTIP("Round projected vertices to whole pixels, for the jitter of fixed-point era hardware.")
     DEKI_EXPORT
     bool vertexSnap = false;
-
-    DEKI_TOOLTIP("Direction the scene light comes from, swept around the vertical axis. 0 puts it behind the camera, "
-                 "90 to the right.")
-    DEKI_RANGE(-180, 180)
-    DEKI_EXPORT
-    float lightYaw = -25.0f;
-
-    DEKI_TOOLTIP("How high the scene light sits. 90 is directly overhead, 0 level with the horizon.")
-    DEKI_RANGE(-90, 90)
-    DEKI_EXPORT
-    float lightPitch = 55.0f;
-
-    DEKI_TOOLTIP("How lit the faces turned away from the light still are. 0 leaves them black, which is dramatic; "
-                 "higher flattens the shading out.")
-    DEKI_RANGE(0, 1)
-    DEKI_EXPORT
-    float ambient = 0.25f;
 
     DEKI_TOOLTIP("Software only: how many threads fill the screen on a device or simulator build. Tiles are "
                  "independent, so this is the one part that scales with cores: 1 starts no threads at all, 2 suits a "

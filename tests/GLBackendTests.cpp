@@ -103,6 +103,7 @@ struct View
 {
     Deki::Mat4 mvp;
     Deki::Mat4 normalMatrix;
+    Deki::Mat4 model;
 };
 
 // Looking down at a corner of the cube, so three faces show at three angles
@@ -112,7 +113,7 @@ View CornerView(float yaw)
     const Deki::Mat4 model = RotateY(yaw);
     const Deki::Mat4 projection = Perspective(1.0f, 1.0f, 0.1f, 50.0f);
     const Deki::Mat4 view = LookAt(Deki::Vector3(2.6f, 2.2f, 3.4f), Deki::Vector3(0, 0, 0), Deki::Vector3(0, 1, 0));
-    return { Mul(projection, Mul(view, model)), model };
+    return { Mul(projection, Mul(view, model)), model, model };
 }
 
 // A quad lying back from the camera, so perspective correction shows.
@@ -121,7 +122,7 @@ View SlantedView()
     const Deki::Mat4 model = RotateX(-1.0f);
     const Deki::Mat4 projection = Perspective(1.0f, 1.0f, 0.1f, 50.0f);
     const Deki::Mat4 view = LookAt(Deki::Vector3(0, 0, 3.0f), Deki::Vector3(0, 0, 0), Deki::Vector3(0, 1, 0));
-    return { Mul(projection, Mul(view, model)), model };
+    return { Mul(projection, Mul(view, model)), model, model };
 }
 
 std::vector<uint8_t> Background(Deki::ColorFormat format)
@@ -165,7 +166,7 @@ std::vector<uint8_t> Draw(Mesh3DBackend& backend, const Mesh3D& mesh, const Mate
 {
     std::vector<uint8_t> fb = Background(format);
     backend.BeginFrame(fb.data(), kSize, kSize, format, config);
-    backend.DrawMesh(mesh, &material, 1, v.mvp, v.normalMatrix);
+    backend.DrawMesh(mesh, &material, 1, v.mvp, v.normalMatrix, v.model);
     backend.EndFrame();
     return fb;
 }
@@ -254,6 +255,45 @@ TEST(GLBackend, CubeMatchesSoftwareInEveryShadingModel)
                         shading == ShadingModel::Unlit       ? "unlit"
                         : shading == ShadingModel::VertexLit ? "vertex lit"
                                                              : "flat");
+        }
+    }
+}
+
+TEST(GLBackend, ColouredLightsMatchSoftware)
+{
+    REQUIRE_GPU(gpu);
+    Cube cube = MakeCube();
+    Raster3D software;
+    RasterConfig config;
+    config.ambient = Deki::Vector3(0.15f, 0.1f, 0.2f);
+    config.lightCount = 3;
+    config.lights[0].kind = Light3D::Kind::Directional;
+    config.lights[0].color = Deki::Vector3(0.9f, 0.4f, 0.2f);
+    config.lights[0].direction = Deki::Vector3(-0.3f, -0.9f, -0.2f);
+    // Far and wide, so a triangle's corners see it alike: the software
+    // rasteriser lights a triangle by its first vertex, the GPU in between,
+    // which a near point light would tell apart.
+    config.lights[1].kind = Light3D::Kind::Point;
+    config.lights[1].color = Deki::Vector3(0.2f, 0.6f, 1.0f);
+    config.lights[1].position = Deki::Vector3(30.0f, 15.0f, 40.0f);
+    config.lights[1].range = 300.0f;
+    config.lights[2].kind = Light3D::Kind::Spot;
+    config.lights[2].color = Deki::Vector3(0.3f, 0.9f, 0.3f);
+    config.lights[2].position = Deki::Vector3(-8.0f, 8.0f, 8.0f);
+    config.lights[2].direction = Deki::Vector3(1.0f, -1.0f, -1.0f);
+    config.lights[2].range = 60.0f;
+    config.lights[2].cosOuter = std::cos(0.6f);
+    config.lights[2].cosInner = std::cos(0.4f);
+    const View view = CornerView(0.3f);
+    for (ShadingModel shading : { ShadingModel::VertexLit, ShadingModel::Flat })
+    {
+        for (Deki::ColorFormat format : { Deki::ColorFormat::RGB565, Deki::ColorFormat::ARGB8888 })
+        {
+            Material3D material;
+            material.shading = shading;
+            const auto s = Draw(software, cube.mesh, material, view, format, config);
+            const auto g = Draw(*gpu.backend, cube.mesh, material, view, format, config);
+            ExpectAlike(Compare(s, g, format, 16), 0.06, shading == ShadingModel::VertexLit ? "vertex lit" : "flat");
         }
     }
 }
@@ -592,14 +632,14 @@ TEST(GLBackend, DrawingIntoThePresenterMatchesReadingBack)
     readBack.composeOnGpu = false;
     std::vector<uint8_t> expected = background();
     gpu.backend->BeginFrame(expected.data(), kSize, kSize, kFormat, readBack);
-    gpu.backend->DrawMesh(cube.mesh, &material, 1, view.mvp, view.normalMatrix);
+    gpu.backend->DrawMesh(cube.mesh, &material, 1, view.mvp, view.normalMatrix, view.model);
     gpu.backend->EndFrame();
     drawOnTop(expected);
 
     // Into the presenter's frame.
     std::vector<uint8_t> layered = background();
-    gpu.backend->BeginFrame(layered.data(), kSize, kSize, kFormat, RasterConfig{});
-    gpu.backend->DrawMesh(cube.mesh, &material, 1, view.mvp, view.normalMatrix);
+    gpu.backend->BeginFrame(layered.data(), kSize, kSize, kFormat, {});
+    gpu.backend->DrawMesh(cube.mesh, &material, 1, view.mvp, view.normalMatrix, view.model);
     gpu.backend->EndFrame();
     uint8_t r, g, b, a;
     DekiPixel::ReadDstPixel<kFormat>(layered.data(), 0, r, g, b, a);
@@ -704,7 +744,7 @@ float4 Shade(Fragment f)
         std::vector<uint8_t> expected = background();
         drawUnder(expected.data());
         gpu.backend->BeginFrame(expected.data(), kSize, kSize, kFormat, readBack);
-        gpu.backend->DrawMesh(cube.mesh, m, 1, view.mvp, view.normalMatrix);
+        gpu.backend->DrawMesh(cube.mesh, m, 1, view.mvp, view.normalMatrix, view.model);
         gpu.backend->EndFrame();
         drawOver(expected.data());
 
@@ -713,8 +753,8 @@ float4 Shade(Fragment f)
         ASSERT_TRUE(QuadBlit::BeginSinkFrame(buffer.data(), kSize, kSize, kFormat, kBackground[0], kBackground[1],
                                              kBackground[2]));
         drawUnder(buffer.data());
-        gpu.backend->BeginFrame(buffer.data(), kSize, kSize, kFormat, RasterConfig{});
-        gpu.backend->DrawMesh(cube.mesh, m, 1, view.mvp, view.normalMatrix);
+        gpu.backend->BeginFrame(buffer.data(), kSize, kSize, kFormat, {});
+        gpu.backend->DrawMesh(cube.mesh, m, 1, view.mvp, view.normalMatrix, view.model);
         gpu.backend->EndFrame();
         drawOver(buffer.data());
         QuadBlit::EndSinkFrame();
@@ -770,7 +810,7 @@ TEST(GLBackend, DISABLED_BenchmarkAgainstSoftware)
                 const float x = static_cast<float>(i % 20) * 2.6f - 25.0f;
                 const float z = static_cast<float>(i / 20) * -2.6f + 10.0f;
                 const Deki::Mat4 model = Mul(Translate(x, 0, z), RotateY(0.05f * f + i));
-                backend.DrawMesh(cube.mesh, &material, 1, Mul(projection, Mul(view, model)), model);
+                backend.DrawMesh(cube.mesh, &material, 1, Mul(projection, Mul(view, model)), model, model);
             }
             backend.EndFrame();
         }

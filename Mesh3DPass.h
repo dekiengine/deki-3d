@@ -61,6 +61,8 @@ private:
     void EndBatch();
     /// Works out the projection, once per frame, when the first object arrives.
     void Start(const Deki::Object* sceneObject);
+    /// The scene's Lights into m_Config, in world space.
+    void GatherLights(const Deki::Object* sceneObject);
     /// The GPU backend, made on first use; null where there is none.
     Mesh3DBackend* Gpu();
 
@@ -88,6 +90,7 @@ private:
     bool m_Started = false;  // Start() has run for this frame
     bool m_Active = false;   // false when the scene has no 3D camera
     bool m_Pending = false;  // geometry is binned and not yet filled
+    bool m_Lit = false;      // the scene has a Light: the lit shading models light
 };
 
 }  // namespace Deki3D

@@ -16,6 +16,7 @@
 #include <deki/Time.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -167,8 +168,10 @@ public:
 
     struct Uniforms
     {
-        GLint mvp, normalMatrix, lightDir, ambient, shading, hasNormals, affine, snap, viewport;
+        GLint mvp, model, normalMatrix, ambient, lightCount, shading, hasNormals, affine, snap, viewport;
         GLint texture, texMode, alphaTest, tint, time, params, color;
+        GLint lightPosition[RasterConfig::kMaxLights], lightDirection[RasterConfig::kMaxLights];
+        GLint lightColor[RasterConfig::kMaxLights], lightCone[RasterConfig::kMaxLights];
     };
     struct Program
     {
@@ -358,10 +361,36 @@ private:
         // The compiler keeps the uniforms in one struct, `u`, and names a
         // texture as the shader does (deki-editor's ShaderCompiler.h).
         auto at = [&](const char* name) { return m_GL.GetUniformLocation(program.id, name); };
-        program.u = { at("u.uMvp"),     at("u.uNormalMatrix"), at("u.uLightDir"), at("u.uAmbient"),
-                      at("u.uShading"), at("u.uHasNormals"),   at("u.uAffine"),   at("u.uSnap"),
-                      at("u.uViewport"), at("uTexture"),       at("u.uTexMode"),  at("u.uAlphaTest"),
-                      at("u.uTint"),    at("u.uTime"),         at("u.uParams"),   at("u.uColor") };
+        program.u.mvp = at("u.uMvp");
+        program.u.model = at("u.uModel");
+        program.u.normalMatrix = at("u.uNormalMatrix");
+        program.u.ambient = at("u.uAmbient");
+        program.u.lightCount = at("u.uLightCount");
+        program.u.shading = at("u.uShading");
+        program.u.hasNormals = at("u.uHasNormals");
+        program.u.affine = at("u.uAffine");
+        program.u.snap = at("u.uSnap");
+        program.u.viewport = at("u.uViewport");
+        program.u.texture = at("uTexture");
+        program.u.texMode = at("u.uTexMode");
+        program.u.alphaTest = at("u.uAlphaTest");
+        program.u.tint = at("u.uTint");
+        program.u.time = at("u.uTime");
+        program.u.params = at("u.uParams");
+        program.u.color = at("u.uColor");
+        // An array is a struct of its own, its elements in `data`.
+        char name[48];
+        for (int l = 0; l < RasterConfig::kMaxLights; ++l)
+        {
+            std::snprintf(name, sizeof(name), "u.uLightPosition.data[%d]", l);
+            program.u.lightPosition[l] = at(name);
+            std::snprintf(name, sizeof(name), "u.uLightDirection.data[%d]", l);
+            program.u.lightDirection[l] = at(name);
+            std::snprintf(name, sizeof(name), "u.uLightColor.data[%d]", l);
+            program.u.lightColor[l] = at(name);
+            std::snprintf(name, sizeof(name), "u.uLightCone.data[%d]", l);
+            program.u.lightCone[l] = at(name);
+        }
         // The compiler writes a read of a member as "u.uTime"; the struct's
         // declaration names it without the "u.".
         program.readsTime =
@@ -608,10 +637,14 @@ bool GLMesh3DBackend::Start()
     gl.DepthMask(config.depthWrite ? gl::kTrue : gl::kFalse);
 
     m_Device.Use();
-    m_LightDir = config.lightDirection;
-    if (m_LightDir.LengthSquared() > 0.0f)
+    m_Config.lightCount = std::min(std::max(m_Config.lightCount, 0), RasterConfig::kMaxLights);
+    for (int i = 0; i < m_Config.lightCount; ++i)
     {
-        m_LightDir.Normalize();
+        Deki::Vector3& d = m_Config.lights[i].direction;
+        if (d.LengthSquared() > 0.0f)
+        {
+            d.Normalize();
+        }
     }
     // Seconds since the program started: a shader's clock.
     static const auto s_Start = std::chrono::steady_clock::now();
@@ -675,7 +708,8 @@ void GLMesh3DBackend::Cover(const Mesh3D& mesh, const Deki::Mat4& mvp)
 }
 
 void GLMesh3DBackend::DrawMesh(const Mesh3D& mesh, const Material3D* materials,
-                               uint16_t materialCount, const Deki::Mat4& mvp, const Deki::Mat4& normalMatrix)
+                               uint16_t materialCount, const Deki::Mat4& mvp, const Deki::Mat4& normalMatrix,
+                               const Deki::Mat4& model)
 {
     if (!m_Ready || !mesh.vertices || !mesh.indices || mesh.layout.positionOffset < 0 || mesh.vertexCount == 0)
     {
@@ -703,6 +737,7 @@ void GLMesh3DBackend::DrawMesh(const Mesh3D& mesh, const Material3D* materials,
     m_Device.BindMesh(mesh);
     m_Mvp = &mvp;
     m_NormalMatrix = &normalMatrix;
+    m_Model = &model;
     m_HasNormals = mesh.layout.HasNormals();
     m_MeshUniformsOn = nullptr;
 
@@ -724,8 +759,18 @@ void GLMesh3DBackend::DrawMesh(const Mesh3D& mesh, const Material3D* materials,
         {
             gl.UseProgram(program.id);
             gl.Uniform1i(u.texture, 0);
-            gl.Uniform3f(u.lightDir, m_LightDir.x, m_LightDir.y, m_LightDir.z);
-            gl.Uniform1f(u.ambient, m_Config.ambient);
+            gl.Uniform3f(u.ambient, m_Config.ambient.x, m_Config.ambient.y, m_Config.ambient.z);
+            gl.Uniform1i(u.lightCount, m_Config.lightCount);
+            for (int l = 0; l < m_Config.lightCount; ++l)
+            {
+                const Light3D& light = m_Config.lights[l];
+                gl.Uniform4f(u.lightPosition[l], light.position.x, light.position.y, light.position.z,
+                             static_cast<float>(light.kind));
+                gl.Uniform4f(u.lightDirection[l], light.direction.x, light.direction.y, light.direction.z,
+                             light.range);
+                gl.Uniform4f(u.lightColor[l], light.color.x, light.color.y, light.color.z, 0.0f);
+                gl.Uniform4f(u.lightCone[l], light.cosOuter, light.cosInner, 0.0f, 0.0f);
+            }
             gl.Uniform1i(u.affine, m_Config.perspectiveCorrect ? 0 : 1);
             gl.Uniform1i(u.snap, m_Config.vertexSnap ? 1 : 0);
             gl.Uniform2f(u.viewport, static_cast<float>(m_Width), static_cast<float>(m_Height));
@@ -743,6 +788,7 @@ void GLMesh3DBackend::DrawMesh(const Mesh3D& mesh, const Material3D* materials,
             // Transposed: the shaders read matrices row-major (ShaderCompiler.h).
             gl.UniformMatrix4fv(u.mvp, 1, gl::kTrue, &m_Mvp->m[0][0]);
             gl.UniformMatrix4fv(u.normalMatrix, 1, gl::kTrue, &m_NormalMatrix->m[0][0]);
+            gl.UniformMatrix4fv(u.model, 1, gl::kTrue, &m_Model->m[0][0]);
             gl.Uniform1i(u.hasNormals, m_HasNormals ? 1 : 0);
             m_MeshUniformsOn = &program;
         }

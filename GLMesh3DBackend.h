@@ -53,7 +53,8 @@ public:
     void BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::ColorFormat format,
                     const RasterConfig& config) override;
     void DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_t materialCount,
-                  const Deki::Mat4& mvp, const Deki::Mat4& normalMatrix) override;
+                  const Deki::Mat4& mvp, const Deki::Mat4& normalMatrix,
+                  const Deki::Mat4& model = Deki::Mat4::Identity()) override;
     void EndFrame() override;
     /// Only when it reads back: into the presenter's frame, nothing.
     bool WritesBuffer() const override { return m_Presenter == nullptr; }
@@ -99,12 +100,12 @@ private:
     // Uniform values for the batch and for the mesh being drawn, set on each
     // program as the draw switches to it: a mesh with a shader of its own
     // draws with another program than one without.
-    Deki::Vector3 m_LightDir;
     float m_Time = 0.0f;
     const void* m_Program = nullptr;         // the GLDevice::Program bound
     const void* m_MeshUniformsOn = nullptr;  // the program the mesh's are set on
     const Deki::Mat4* m_Mvp = nullptr;
     const Deki::Mat4* m_NormalMatrix = nullptr;
+    const Deki::Mat4* m_Model = nullptr;
     bool m_HasNormals = false;
 
     std::vector<uint8_t> m_Readback;

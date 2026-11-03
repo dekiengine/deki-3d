@@ -4,12 +4,22 @@
 
 const char* const kBuiltinMeshVertexES = R"deki(#version 300 es
 
+struct _Array_std140_vector_float_4_8
+{
+    vec4 data[8];
+};
+
 struct GlobalParams_std140
 {
     mat4 uMvp;
+    mat4 uModel;
     mat4 uNormalMatrix;
-    vec3 uLightDir;
-    float uAmbient;
+    vec3 uAmbient;
+    int uLightCount;
+    _Array_std140_vector_float_4_8 uLightPosition;
+    _Array_std140_vector_float_4_8 uLightDirection;
+    _Array_std140_vector_float_4_8 uLightColor;
+    _Array_std140_vector_float_4_8 uLightCone;
     int uShading;
     int uHasNormals;
     int uAffine;
@@ -30,7 +40,7 @@ layout(location = 3) in vec4 v_color;
 layout(location = 1) in vec3 v_normal;
 layout(location = 2) in vec2 v_uv;
 out vec4 vary0;
-out float vary1;
+out vec3 vary1;
 out vec2 vary2;
 out float vary3;
 out vec3 vary4;
@@ -38,7 +48,8 @@ out vec3 vary5;
 
 void main()
 {
-    vec4 clip = vec4(v_position, 1.0) * u.uMvp;
+    vec4 _40 = vec4(v_position, 1.0);
+    vec4 clip = _40 * u.uMvp;
     bool _11;
     if (u.uSnap != 0)
     {
@@ -50,17 +61,18 @@ void main()
     }
     if (_11)
     {
-        vec4 _70 = clip;
-        vec2 _97 = (((floor(((((_70.xy / vec2(_70.w)) * 0.5) + vec2(0.5)) * u.uViewport) + vec2(0.5)) / u.uViewport) * 2.0) - vec2(1.0)) * _70.w;
-        vec4 _255 = _70;
-        _255.x = _97.x;
-        _255.y = _97.y;
-        clip = _255;
+        vec4 _73 = clip;
+        vec2 _100 = (((floor(((((_73.xy / vec2(_73.w)) * 0.5) + vec2(0.5)) * u.uViewport) + vec2(0.5)) / u.uViewport) * 2.0) - vec2(1.0)) * _73.w;
+        vec4 _489 = _73;
+        _489.x = _100.x;
+        _489.y = _100.y;
+        clip = _489;
     }
-    vec4 _237 = clip;
-    vec4 _238 = v_color;
-    vec3 _243 = v_normal * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
-    float _239 = 1.0;
+    vec4 _471 = clip;
+    vec4 _472 = v_color;
+    vec3 _477 = v_normal * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
+    vec3 _476 = (_40 * u.uModel).xyz;
+    vec3 _473 = vec3(1.0);
     if (u.uShading == 1)
     {
         _11 = u.uHasNormals != 0;
@@ -71,20 +83,82 @@ void main()
     }
     if (_11)
     {
-        float _150 = length(_243);
+        float _161 = length(_477);
         vec3 n;
-        if (_150 > 0.0)
+        if (_161 > 0.0)
         {
-            n = _243 / vec3(_150);
+            n = _477 / vec3(_161);
         }
         else
         {
-            n = _243;
+            n = _477;
         }
-        float _164 = -dot(n, u.uLightDir);
-        _239 = u.uAmbient + ((isnan(0.0) ? _164 : (isnan(_164) ? 0.0 : max(_164, 0.0))) * (1.0 - u.uAmbient));
+        int _369 = 0;
+        vec3 _370 = u.uAmbient;
+        vec3 _371;
+        float _372;
+        for (;;)
+        {
+            bool _379_ladder_break = false;
+            do
+            {
+                if (!(_369 < u.uLightCount))
+                {
+                    _379_ladder_break = true;
+                    break;
+                }
+                if (u.uLightPosition.data[_369].w > 0.5)
+                {
+                    vec3 _402 = u.uLightPosition.data[_369].xyz - _476;
+                    float _407 = dot(_402, _402);
+                    float _410 = 1.0 - (_407 / (u.uLightDirection.data[_369].w * u.uLightDirection.data[_369].w));
+                    if (_410 <= 0.0)
+                    {
+                        _371 = _370;
+                        break;
+                    }
+                    float _415 = _410 * _410;
+                    if (_407 > 0.0)
+                    {
+                        _371 = _402 * inversesqrt(_407);
+                    }
+                    else
+                    {
+                        _371 = _402;
+                    }
+                    if (u.uLightPosition.data[_369].w > 1.5)
+                    {
+                        float _437 = clamp(((-dot(_371, u.uLightDirection.data[_369].xyz)) - u.uLightCone.data[_369].x) / (u.uLightCone.data[_369].y - u.uLightCone.data[_369].x), 0.0, 1.0);
+                        _372 = _415 * ((_437 * _437) * (3.0 - (2.0 * _437)));
+                    }
+                    else
+                    {
+                        _372 = _415;
+                    }
+                }
+                else
+                {
+                    _371 = -u.uLightDirection.data[_369].xyz;
+                    _372 = 1.0;
+                }
+                float _454 = dot(n, _371);
+                _371 = _370 + (u.uLightColor.data[_369].xyz * ((isnan(0.0) ? _454 : (isnan(_454) ? 0.0 : max(_454, 0.0))) * _372));
+                break;
+            } while(false);
+            if (_379_ladder_break)
+            {
+                break;
+            }
+            _369++;
+            _370 = _371;
+            continue;
+        }
+        bvec3 _498 = isnan(_370);
+        bvec3 _499 = isnan(vec3(2.0));
+        vec3 _500 = min(_370, vec3(2.0));
+        vec3 _501 = vec3(_498.x ? vec3(2.0).x : _500.x, _498.y ? vec3(2.0).y : _500.y, _498.z ? vec3(2.0).z : _500.z);
+        _473 = vec3(_499.x ? _370.x : _501.x, _499.y ? _370.y : _501.y, _499.z ? _370.z : _501.z);
     }
-    vec3 _242 = v_position * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
     float w;
     if (u.uAffine != 0)
     {
@@ -94,13 +168,13 @@ void main()
     {
         w = 1.0;
     }
-    gl_Position = _237;
-    vary0 = _238;
-    vary1 = _239;
+    gl_Position = _471;
+    vary0 = _472;
+    vary1 = _473;
     vary2 = v_uv * w;
     vary3 = w;
-    vary4 = _242;
-    vary5 = _243;
+    vary4 = _476;
+    vary5 = _477;
 }
 
 )deki";
@@ -109,12 +183,22 @@ const char* const kBuiltinMeshFragmentES = R"deki(#version 300 es
 precision highp float;
 precision highp int;
 
+struct _Array_std140_vector_float_4_8
+{
+    vec4 data[8];
+};
+
 struct GlobalParams_std140
 {
     mat4 uMvp;
+    mat4 uModel;
     mat4 uNormalMatrix;
-    vec3 uLightDir;
-    float uAmbient;
+    vec3 uAmbient;
+    int uLightCount;
+    _Array_std140_vector_float_4_8 uLightPosition;
+    _Array_std140_vector_float_4_8 uLightDirection;
+    _Array_std140_vector_float_4_8 uLightColor;
+    _Array_std140_vector_float_4_8 uLightCone;
     int uShading;
     int uHasNormals;
     int uAffine;
@@ -136,12 +220,12 @@ in vec4 vary0;
 in vec2 vary2;
 in float vary3;
 in vec3 vary4;
-in float vary1;
+in vec3 vary1;
 layout(location = 0) out vec4 fragColor;
 
 void main()
 {
-    vec4 _53 = vary0 * u.uTint;
+    vec4 _56 = vary0 * u.uTint;
     vec4 colour;
     float coverage;
     if (u.uTexMode != 0)
@@ -153,14 +237,14 @@ void main()
         }
         else
         {
-            colour = _53;
+            colour = _56;
         }
         coverage = _sampled.w;
     }
     else
     {
         coverage = 1.0;
-        colour = _53;
+        colour = _56;
     }
     bool _13;
     if (u.uAlphaTest != 0)
@@ -175,14 +259,14 @@ void main()
     {
         discard;
     }
-    vec3 _197 = dFdx(vary4);
-    vec3 _200 = dFdy(vary4);
-    vec3 _131 = cross(_197, _200);
-    float _133 = length(_131);
+    vec3 _336 = dFdx(vary4);
+    vec3 _339 = dFdy(vary4);
+    vec3 _134 = cross(_336, _339);
+    float _136 = length(_134);
     vec3 face;
-    if (_133 > 0.0)
+    if (_136 > 0.0)
     {
-        face = _131 / vec3(_133);
+        face = _134 / vec3(_136);
     }
     else
     {
@@ -192,17 +276,80 @@ void main()
     {
         face = -face;
     }
-    float light;
+    vec3 light;
     if (u.uShading == 0)
     {
-        light = 1.0;
+        light = vec3(1.0);
     }
     else
     {
         if (u.uShading == 2)
         {
-            float _171 = -dot(face, u.uLightDir);
-            light = u.uAmbient + ((isnan(0.0) ? _171 : (isnan(_171) ? 0.0 : max(_171, 0.0))) * (1.0 - u.uAmbient));
+            int _340 = 0;
+            vec3 _341 = u.uAmbient;
+            vec3 _342;
+            float _343;
+            for (;;)
+            {
+                bool _350_ladder_break = false;
+                do
+                {
+                    if (!(_340 < u.uLightCount))
+                    {
+                        _350_ladder_break = true;
+                        break;
+                    }
+                    if (u.uLightPosition.data[_340].w > 0.5)
+                    {
+                        vec3 _373 = u.uLightPosition.data[_340].xyz - vary4;
+                        float _378 = dot(_373, _373);
+                        float _381 = 1.0 - (_378 / (u.uLightDirection.data[_340].w * u.uLightDirection.data[_340].w));
+                        if (_381 <= 0.0)
+                        {
+                            _342 = _341;
+                            break;
+                        }
+                        float _386 = _381 * _381;
+                        if (_378 > 0.0)
+                        {
+                            _342 = _373 * inversesqrt(_378);
+                        }
+                        else
+                        {
+                            _342 = _373;
+                        }
+                        if (u.uLightPosition.data[_340].w > 1.5)
+                        {
+                            float _408 = clamp(((-dot(_342, u.uLightDirection.data[_340].xyz)) - u.uLightCone.data[_340].x) / (u.uLightCone.data[_340].y - u.uLightCone.data[_340].x), 0.0, 1.0);
+                            _343 = _386 * ((_408 * _408) * (3.0 - (2.0 * _408)));
+                        }
+                        else
+                        {
+                            _343 = _386;
+                        }
+                    }
+                    else
+                    {
+                        _342 = -u.uLightDirection.data[_340].xyz;
+                        _343 = 1.0;
+                    }
+                    float _425 = dot(face, _342);
+                    _342 = _341 + (u.uLightColor.data[_340].xyz * ((isnan(0.0) ? _425 : (isnan(_425) ? 0.0 : max(_425, 0.0))) * _343));
+                    break;
+                } while(false);
+                if (_350_ladder_break)
+                {
+                    break;
+                }
+                _340++;
+                _341 = _342;
+                continue;
+            }
+            bvec3 _450 = isnan(_341);
+            bvec3 _451 = isnan(vec3(2.0));
+            vec3 _452 = min(_341, vec3(2.0));
+            vec3 _453 = vec3(_450.x ? vec3(2.0).x : _452.x, _450.y ? vec3(2.0).y : _452.y, _450.z ? vec3(2.0).z : _452.z);
+            light = vec3(_451.x ? _341.x : _453.x, _451.y ? _341.y : _453.y, _451.z ? _341.z : _453.z);
         }
         else
         {
@@ -216,12 +363,22 @@ void main()
 
 const char* const kBuiltinMeshVertexGL = R"deki(#version 330
 
+struct _Array_std140_vector_float_4_8
+{
+    vec4 data[8];
+};
+
 struct GlobalParams_std140
 {
     mat4 uMvp;
+    mat4 uModel;
     mat4 uNormalMatrix;
-    vec3 uLightDir;
-    float uAmbient;
+    vec3 uAmbient;
+    int uLightCount;
+    _Array_std140_vector_float_4_8 uLightPosition;
+    _Array_std140_vector_float_4_8 uLightDirection;
+    _Array_std140_vector_float_4_8 uLightColor;
+    _Array_std140_vector_float_4_8 uLightCone;
     int uShading;
     int uHasNormals;
     int uAffine;
@@ -242,7 +399,7 @@ layout(location = 3) in vec4 v_color;
 layout(location = 1) in vec3 v_normal;
 layout(location = 2) in vec2 v_uv;
 out vec4 vary0;
-out float vary1;
+out vec3 vary1;
 out vec2 vary2;
 out float vary3;
 out vec3 vary4;
@@ -250,7 +407,8 @@ out vec3 vary5;
 
 void main()
 {
-    vec4 clip = vec4(v_position, 1.0) * u.uMvp;
+    vec4 _40 = vec4(v_position, 1.0);
+    vec4 clip = _40 * u.uMvp;
     bool _11;
     if (u.uSnap != 0)
     {
@@ -262,17 +420,18 @@ void main()
     }
     if (_11)
     {
-        vec4 _70 = clip;
-        vec2 _97 = (((floor(((((_70.xy / vec2(_70.w)) * 0.5) + vec2(0.5)) * u.uViewport) + vec2(0.5)) / u.uViewport) * 2.0) - vec2(1.0)) * _70.w;
-        vec4 _255 = _70;
-        _255.x = _97.x;
-        _255.y = _97.y;
-        clip = _255;
+        vec4 _73 = clip;
+        vec2 _100 = (((floor(((((_73.xy / vec2(_73.w)) * 0.5) + vec2(0.5)) * u.uViewport) + vec2(0.5)) / u.uViewport) * 2.0) - vec2(1.0)) * _73.w;
+        vec4 _489 = _73;
+        _489.x = _100.x;
+        _489.y = _100.y;
+        clip = _489;
     }
-    vec4 _237 = clip;
-    vec4 _238 = v_color;
-    vec3 _243 = v_normal * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
-    float _239 = 1.0;
+    vec4 _471 = clip;
+    vec4 _472 = v_color;
+    vec3 _477 = v_normal * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
+    vec3 _476 = (_40 * u.uModel).xyz;
+    vec3 _473 = vec3(1.0);
     if (u.uShading == 1)
     {
         _11 = u.uHasNormals != 0;
@@ -283,20 +442,82 @@ void main()
     }
     if (_11)
     {
-        float _150 = length(_243);
+        float _161 = length(_477);
         vec3 n;
-        if (_150 > 0.0)
+        if (_161 > 0.0)
         {
-            n = _243 / vec3(_150);
+            n = _477 / vec3(_161);
         }
         else
         {
-            n = _243;
+            n = _477;
         }
-        float _164 = -dot(n, u.uLightDir);
-        _239 = u.uAmbient + ((isnan(0.0) ? _164 : (isnan(_164) ? 0.0 : max(_164, 0.0))) * (1.0 - u.uAmbient));
+        int _369 = 0;
+        vec3 _370 = u.uAmbient;
+        vec3 _371;
+        float _372;
+        for (;;)
+        {
+            bool _379_ladder_break = false;
+            do
+            {
+                if (!(_369 < u.uLightCount))
+                {
+                    _379_ladder_break = true;
+                    break;
+                }
+                if (u.uLightPosition.data[_369].w > 0.5)
+                {
+                    vec3 _402 = u.uLightPosition.data[_369].xyz - _476;
+                    float _407 = dot(_402, _402);
+                    float _410 = 1.0 - (_407 / (u.uLightDirection.data[_369].w * u.uLightDirection.data[_369].w));
+                    if (_410 <= 0.0)
+                    {
+                        _371 = _370;
+                        break;
+                    }
+                    float _415 = _410 * _410;
+                    if (_407 > 0.0)
+                    {
+                        _371 = _402 * inversesqrt(_407);
+                    }
+                    else
+                    {
+                        _371 = _402;
+                    }
+                    if (u.uLightPosition.data[_369].w > 1.5)
+                    {
+                        float _437 = clamp(((-dot(_371, u.uLightDirection.data[_369].xyz)) - u.uLightCone.data[_369].x) / (u.uLightCone.data[_369].y - u.uLightCone.data[_369].x), 0.0, 1.0);
+                        _372 = _415 * ((_437 * _437) * (3.0 - (2.0 * _437)));
+                    }
+                    else
+                    {
+                        _372 = _415;
+                    }
+                }
+                else
+                {
+                    _371 = -u.uLightDirection.data[_369].xyz;
+                    _372 = 1.0;
+                }
+                float _454 = dot(n, _371);
+                _371 = _370 + (u.uLightColor.data[_369].xyz * ((isnan(0.0) ? _454 : (isnan(_454) ? 0.0 : max(_454, 0.0))) * _372));
+                break;
+            } while(false);
+            if (_379_ladder_break)
+            {
+                break;
+            }
+            _369++;
+            _370 = _371;
+            continue;
+        }
+        bvec3 _498 = isnan(_370);
+        bvec3 _499 = isnan(vec3(2.0));
+        vec3 _500 = min(_370, vec3(2.0));
+        vec3 _501 = vec3(_498.x ? vec3(2.0).x : _500.x, _498.y ? vec3(2.0).y : _500.y, _498.z ? vec3(2.0).z : _500.z);
+        _473 = vec3(_499.x ? _370.x : _501.x, _499.y ? _370.y : _501.y, _499.z ? _370.z : _501.z);
     }
-    vec3 _242 = v_position * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
     float w;
     if (u.uAffine != 0)
     {
@@ -306,25 +527,35 @@ void main()
     {
         w = 1.0;
     }
-    gl_Position = _237;
-    vary0 = _238;
-    vary1 = _239;
+    gl_Position = _471;
+    vary0 = _472;
+    vary1 = _473;
     vary2 = v_uv * w;
     vary3 = w;
-    vary4 = _242;
-    vary5 = _243;
+    vary4 = _476;
+    vary5 = _477;
 }
 
 )deki";
 
 const char* const kBuiltinMeshFragmentGL = R"deki(#version 330
 
+struct _Array_std140_vector_float_4_8
+{
+    vec4 data[8];
+};
+
 struct GlobalParams_std140
 {
     mat4 uMvp;
+    mat4 uModel;
     mat4 uNormalMatrix;
-    vec3 uLightDir;
-    float uAmbient;
+    vec3 uAmbient;
+    int uLightCount;
+    _Array_std140_vector_float_4_8 uLightPosition;
+    _Array_std140_vector_float_4_8 uLightDirection;
+    _Array_std140_vector_float_4_8 uLightColor;
+    _Array_std140_vector_float_4_8 uLightCone;
     int uShading;
     int uHasNormals;
     int uAffine;
@@ -346,12 +577,12 @@ in vec4 vary0;
 in vec2 vary2;
 in float vary3;
 in vec3 vary4;
-in float vary1;
+in vec3 vary1;
 layout(location = 0) out vec4 fragColor;
 
 void main()
 {
-    vec4 _53 = vary0 * u.uTint;
+    vec4 _56 = vary0 * u.uTint;
     vec4 colour;
     float coverage;
     if (u.uTexMode != 0)
@@ -363,14 +594,14 @@ void main()
         }
         else
         {
-            colour = _53;
+            colour = _56;
         }
         coverage = _sampled.w;
     }
     else
     {
         coverage = 1.0;
-        colour = _53;
+        colour = _56;
     }
     bool _13;
     if (u.uAlphaTest != 0)
@@ -385,14 +616,14 @@ void main()
     {
         discard;
     }
-    vec3 _197 = dFdx(vary4);
-    vec3 _200 = dFdy(vary4);
-    vec3 _131 = cross(_197, _200);
-    float _133 = length(_131);
+    vec3 _336 = dFdx(vary4);
+    vec3 _339 = dFdy(vary4);
+    vec3 _134 = cross(_336, _339);
+    float _136 = length(_134);
     vec3 face;
-    if (_133 > 0.0)
+    if (_136 > 0.0)
     {
-        face = _131 / vec3(_133);
+        face = _134 / vec3(_136);
     }
     else
     {
@@ -402,17 +633,80 @@ void main()
     {
         face = -face;
     }
-    float light;
+    vec3 light;
     if (u.uShading == 0)
     {
-        light = 1.0;
+        light = vec3(1.0);
     }
     else
     {
         if (u.uShading == 2)
         {
-            float _171 = -dot(face, u.uLightDir);
-            light = u.uAmbient + ((isnan(0.0) ? _171 : (isnan(_171) ? 0.0 : max(_171, 0.0))) * (1.0 - u.uAmbient));
+            int _340 = 0;
+            vec3 _341 = u.uAmbient;
+            vec3 _342;
+            float _343;
+            for (;;)
+            {
+                bool _350_ladder_break = false;
+                do
+                {
+                    if (!(_340 < u.uLightCount))
+                    {
+                        _350_ladder_break = true;
+                        break;
+                    }
+                    if (u.uLightPosition.data[_340].w > 0.5)
+                    {
+                        vec3 _373 = u.uLightPosition.data[_340].xyz - vary4;
+                        float _378 = dot(_373, _373);
+                        float _381 = 1.0 - (_378 / (u.uLightDirection.data[_340].w * u.uLightDirection.data[_340].w));
+                        if (_381 <= 0.0)
+                        {
+                            _342 = _341;
+                            break;
+                        }
+                        float _386 = _381 * _381;
+                        if (_378 > 0.0)
+                        {
+                            _342 = _373 * inversesqrt(_378);
+                        }
+                        else
+                        {
+                            _342 = _373;
+                        }
+                        if (u.uLightPosition.data[_340].w > 1.5)
+                        {
+                            float _408 = clamp(((-dot(_342, u.uLightDirection.data[_340].xyz)) - u.uLightCone.data[_340].x) / (u.uLightCone.data[_340].y - u.uLightCone.data[_340].x), 0.0, 1.0);
+                            _343 = _386 * ((_408 * _408) * (3.0 - (2.0 * _408)));
+                        }
+                        else
+                        {
+                            _343 = _386;
+                        }
+                    }
+                    else
+                    {
+                        _342 = -u.uLightDirection.data[_340].xyz;
+                        _343 = 1.0;
+                    }
+                    float _425 = dot(face, _342);
+                    _342 = _341 + (u.uLightColor.data[_340].xyz * ((isnan(0.0) ? _425 : (isnan(_425) ? 0.0 : max(_425, 0.0))) * _343));
+                    break;
+                } while(false);
+                if (_350_ladder_break)
+                {
+                    break;
+                }
+                _340++;
+                _341 = _342;
+                continue;
+            }
+            bvec3 _450 = isnan(_341);
+            bvec3 _451 = isnan(vec3(2.0));
+            vec3 _452 = min(_341, vec3(2.0));
+            vec3 _453 = vec3(_450.x ? vec3(2.0).x : _452.x, _450.y ? vec3(2.0).y : _452.y, _450.z ? vec3(2.0).z : _452.z);
+            light = vec3(_451.x ? _341.x : _453.x, _451.y ? _341.y : _453.y, _451.z ? _341.z : _453.z);
         }
         else
         {

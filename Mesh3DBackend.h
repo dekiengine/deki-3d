@@ -21,6 +21,32 @@
 namespace Deki3D
 {
 
+/// One light as the meshes see it, in world space: the scene's Light
+/// components (deki-rendering's Light.h), as Mesh3DPass gathers them.
+struct Light3D
+{
+    enum class Kind : uint8_t
+    {
+        Directional = 0,
+        Point = 1,
+        Spot = 2,
+    };
+    Kind kind = Kind::Directional;
+    Deki::Vector3 color = Deki::Vector3(1.0f, 1.0f, 1.0f);  // times its intensity: 1 lights a colour as it is
+    Deki::Vector3 position;                                 // point and spot
+    Deki::Vector3 direction = Deki::Vector3(0.0f, -1.0f, 0.0f);  // the way it travels, unit: directional and spot
+    float range = 1.0f;                                          // point and spot: where it fades to nothing
+    float cosOuter = 0.0f;  // spot: the cosines of its cone's edge, and of where it starts to fade
+    float cosInner = 0.0f;
+};
+
+/// The light reaching a surface at `position` facing `normal` (unit), world
+/// space: the ambient, plus each light by how near it is and how much the
+/// surface faces it, capped at twice a colour. The software rasteriser lights
+/// with it; the GPU's mesh shader does the same sum (editor/MeshShaderUse.cpp).
+DEKI_3D_API Deki::Vector3 LightAt(const Deki::Vector3& ambient, const Light3D* lights, int count,
+                                  const Deki::Vector3& position, const Deki::Vector3& normal);
+
 struct RasterConfig
 {
     /// Tile edge in pixels. The per-tile depth buffer is tileSize^2 * 2 bytes.
@@ -58,10 +84,19 @@ struct RasterConfig
     /// anything that reads the frame back afterwards needs.
     bool composeOnGpu = true;
 
-    /// Direction the one directional light travels, for the lit shading
-    /// models. The backend normalises it.
-    Deki::Vector3 lightDirection = Deki::Vector3(-0.4f, -0.8f, -0.45f);
-    float ambient = 0.25f;
+    /// The light of the lit shading models: the ambient, and up to kMaxLights
+    /// lights. The default is a grey ambient and a sun from above, in front,
+    /// to the left; Mesh3DPass sets the scene's.
+    static constexpr int kMaxLights = 8;
+    Deki::Vector3 ambient = Deki::Vector3(0.25f, 0.25f, 0.25f);
+    Light3D lights[kMaxLights];
+    int lightCount = 1;
+
+    RasterConfig()
+    {
+        lights[0].color = Deki::Vector3(0.75f, 0.75f, 0.75f);
+        lights[0].direction = Deki::Vector3(-0.4f, -0.8f, -0.45f);
+    }
 };
 
 struct RasterStats
@@ -88,11 +123,13 @@ public:
                             const RasterConfig& config) = 0;
 
     /// Draws one mesh, or queues it. `mvp` takes object space to clip space;
-    /// `normalMatrix` takes object-space normals to world space and is read
-    /// only by the lit shading models. The materials need only live for the
-    /// call.
+    /// `normalMatrix` takes object-space normals to world space and `model`
+    /// positions to world space, read only by the lit shading models (a light
+    /// that is near or far needs the world position). The materials need only
+    /// live for the call.
     virtual void DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_t materialCount,
-                          const Deki::Mat4& mvp, const Deki::Mat4& normalMatrix) = 0;
+                          const Deki::Mat4& mvp, const Deki::Mat4& normalMatrix,
+                          const Deki::Mat4& model = Deki::Mat4::Identity()) = 0;
 
     /// Finishes the batch. Nothing need reach the framebuffer before this.
     virtual void EndFrame() = 0;

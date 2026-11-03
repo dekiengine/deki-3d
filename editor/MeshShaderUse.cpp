@@ -12,6 +12,8 @@
 //   float4 Shade(Fragment f)                          colours a pixel; f is
 //                                                     what the shading model
 //                                                     would draw, and why
+// and LightAt(position, normal), the scene's light at a world position, for a
+// Shade that lights per pixel.
 
 #include "MeshShaderUse.h"
 
@@ -22,9 +24,18 @@ namespace Deki3D
 
 const char* const kMeshShaderHead = R"(
 uniform float4x4 uMvp;
+uniform float4x4 uModel;         // object to world
 uniform float4x4 uNormalMatrix;  // rotation only, as in the software rasteriser
-uniform float3 uLightDir;        // normalised, the way the light travels
-uniform float uAmbient;
+// The scene's light (Mesh3DBackend.h's Light3D): the ambient, and up to 8
+// lights, each its position and kind (0 directional, 1 point, 2 spot), the
+// way it travels and its range, its colour times its intensity, and a spot's
+// cone (the cosines of its edge and of where it starts to fade).
+uniform float3 uAmbient;
+uniform int uLightCount;
+uniform float4 uLightPosition[8];
+uniform float4 uLightDirection[8];
+uniform float4 uLightColor[8];
+uniform float4 uLightCone[8];
 uniform int uShading;            // ShadingModel: 0 unlit, 1 vertex lit, 2 flat
 uniform int uHasNormals;
 uniform int uAffine;             // texturing without perspective correction
@@ -40,15 +51,55 @@ uniform float4 uTint;
 Texture2D uTexture;
 SamplerState uTextureSampler;
 
+// The light reaching a surface at `position` facing `normal` (unit), world
+// space: the ambient, plus each light by how near it is and how much the
+// surface faces it, up to twice a colour. Mesh3DBackend.cpp's LightAt.
+float3 LightAt(float3 position, float3 normal)
+{
+    float3 sum = uAmbient;
+    for (int i = 0; i < uLightCount; i++)
+    {
+        const float4 at = uLightPosition[i];
+        const float3 travels = uLightDirection[i].xyz;
+        float3 toward = -travels;
+        float share = 1.0;
+        if (at.w > 0.5)
+        {
+            toward = at.xyz - position;
+            const float range = uLightDirection[i].w;
+            const float d2 = dot(toward, toward);
+            const float t = 1.0 - d2 / (range * range);
+            if (t <= 0.0)
+            {
+                continue;
+            }
+            share = t * t;
+            if (d2 > 0.0)
+            {
+                toward *= rsqrt(d2);
+            }
+            if (at.w > 1.5)
+            {
+                const float4 cone = uLightCone[i];
+                const float s = saturate((-dot(toward, travels) - cone.x) / (cone.y - cone.x));
+                share *= s * s * (3.0 - 2.0 * s);
+            }
+        }
+        sum += uLightColor[i].rgb * (max(dot(normal, toward), 0.0) * share);
+    }
+    return min(sum, 2.0);
+}
+
 // What a shader's Shade() is given for each pixel.
 struct Fragment
 {
-    float4 base;    // what the shading model draws: albedo times the light
-    float4 albedo;  // before the light: the texel, or vertex colour times tint
+    float4 base;      // what the shading model draws: albedo times the light
+    float4 albedo;    // before the light: the texel, or vertex colour times tint
     float2 uv;
-    float3 normal;  // world space: the vertex normal, or the face's when flat
-    float light;    // the shading model's light, 0 to 1
-    float2 pixel;   // window position, bottom left (0, 0)
+    float3 normal;    // world space: the vertex normal, or the face's when flat
+    float3 light;     // the shading model's light per channel, 0 to 2 (1 the colour as it is)
+    float3 position;  // world space
+    float2 pixel;     // window position, bottom left (0, 0)
 };
 )";
 
@@ -65,10 +116,10 @@ struct Varyings
 {
     float4 clip : SV_Position;
     [[vk::location(0)]] float4 color : COLOR0;
-    [[vk::location(1)]] float light : TEXCOORD0;
+    [[vk::location(1)]] float3 light : TEXCOORD0;
     [[vk::location(2)]] float2 uvw : TEXCOORD1;
     [[vk::location(3)]] float w : TEXCOORD2;
-    [[vk::location(4)]] float3 facePos : TEXCOORD3;
+    [[vk::location(4)]] float3 position : TEXCOORD3;  // world space
     [[vk::location(5)]] float3 normal : TEXCOORD4;
 };
 
@@ -89,7 +140,8 @@ Varyings VertexMain(VertexIn v)
     o.clip = clip;
     o.color = v.color;
     o.normal = mul((float3x3)uNormalMatrix, v.normal);
-    o.light = 1.0;
+    o.position = mul(uModel, float4(position, 1.0)).xyz;
+    o.light = float3(1.0, 1.0, 1.0);
     if (uShading == 1 && uHasNormals != 0)
     {
         float3 n = o.normal;
@@ -98,10 +150,8 @@ Varyings VertexMain(VertexIn v)
         {
             n /= len;
         }
-        o.light = uAmbient + max(-dot(n, uLightDir), 0.0) * (1.0 - uAmbient);
+        o.light = LightAt(o.position, n);
     }
-    // For the flat model's face normal, from screen-space derivatives.
-    o.facePos = mul((float3x3)uNormalMatrix, position);
 
     // Affine texturing: interpolating uv*w and w perspective-correctly, then
     // dividing, leaves uv interpolated linearly across the screen.
@@ -134,7 +184,7 @@ float4 FragmentMain(Varyings i, bool frontFacing : SV_IsFrontFace) : SV_Target0
 
     // The face normal, from screen-space derivatives: they face the viewer,
     // and a back face's normal does not.
-    float3 face = cross(ddx(i.facePos), ddy(i.facePos));
+    float3 face = cross(ddx(i.position), ddy(i.position));
     float faceLen = length(face);
     face = faceLen > 0.0 ? face / faceLen : float3(0.0, 0.0, 1.0);
     if (!frontFacing)
@@ -142,14 +192,14 @@ float4 FragmentMain(Varyings i, bool frontFacing : SV_IsFrontFace) : SV_Target0
         face = -face;
     }
 
-    float light = i.light;
+    float3 light = i.light;
     if (uShading == 0)
     {
-        light = 1.0;
+        light = float3(1.0, 1.0, 1.0);
     }
     else if (uShading == 2)
     {
-        light = uAmbient + max(-dot(face, uLightDir), 0.0) * (1.0 - uAmbient);
+        light = LightAt(i.position, face);
     }
     float4 base = float4(colour.rgb * light, 1.0);
 
@@ -161,6 +211,7 @@ float4 FragmentMain(Varyings i, bool frontFacing : SV_IsFrontFace) : SV_Target0
     float vertexLen = length(i.normal);
     f.normal = (uShading == 2 || uHasNormals == 0 || vertexLen == 0.0) ? face : i.normal / vertexLen;
     f.light = light;
+    f.position = i.position;
     f.pixel = i.clip.xy;
     // Opaque: the meshes cover what is below them, as in the rasteriser.
     return float4(Shade(f).rgb, 1.0);
