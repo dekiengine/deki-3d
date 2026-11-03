@@ -119,7 +119,7 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     Cursor cursor(data, size);
 
     MeshFileHeader header{};
-    if (!cursor.Take(&header, sizeof(header)))
+    if (!cursor.Take(&header, kMeshFileHeaderV4Bytes))
     {
         return false;
     }
@@ -129,12 +129,18 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
         DEKI_LOG_WARNING("MeshAsset: not a mesh (bad magic)");
         return false;
     }
-    if (header.version != kMeshFileVersion)
+    if (header.version != kMeshFileVersion && header.version != 4)
     {
-        DEKI_LOG_WARNING("MeshAsset: version %u, this build reads %u; rebuild the asset",
+        DEKI_LOG_WARNING("MeshAsset: version %u, this build reads 4 and %u; rebuild the asset",
                          static_cast<unsigned>(header.version), static_cast<unsigned>(kMeshFileVersion));
         return false;
     }
+    header.flags = 0;
+    if (header.version >= 5 && !cursor.Take(&header.flags, sizeof(header.flags)))
+    {
+        return false;
+    }
+    const uint8_t indexBytes = (header.flags & MeshFileIndex32) ? 4 : 2;
     if (header.vertexCount == 0 || header.indexCount == 0 || header.vertexStride == 0)
     {
         return false;
@@ -164,7 +170,11 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
         return Fail("truncated vertex buffer");
     }
 
-    if (!m_Indices.Allocate(header.indexCount, Deki::Memory::External))
+    if (static_cast<uint64_t>(header.indexCount) * indexBytes > SIZE_MAX / 2)
+    {
+        return Fail("its index buffer is larger than this device can address");
+    }
+    if (!m_Indices.Allocate(static_cast<size_t>(header.indexCount) * indexBytes, Deki::Memory::External))
     {
         return Fail("no room for the index buffer");
     }
@@ -242,9 +252,11 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
 
     // Everything is read; now check that every reference points inside it.
 
-    for (size_t i = 0; i < m_Indices.Count(); ++i)
+    m_View.indices = m_Indices.Data();
+    m_View.indexBytes = indexBytes;
+    for (uint32_t i = 0; i < header.indexCount; ++i)
     {
-        if (m_Indices.Data()[i] >= header.vertexCount)
+        if (m_View.IndexAt(i) >= header.vertexCount)
         {
             return Fail("an index points past the vertex buffer");
         }
@@ -252,7 +264,7 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     for (size_t i = 0; i < m_Submeshes.Count(); ++i)
     {
         const Submesh3D& sub = m_Submeshes.Data()[i];
-        if (static_cast<uint64_t>(sub.firstIndex) + sub.indexCount > m_Indices.Count())
+        if (static_cast<uint64_t>(sub.firstIndex) + sub.indexCount > header.indexCount)
         {
             return Fail("a submesh runs past the index buffer");
         }
@@ -303,6 +315,7 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
             view.format = format;
             view.hasAlpha = format == TexelFormat::RGB565 || format == TexelFormat::RGB565A8 ||
                             format == TexelFormat::RGBA8888 || format == TexelFormat::ALPHA8;
+            view.smooth = (t.flags & MeshTextureSmooth) != 0;
             view.width = t.width;
             view.height = t.height;
             view.widthShift = static_cast<uint8_t>(wShift);
@@ -358,7 +371,6 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     m_View.boundsMin = Deki::Vector3(header.boundsMin[0], header.boundsMin[1], header.boundsMin[2]);
     m_View.boundsMax = Deki::Vector3(header.boundsMax[0], header.boundsMax[1], header.boundsMax[2]);
     m_View.vertices = m_Vertices.Data();
-    m_View.indices = m_Indices.Data();
     m_View.submeshes = m_Submeshes.Data();
     m_View.submeshCount = static_cast<uint16_t>(m_Submeshes.Count());
     m_View.revision = NextRevision();

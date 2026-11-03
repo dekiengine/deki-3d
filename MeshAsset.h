@@ -15,7 +15,7 @@
 // On disk, in order:
 //   header
 //   vertices        vertexCount * vertexStride
-//   indices         indexCount * uint16
+//   indices         indexCount * uint16, or uint32 with MeshFileIndex32
 //   submeshes       submeshCount * MeshFileSubmesh
 //   materials       materialCount * MeshFileMaterial
 //   textures        textureCount * MeshFileTexture
@@ -26,12 +26,20 @@
 
 #include <deki/providers/Buffer.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace Deki3D
 {
 
-constexpr uint16_t kMeshFileVersion = 4;
+/// 5: the header ends in `flags`. Version 4 files, which have no flags and
+/// 16-bit indices, still load.
+constexpr uint16_t kMeshFileVersion = 5;
+
+enum MeshFileFlags : uint32_t
+{
+    MeshFileIndex32 = 1 << 0,  // indices are uint32: the mesh has over 65535 vertices
+};
 
 /// File header. Little-endian, like every target the engine runs on.
 struct MeshFileHeader
@@ -48,7 +56,11 @@ struct MeshFileHeader
     uint32_t texturePixelBytes;  // total size of the pixel blob that follows
     float boundsMin[3];
     float boundsMax[3];
+    uint32_t flags;  // MeshFileFlags; from version 5, where version 4 ends
 };
+
+/// How much of the header a version 4 file has: all of it but `flags`.
+constexpr size_t kMeshFileHeaderV4Bytes = offsetof(MeshFileHeader, flags);
 
 /// A draw range. Matches Submesh3D but is declared separately, so changing
 /// the runtime struct cannot change the file layout.
@@ -81,7 +93,13 @@ struct MeshFileTexture
     uint16_t height;
     uint32_t byteOffset;  // from the start of the pixel blob
     uint8_t format;       // TexelFormat
-    uint8_t padding[3];
+    uint8_t flags;        // MeshTextureFlags; 0 in files before version 5
+    uint8_t padding[2];
+};
+
+enum MeshTextureFlags : uint8_t
+{
+    MeshTextureSmooth = 1 << 0,  // Texture3D::smooth
 };
 
 enum MeshAttribute : uint16_t
@@ -130,7 +148,7 @@ private:
     // the board has it and the one heap where it does not; the small tables
     // are Internal.
     Deki::Buffer<uint8_t> m_Vertices;
-    Deki::Buffer<uint16_t> m_Indices;
+    Deki::Buffer<uint8_t> m_Indices;  // indexBytes each
     Deki::Buffer<Submesh3D> m_Submeshes;
     Deki::Buffer<uint8_t> m_TexturePixels;
     Deki::Buffer<Texture3D> m_Textures;

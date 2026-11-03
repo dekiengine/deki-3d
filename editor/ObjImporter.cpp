@@ -3,6 +3,7 @@
 #ifdef DEKI_EDITOR
 
 #include "../MeshAsset.h"
+#include "MeshSimplify.h"
 
 #include <algorithm>
 #include <cmath>
@@ -217,6 +218,7 @@ bool HasTransparentTexel(const std::vector<uint8_t>& rgba)
 struct MtlEntry
 {
     std::string diffuseMap;  // map_Kd, as written
+    std::string opacityMap;  // map_d, as written: its brightness is the diffuse map's alpha
     uint32_t tint = 0xFFFFFFFFu;
     bool alphaTest = false;
 };
@@ -254,7 +256,7 @@ std::map<std::string, MtlEntry> ParseMaterialLibrary(const std::string& mtlText)
         {
             continue;  // anything before the first newmtl belongs to nobody
         }
-        else if (keyword == "map_Kd")
+        else if (keyword == "map_Kd" || keyword == "map_d")
         {
             // Options such as "-s 1 1 1" may precede the filename, so take
             // the last token on the line.
@@ -263,7 +265,7 @@ std::map<std::string, MtlEntry> ParseMaterialLibrary(const std::string& mtlText)
             {
                 last = token;
             }
-            materials[current].diffuseMap = last;
+            (keyword == "map_Kd" ? materials[current].diffuseMap : materials[current].opacityMap) = last;
         }
         else if (keyword == "Kd")
         {
@@ -297,9 +299,12 @@ std::map<std::string, MtlEntry> ParseMaterialLibrary(const std::string& mtlText)
 }
 
 /// Joins a base directory and a path written inside a model file. Those
-/// paths are relative to the model and may use either separator.
-std::string ResolveRelative(const std::string& baseDirectory, const std::string& relative)
+/// paths are relative to the model and may use either separator: a model
+/// exported on Windows names "textures\a.png", read as "textures/a.png"
+/// everywhere.
+std::string ResolveRelative(const std::string& baseDirectory, std::string relative)
 {
+    std::replace(relative.begin(), relative.end(), '\\', '/');
     if (baseDirectory.empty())
     {
         return relative;
@@ -313,11 +318,93 @@ std::string ResolveRelative(const std::string& baseDirectory, const std::string&
     return joined;
 }
 
+/// Multiplies `rgba`'s alpha by the brightness of `mask`, resampled to its
+/// size first. For a .mtl's map_d, which keeps a cutout apart from the
+/// colours.
+void ApplyOpacityMask(std::vector<uint8_t>& rgba, int width, int height, const std::vector<uint8_t>& mask, int maskW,
+                      int maskH)
+{
+    std::vector<uint8_t> scaled;
+    ResampleRgba(mask, maskW, maskH, static_cast<uint16_t>(width), static_cast<uint16_t>(height), scaled);
+    for (size_t i = 0; i + 3 < rgba.size() && i + 3 < scaled.size(); i += 4)
+    {
+        const uint32_t brightness = (scaled[i] * 77u + scaled[i + 1] * 150u + scaled[i + 2] * 29u) >> 8;
+        rgba[i + 3] = static_cast<uint8_t>(rgba[i + 3] * brightness / 255u);
+    }
+}
+
+/// A submesh: a range of the index buffer drawn with one material.
+struct Range
+{
+    uint32_t firstIndex = 0;
+    uint32_t indexCount = 0;
+    uint16_t materialIndex = 0;
+};
+
+/// Keeps `detail` of the triangles (SimplifyMesh), then drops the vertices
+/// none uses and the submeshes left empty.
+void ReduceTriangles(float detail, std::vector<Vec3>& positions, std::vector<Vec3>& normals, std::vector<Vec2>& uvs,
+                     std::vector<uint32_t>& indices, std::vector<Range>& submeshes)
+{
+    std::vector<float> flat;
+    flat.reserve(positions.size() * 3);
+    for (const Vec3& p : positions)
+    {
+        flat.insert(flat.end(), { p.x, p.y, p.z });
+    }
+    std::vector<SimplifyTriangle> triangles;
+    triangles.reserve(indices.size() / 3);
+    for (uint32_t s = 0; s < submeshes.size(); ++s)
+    {
+        const Range& r = submeshes[s];
+        for (uint32_t i = r.firstIndex; i + 2 < r.firstIndex + r.indexCount; i += 3)
+        {
+            triangles.push_back({ { indices[i], indices[i + 1], indices[i + 2] }, s });
+        }
+    }
+    const double wanted = std::ceil(static_cast<double>(triangles.size()) * std::max(0.0f, detail));
+    SimplifyMesh(flat, triangles, static_cast<uint32_t>(std::max(1.0, wanted)));
+
+    // The triangles kept are still in submesh order.
+    std::vector<uint32_t> remap(positions.size(), UINT32_MAX);
+    std::vector<Vec3> keptPositions, keptNormals;
+    std::vector<Vec2> keptUVs;
+    std::vector<Range> keptRanges;
+    indices.clear();
+    for (size_t t = 0; t < triangles.size(); ++t)
+    {
+        const SimplifyTriangle& tri = triangles[t];
+        if (keptRanges.empty() || keptRanges.back().materialIndex != submeshes[tri.submesh].materialIndex ||
+            (t > 0 && triangles[t - 1].submesh != tri.submesh))
+        {
+            Range r;
+            r.firstIndex = static_cast<uint32_t>(indices.size());
+            r.materialIndex = submeshes[tri.submesh].materialIndex;
+            keptRanges.push_back(r);
+        }
+        for (uint32_t v : tri.v)
+        {
+            if (remap[v] == UINT32_MAX)
+            {
+                remap[v] = static_cast<uint32_t>(keptPositions.size());
+                keptPositions.push_back(positions[v]);
+                keptNormals.push_back(normals[v]);
+                keptUVs.push_back(uvs[v]);
+            }
+            indices.push_back(remap[v]);
+        }
+        keptRanges.back().indexCount += 3;
+    }
+    positions.swap(keptPositions);
+    normals.swap(keptNormals);
+    uvs.swap(keptUVs);
+    submeshes.swap(keptRanges);
+}
+
 }  // namespace
 
 bool CompileObjToMesh(const std::string& objText, const std::string& baseDirectory, const ImageDecoder& decodeImage,
-                      std::vector<uint8_t>& outBlob, std::string& error, const TextureFormatChooser& chooseFormat,
-                      int maxTextureSize)
+                      std::vector<uint8_t>& outBlob, std::string& error, const MeshCompileOptions& options)
 {
     error.clear();
     outBlob.clear();
@@ -327,20 +414,14 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     std::vector<Vec3> normals;
 
     // The deduplicated vertex buffer, built as faces are read.
-    std::map<Corner, uint16_t> seen;
+    std::map<Corner, uint32_t> seen;
     std::vector<Vec3> outPositions;
     std::vector<Vec3> outNormals;
     std::vector<Vec2> outUVs;
 
-    struct Range
-    {
-        uint32_t firstIndex = 0;
-        uint32_t indexCount = 0;
-        uint16_t materialIndex = 0;
-    };
     std::vector<Range> submeshes;
     std::map<std::string, uint16_t> materialIds;
-    std::vector<uint16_t> indices;
+    std::vector<uint32_t> indices;
     std::string materialLibrary;
 
     auto beginSubmesh = [&](const std::string& materialName)
@@ -372,7 +453,6 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     std::istringstream in(objText);
     std::string line;
     size_t lineNumber = 0;
-    bool overflowed = false;
 
     while (std::getline(in, line))
     {
@@ -429,7 +509,7 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                 beginSubmesh("");  // a file with no usemtl is still one submesh
             }
 
-            std::vector<uint16_t> face;
+            std::vector<uint32_t> face;
             std::string token;
             while (ls >> token)
             {
@@ -441,29 +521,20 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                 }
 
                 auto it = seen.find(corner);
-                uint16_t index;
+                uint32_t index;
                 if (it != seen.end())
                 {
                     index = it->second;
                 }
                 else
                 {
-                    if (outPositions.size() >= 0xFFFFu)
-                    {
-                        overflowed = true;
-                        break;
-                    }
-                    index = static_cast<uint16_t>(outPositions.size());
+                    index = static_cast<uint32_t>(outPositions.size());
                     seen.emplace(corner, index);
                     outPositions.push_back(positions[corner.position]);
                     outNormals.push_back(corner.normal >= 0 ? normals[corner.normal] : Vec3{});
                     outUVs.push_back(corner.uv >= 0 ? uvs[corner.uv] : Vec2{});
                 }
                 face.push_back(index);
-            }
-            if (overflowed)
-            {
-                break;
             }
 
             // Fan triangulation: correct for convex polygons, which is what
@@ -477,11 +548,6 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
         }
     }
 
-    if (overflowed)
-    {
-        error = "more than 65535 vertices; the index buffer is 16-bit. Split the model.";
-        return false;
-    }
     if (outPositions.empty() || indices.empty())
     {
         error = "no faces found";
@@ -530,6 +596,18 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                 n.y = 1.0f;  // a degenerate face leaves nothing to point at
             }
         }
+    }
+
+    const uint32_t trianglesIn = static_cast<uint32_t>(indices.size() / 3);
+    if (options.detail < 1.0f)
+    {
+        ReduceTriangles(options.detail, outPositions, outNormals, outUVs, indices, submeshes);
+    }
+    if (options.report)
+    {
+        options.report->trianglesIn = trianglesIn;
+        options.report->trianglesOut = static_cast<uint32_t>(indices.size() / 3);
+        options.report->verticesOut = static_cast<uint32_t>(outPositions.size());
     }
 
     const bool hasUVs = !uvs.empty();
@@ -594,16 +672,29 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                     if (decodeImage(ResolveRelative(baseDirectory, map), srcW, srcH, rgba) && srcW > 0 && srcH > 0 &&
                         rgba.size() >= static_cast<size_t>(srcW) * srcH * 4)
                     {
+                        const std::string& maskPath = found->second.opacityMap;
+                        int maskW = 0, maskH = 0;
+                        std::vector<uint8_t> mask;
+                        if (!maskPath.empty() && maskPath != map &&
+                            decodeImage(ResolveRelative(baseDirectory, maskPath), maskW, maskH, mask) && maskW > 0 &&
+                            maskH > 0 && mask.size() >= static_cast<size_t>(maskW) * maskH * 4)
+                        {
+                            ApplyOpacityMask(rgba, srcW, srcH, mask, maskW, maskH);
+                        }
+
                         MeshFileTexture texture{};
-                        const int cap = maxTextureSize > 0 ? maxTextureSize : kDefaultMeshTextureSize;
+                        // 0: no cap, only the power of two the source fits in.
+                        const int cap = options.maxTextureSize > 0 ? options.maxTextureSize : 1 << 15;
                         texture.width = FitPowerOfTwo(srcW, cap);
                         texture.height = FitPowerOfTwo(srcH, cap);
                         texture.byteOffset = static_cast<uint32_t>(texturePixels.size());
+                        texture.flags = options.smoothTextures ? MeshTextureSmooth : 0;
 
                         std::vector<uint8_t> scaled;
                         ResampleRgba(rgba, srcW, srcH, texture.width, texture.height, scaled);
                         const bool transparent = HasTransparentTexel(scaled);
-                        const TexelFormat format = chooseFormat ? chooseFormat(transparent) : TexelFormat::RGB565;
+                        const TexelFormat format =
+                            options.chooseFormat ? options.chooseFormat(transparent) : TexelFormat::RGB565;
                         texture.format = static_cast<uint8_t>(format);
 
                         // Transparent texels cut out, where the format keeps them.
@@ -646,6 +737,10 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     header.materialCount = static_cast<uint16_t>(outMaterials.size());
     header.textureCount = static_cast<uint16_t>(outTextures.size());
     header.texturePixelBytes = static_cast<uint32_t>(texturePixels.size());
+    // 16-bit indices whenever they reach every vertex; only a bigger mesh
+    // pays for 32.
+    const bool index32 = outPositions.size() > 0xFFFFu;
+    header.flags = index32 ? MeshFileIndex32 : 0;
 
     float lo[3] = { outPositions[0].x, outPositions[0].y, outPositions[0].z };
     float hi[3] = { lo[0], lo[1], lo[2] };
@@ -662,8 +757,9 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     std::memcpy(header.boundsMax, hi, sizeof(hi));
 
     const size_t vertexBytes = static_cast<size_t>(header.vertexCount) * header.vertexStride;
-    outBlob.reserve(sizeof(header) + vertexBytes + indices.size() * sizeof(uint16_t) +
-                    submeshes.size() * sizeof(Submesh3D));
+    const size_t indexBytes = index32 ? sizeof(uint32_t) : sizeof(uint16_t);
+    outBlob.reserve(sizeof(header) + vertexBytes + indices.size() * indexBytes + submeshes.size() * sizeof(Submesh3D) +
+                    texturePixels.size());
 
     auto append = [&outBlob](const void* data, size_t size)
     {
@@ -681,7 +777,15 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
             append(&outUVs[i], sizeof(float) * 2);
         }
     }
-    append(indices.data(), indices.size() * sizeof(uint16_t));
+    if (index32)
+    {
+        append(indices.data(), indices.size() * sizeof(uint32_t));
+    }
+    else
+    {
+        const std::vector<uint16_t> narrow(indices.begin(), indices.end());
+        append(narrow.data(), narrow.size() * sizeof(uint16_t));
+    }
     for (const Range& r : submeshes)
     {
         MeshFileSubmesh sub;

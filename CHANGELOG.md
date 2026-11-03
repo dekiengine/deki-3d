@@ -10,6 +10,34 @@ alongside one that has them.
 
 ## Unreleased
 
+### Models at any size, built for each platform
+- A mesh of any size compiles: 16-bit indices up to 65535 vertices, 32-bit
+  past that (`Mesh3D::indexBytes`, `Mesh3D::IndexAt`). Both renderers draw
+  either. Mesh files are version 5 (the header ends in `flags`); version 4
+  files still load.
+- Each platform's build keeps what it can use. A model's textures have no
+  default cap where the platform has a GPU, and 256 on a board, as before.
+  New per-platform settings: Filter (Smooth: linear and mipmapped on the GPU,
+  `Texture3D::smooth`) and Detail, the share of triangles kept
+  (`editor/MeshSimplify.h`: edge collapse by quadric error, never moving a
+  seam, an open edge or a material border, never turning a triangle over).
+- The Model inspector (`.obj`): what the editor's build holds, and the
+  Targets cards for Format, Max Size, Filter and Detail, Default and per
+  platform. Settings in `editor/ModelSettings.h`.
+- A board build stops when a model needs more external memory than the board
+  has, and warns when Detail stops above what it asks or a board is given
+  Smooth.
+- The importer reads `map_d` as a texture's cutout and paths written with
+  backslashes. `CompileObjToMesh` takes a `MeshCompileOptions` (format, Max
+  Size, filter, detail, and a report of what it did) in place of its last two
+  arguments.
+- Breaking: `Mesh3D::indices` is a `const void*` read through `IndexAt`.
+- Tests: `BigMeshTests.cpp`, `MeshSimplifyTests.cpp`, the GPU drawing past
+  65535 vertices, smooth textures, and an off-centre shadow, which the
+  centred cube test could not catch a mirrored lookup with. By hand:
+  `DISABLED_CompileAModel` and `DISABLED_AModelUnderTheSun` take a real model
+  (`DEKI_TEST_OBJ`).
+
 ### Lights and shadows
 - Meshes are lit by the scene's `DekiRendering::Light` components: an
   ambient colour and up to 8 directional, point and spot lights, in colour,

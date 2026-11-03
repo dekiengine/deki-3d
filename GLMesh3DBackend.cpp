@@ -217,7 +217,7 @@ public:
     void BindMesh(const Mesh3D& mesh)
     {
         const size_t vertexBytes = static_cast<size_t>(mesh.vertexCount) * mesh.layout.stride;
-        const size_t indexBytes = static_cast<size_t>(mesh.indexCount) * sizeof(uint16_t);
+        const size_t indexBytes = static_cast<size_t>(mesh.indexCount) * mesh.indexBytes;
         const GLuint* buffers = m_ScratchBuffers;
         bool upload = true;
         if (mesh.revision != 0)
@@ -269,11 +269,31 @@ public:
         {
             const std::vector<uint8_t> rgba = ToRGBA(tex);
             m_GL.PixelStorei(gl::UNPACK_ALIGNMENT, 4);
+            if (tex.width > MaxTextureSize() || tex.height > MaxTextureSize())
+            {
+                // Said at each upload, once for an asset's texture. OpenGL
+                // refuses it, and the material samples black.
+                DEKI_LOG_ERROR("deki-3d: a %ux%u texture is over this GPU's largest, %d. Set a Max Size for this "
+                               "platform in the model's settings.",
+                               static_cast<unsigned>(tex.width), static_cast<unsigned>(tex.height), MaxTextureSize());
+            }
             m_GL.TexImage2D(gl::TEXTURE_2D, 0, static_cast<GLint>(gl::RGBA8), tex.width, tex.height, 0, gl::RGBA,
                             gl::UNSIGNED_BYTE, rgba.data());
-            // Nearest and wrapping, as the software sampler masks.
-            m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, static_cast<GLint>(gl::NEAREST));
-            m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, static_cast<GLint>(gl::NEAREST));
+            if (tex.smooth)
+            {
+                // Blended, from mipmaps where it shrinks: a big texture seen
+                // from afar would otherwise shimmer.
+                m_GL.GenerateMipmap(gl::TEXTURE_2D);
+                m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, static_cast<GLint>(gl::LINEAR_MIPMAP_LINEAR));
+                m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, static_cast<GLint>(gl::LINEAR));
+            }
+            else
+            {
+                // Nearest, as the software sampler draws.
+                m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, static_cast<GLint>(gl::NEAREST));
+                m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, static_cast<GLint>(gl::NEAREST));
+            }
+            // Wrapping, as the software sampler masks.
             m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, static_cast<GLint>(gl::REPEAT));
             m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, static_cast<GLint>(gl::REPEAT));
         }
@@ -289,6 +309,18 @@ public:
             m_ErrorReported = true;
             DEKI_LOG_WARNING("deki-3d: OpenGL error 0x%04X %s", error, where);
         }
+    }
+
+    /// The largest texture side this GPU takes.
+    int MaxTextureSize()
+    {
+        if (m_MaxTextureSize == 0)
+        {
+            GLint size = 0;
+            m_GL.GetIntegerv(gl::MAX_TEXTURE_SIZE, &size);
+            m_MaxTextureSize = size > 0 ? size : 2048;  // what OpenGL ES 3.0 promises at least
+        }
+        return m_MaxTextureSize;
     }
 
 private:
@@ -503,6 +535,7 @@ private:
     std::unordered_map<uint32_t, MeshEntry> m_Meshes;
     std::unordered_map<uint32_t, TextureEntry> m_Textures;
     uint32_t m_Frame = 0;
+    int m_MaxTextureSize = 0;
     bool m_ErrorReported = false;
 };
 
@@ -683,8 +716,8 @@ void GLMesh3DBackend::DrawShadowCaster(int slot, const Mesh3D& mesh, const Mater
             gl.Uniform1i(u.texMode, 0);
         }
         const GLsizei count = static_cast<GLsizei>(sub.indexCount - sub.indexCount % 3);
-        gl.DrawElements(gl::TRIANGLES, count, gl::UNSIGNED_SHORT,
-                        reinterpret_cast<const void*>(static_cast<uintptr_t>(sub.firstIndex) * sizeof(uint16_t)));
+        gl.DrawElements(gl::TRIANGLES, count, mesh.indexBytes == 4 ? gl::UNSIGNED_INT : gl::UNSIGNED_SHORT,
+                        reinterpret_cast<const void*>(static_cast<uintptr_t>(sub.firstIndex) * mesh.indexBytes));
     }
     gl.Disable(gl::POLYGON_OFFSET_FILL);
     gl.ColorMask(gl::kTrue, gl::kTrue, gl::kTrue, gl::kTrue);
@@ -1016,8 +1049,8 @@ void GLMesh3DBackend::DrawMesh(const Mesh3D& mesh, const Material3D* materials,
         }
 
         const GLsizei count = static_cast<GLsizei>(sub.indexCount - sub.indexCount % 3);
-        gl.DrawElements(gl::TRIANGLES, count, gl::UNSIGNED_SHORT,
-                        reinterpret_cast<const void*>(static_cast<uintptr_t>(sub.firstIndex) * sizeof(uint16_t)));
+        gl.DrawElements(gl::TRIANGLES, count, mesh.indexBytes == 4 ? gl::UNSIGNED_INT : gl::UNSIGNED_SHORT,
+                        reinterpret_cast<const void*>(static_cast<uintptr_t>(sub.firstIndex) * mesh.indexBytes));
     }
     m_Drawn = true;
 }

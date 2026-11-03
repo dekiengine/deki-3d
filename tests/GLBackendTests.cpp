@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "Math3D.h"
@@ -29,7 +30,9 @@
 #include "Raster3D.h"
 #include "deki-rendering/ShaderAsset.h"
 #include "deki-rendering/editor/ShaderUses.h"
+#include "MeshAsset.h"
 #include "editor/MeshShaderUse.h"
+#include "editor/ObjImporter.h"
 #include "deki-rendering/GLApi.h"
 #include "deki-rendering/GLPresenter.h"
 #include "deki-rendering/PixelFormat.h"
@@ -416,6 +419,88 @@ TEST(GLBackend, TexturedQuadMatchesSoftware)
                                     : (alphaTest ? "affine, holes" : "affine"));
         }
     }
+}
+
+// The cube with 70000 unused vertices before its own, so its indices only
+// reach them at 32 bits: the same picture as the 16-bit cube, on both.
+TEST(GLBackend, VerticesPast65535DrawAsTheSmallMesh)
+{
+    REQUIRE_GPU(gpu);
+    Cube cube = MakeCube();
+    const uint32_t pad = 70000;
+    std::vector<VertexPNTC> vertices(pad);
+    vertices.insert(vertices.end(), cube.vertices.begin(), cube.vertices.end());
+    std::vector<uint32_t> indices;
+    for (uint16_t i : cube.indices)
+    {
+        indices.push_back(pad + i);
+    }
+    Mesh3D wide = cube.mesh;
+    wide.vertices = vertices.data();
+    wide.vertexCount = static_cast<uint32_t>(vertices.size());
+    wide.indices = indices.data();
+    wide.indexBytes = 4;
+
+    Raster3D software;
+    RasterConfig config;
+    Material3D material;
+    material.shading = ShadingModel::VertexLit;
+    const View view = CornerView(0.3f);
+    for (Mesh3DBackend* backend : { static_cast<Mesh3DBackend*>(&software), gpu.backend })
+    {
+        const auto small = Draw(*backend, cube.mesh, material, view, Deki::ColorFormat::ARGB8888, config);
+        const auto big = Draw(*backend, wide, material, view, Deki::ColorFormat::ARGB8888, config);
+        EXPECT_EQ(small, big) << (backend == gpu.backend ? "gpu" : "software");
+    }
+}
+
+// A smooth texture blends between texels where it is magnified; a point one
+// keeps each texel's own colour.
+TEST(GLBackend, SmoothTexturesBlendOnTheGpu)
+{
+    REQUIRE_GPU(gpu);
+    std::vector<uint8_t> texels(8 * 8 * 2);
+    for (int y = 0; y < 8; ++y)
+    {
+        for (int x = 0; x < 8; ++x)
+        {
+            DekiPixel::Store565(&texels[(y * 8 + x) * 2], ((x ^ y) & 1) ? 0xFFFF : 0x0000);
+        }
+    }
+    Texture3D tex;
+    tex.pixels = texels.data();
+    tex.format = TexelFormat::RGB565;
+    tex.width = tex.height = 8;
+    tex.widthShift = tex.heightShift = 3;
+
+    Cube cube = MakeCube();
+    Submesh3D front;
+    front.firstIndex = 24;  // +Z face
+    front.indexCount = 6;
+    cube.mesh.submeshes = &front;
+    const View view = SlantedView();
+    RasterConfig config;
+
+    auto greys = [&](bool smooth)
+    {
+        tex.smooth = smooth;
+        Material3D material;
+        material.texture = &tex;
+        const auto fb = Draw(*gpu.backend, cube.mesh, material, view, Deki::ColorFormat::ARGB8888, config);
+        int between = 0;
+        for (size_t i = 0; i < static_cast<size_t>(kSize) * kSize; ++i)
+        {
+            int rgb[3];
+            ReadPixel(fb, Deki::ColorFormat::ARGB8888, i, rgb);
+            const bool background = rgb[0] == kBackground[0] && rgb[1] == kBackground[1] && rgb[2] == kBackground[2];
+            between += !background && rgb[0] > 40 && rgb[0] < 215 ? 1 : 0;
+        }
+        return between;
+    };
+    const int point = greys(false);
+    const int smooth = greys(true);
+    EXPECT_LT(point, kSize * kSize / 50) << "point sampling draws black and white";
+    EXPECT_GT(smooth, kSize * kSize / 10) << "smooth sampling draws the greys between";
 }
 
 TEST(GLBackend, LeavesTheBackgroundAlone)
@@ -891,3 +976,213 @@ TEST(GLBackend, DISABLED_BenchmarkAgainstSoftware)
 }
 
 #endif  // DEKI_CAPABILITY_OPENGL
+
+// A pillar off the centre of a big floor, seen from above, the sun falling
+// toward +x: its shadow lies on the floor on its +x side, as long as it is
+// tall, and nowhere else. Off centre and at scene scale on purpose: the cube
+// above sits in the middle of its shadow map, where a mirrored or shifted
+// lookup would land on the right texels anyway.
+TEST(GLBackend, AnOffCentrePillarShadowsItsFarSide)
+{
+    REQUIRE_GPU(gpu);
+    std::string obj;
+    int vertices = 0;
+    auto box = [&](float x0, float y0, float z0, float x1, float y1, float z1)
+    {
+        const int base = vertices;
+        vertices += 8;
+        for (float x : { x0, x1 })
+        {
+            for (float y : { y0, y1 })
+            {
+                for (float z : { z0, z1 })
+                {
+                    obj += "v " + std::to_string(x) + " " + std::to_string(y) + " " + std::to_string(z) + "\n";
+                }
+            }
+        }
+        auto i = [&](int x, int y, int z) { return std::to_string(base + 1 + x * 4 + y * 2 + z); };
+        const int q[6][4][3] = { { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 1, 1 }, { 0, 1, 0 } },
+                                 { { 1, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 }, { 1, 0, 1 } },
+                                 { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 0, 1 }, { 0, 0, 1 } },
+                                 { { 0, 1, 0 }, { 0, 1, 1 }, { 1, 1, 1 }, { 1, 1, 0 } },
+                                 { { 0, 0, 0 }, { 0, 1, 0 }, { 1, 1, 0 }, { 1, 0, 0 } },
+                                 { { 0, 0, 1 }, { 1, 0, 1 }, { 1, 1, 1 }, { 0, 1, 1 } } };
+        for (const auto& face : q)
+        {
+            obj += "f";
+            for (const auto& c : face)
+            {
+                obj += " " + i(c[0], c[1], c[2]);
+            }
+            obj += "\n";
+        }
+    };
+    box(-2000, -20, -2000, 2000, 0, 2000);  // the floor, its top at y = 0
+    box(700, 0, 300, 900, 1000, 500);       // the pillar
+    std::vector<uint8_t> blob;
+    std::string error;
+    ASSERT_TRUE(CompileObjToMesh(obj, "", {}, blob, error)) << error;
+    MeshAsset asset;
+    ASSERT_TRUE(asset.LoadFromMemory(blob.data(), blob.size()));
+    const Mesh3D& mesh = asset.View();
+
+    // Straight down from above; on screen +x is right and +z is down.
+    const Deki::Mat4 viewProjection = Mul(Perspective(1.2f, 1.0f, 100.0f, 10000.0f),
+                                          LookAt(Deki::Vector3(0, 4200, 0), Deki::Vector3(0, 0, 0),
+                                                 Deki::Vector3(0, 0, -1)));
+    RasterConfig config;
+    config.ambient = Deki::Vector3(0.1f, 0.1f, 0.1f);
+    config.lightCount = 1;
+    config.lights[0].kind = Light3D::Kind::Directional;
+    config.lights[0].color = Deki::Vector3(1, 1, 1);
+    config.lights[0].direction = Deki::Vector3(1, -1, 0).Normalized();
+    config.lights[0].shadow = 0;
+    config.shadowCount = 1;
+    const Deki::Vector3 centre = (mesh.boundsMin + mesh.boundsMax) * 0.5f;
+    const float radius = (mesh.boundsMax - mesh.boundsMin).Length() * 0.5f;
+    const Deki::Vector3 dir = config.lights[0].direction;
+    config.shadows[0].viewProjection = Mul(Ortho(-radius, radius, -radius, radius, radius * 0.5f, radius * 3.5f),
+                                           LookAt(centre - dir * (radius * 2.0f), centre, Deki::Vector3(0, 1, 0)));
+    config.shadows[0].resolution = 1024;
+
+    Material3D material;
+    material.shading = ShadingModel::VertexLit;
+    std::vector<uint8_t> fb = Background(Deki::ColorFormat::ARGB8888);
+    gpu.backend->BeginFrame(fb.data(), kSize, kSize, Deki::ColorFormat::ARGB8888, config);
+    gpu.backend->DrawShadowCaster(0, mesh, &material, 1, Deki::Mat4::Identity());
+    gpu.backend->DrawMesh(mesh, &material, 1, viewProjection, Deki::Mat4::Identity(), Deki::Mat4::Identity());
+    gpu.backend->EndFrame();
+
+    // The floor point at world (x, z), on screen.
+    auto brightness = [&](float x, float z)
+    {
+        float w = 1.0f;
+        const Deki::Vector3 ndc = TransformPoint(viewProjection, Deki::Vector3(x, 0, z), w);
+        const int px = static_cast<int>((ndc.x / w * 0.5f + 0.5f) * kSize);
+        const int py = static_cast<int>((0.5f - ndc.y / w * 0.5f) * kSize);
+        int rgb[3];
+        ReadPixel(fb, Deki::ColorFormat::ARGB8888, static_cast<size_t>(py) * kSize + px, rgb);
+        return rgb[0] + rgb[1] + rgb[2];
+    };
+    const int lit = brightness(-800, 400);  // across the floor from the pillar
+    EXPECT_LT(brightness(1400, 400), lit / 3) << "the pillar's shadow, beyond it along the light";
+    EXPECT_GT(brightness(400, 400), lit * 2 / 3) << "lit before the pillar";
+    EXPECT_GT(brightness(1400, -800), lit * 2 / 3) << "lit beside the shadow";
+    EXPECT_GT(brightness(-1400, -400), lit * 2 / 3) << "lit where a mirrored shadow would land";
+}
+
+// A real model, named by DEKI_TEST_OBJ, drawn from DEKI_TEST_EYE ("x y z
+// yaw pitch", degrees) under a sun at DEKI_TEST_SUN ("yaw pitch") with and
+// without its shadows, the shadow map fitted as Mesh3DPass fits it. Writes
+// shadows.ppm and plain.ppm into DEKI_TEST_OUT. Run by hand with
+// --gtest_also_run_disabled_tests.
+TEST(GLBackend, DISABLED_AModelUnderTheSun)
+{
+    REQUIRE_GPU(gpu);
+    const char* path = std::getenv("DEKI_TEST_OBJ");
+    const char* out = std::getenv("DEKI_TEST_OUT");
+    if (!path || !out)
+    {
+        GTEST_SKIP() << "set DEKI_TEST_OBJ and DEKI_TEST_OUT";
+    }
+    FILE* f = std::fopen(path, "rb");
+    ASSERT_NE(f, nullptr);
+    std::string text;
+    char chunk[65536];
+    for (size_t n; (n = std::fread(chunk, 1, sizeof(chunk), f)) > 0;)
+    {
+        text.append(chunk, n);
+    }
+    std::fclose(f);
+    std::vector<uint8_t> blob;
+    std::string error;
+    ASSERT_TRUE(CompileObjToMesh(text, "", {}, blob, error)) << error;
+    MeshAsset asset;
+    ASSERT_TRUE(asset.LoadFromMemory(blob.data(), blob.size()));
+    const Mesh3D& mesh = asset.View();
+
+    float ex = 1150, ey = 180, ez = -40, eyaw = 90, epitch = 4.6f, syaw = 20, spitch = 62;
+    if (const char* e = std::getenv("DEKI_TEST_EYE"))
+    {
+        std::sscanf(e, "%f %f %f %f %f", &ex, &ey, &ez, &eyaw, &epitch);
+    }
+    if (const char* s = std::getenv("DEKI_TEST_SUN"))
+    {
+        std::sscanf(s, "%f %f", &syaw, &spitch);
+    }
+    const float d2r = 3.14159265f / 180.0f;
+    const int w = 384, h = 216;
+    const Deki::Mat4 basis = Mul(RotateY(eyaw * d2r), RotateX(epitch * d2r));
+    const Deki::Vector3 eye(ex, ey, ez);
+    const Deki::Vector3 forward = TransformDirection(basis, Deki::Vector3(0, 0, -1));
+    const Deki::Vector3 up = TransformDirection(basis, Deki::Vector3(0, 1, 0));
+    const Deki::Mat4 viewProjection =
+        Mul(Perspective(65.0f * d2r, static_cast<float>(w) / h, 5.0f, 6000.0f), LookAt(eye, eye + forward, up));
+
+    RasterConfig config;
+    config.ambient = Deki::Vector3(0.18f, 0.2f, 0.25f);
+    config.lightCount = 1;
+    config.lights[0].kind = Light3D::Kind::Directional;
+    config.lights[0].color = Deki::Vector3(1, 0.95f, 0.85f);
+    config.lights[0].direction =
+        Deki::Vector3(std::sin(syaw * d2r) * std::cos(spitch * d2r), -std::sin(spitch * d2r),
+                      -std::cos(syaw * d2r) * std::cos(spitch * d2r));
+    config.lights[0].shadow = 0;
+    config.shadowCount = 1;
+    const Deki::Vector3 centre = (mesh.boundsMin + mesh.boundsMax) * 0.5f;
+    const float radius = (mesh.boundsMax - mesh.boundsMin).Length() * 0.5f;
+    const Deki::Vector3 dir = config.lights[0].direction;
+    config.shadows[0].viewProjection = Mul(Ortho(-radius, radius, -radius, radius, radius * 0.5f, radius * 3.5f),
+                                           LookAt(centre - dir * (radius * 2.0f), centre, Deki::Vector3(0, 1, 0)));
+    config.shadows[0].resolution = 2048;
+    config.shadows[0].bias = 0.002f;
+    if (const char* b = std::getenv("DEKI_TEST_BIAS"))
+    {
+        config.shadows[0].bias = static_cast<float>(std::atof(b));
+    }
+
+    std::vector<Material3D> materials(asset.Materials(), asset.Materials() + asset.MaterialCount());
+    for (Material3D& m : materials)
+    {
+        m.shading = ShadingModel::VertexLit;
+        m.doubleSided = true;
+    }
+    for (bool withShadows : { true, false })
+    {
+        RasterConfig c = config;
+        if (!withShadows)
+        {
+            c.shadowCount = 0;
+            c.lights[0].shadow = -1;
+        }
+        std::vector<uint8_t> fb(Deki::FrameBufferBytes(Deki::ColorFormat::ARGB8888, w, h), 0);
+        gpu.backend->BeginFrame(fb.data(), w, h, Deki::ColorFormat::ARGB8888, c);
+        if (withShadows)
+        {
+            gpu.backend->DrawShadowCaster(0, mesh, materials.data(), static_cast<uint16_t>(materials.size()),
+                                          Deki::Mat4::Identity());
+        }
+        gpu.backend->DrawMesh(mesh, materials.data(), static_cast<uint16_t>(materials.size()), viewProjection,
+                              Deki::Mat4::Identity(), Deki::Mat4::Identity());
+        gpu.backend->EndFrame();
+        const std::string name = std::string(out) + (withShadows ? "/shadows.ppm" : "/plain.ppm");
+        FILE* ppm = std::fopen(name.c_str(), "wb");
+        ASSERT_NE(ppm, nullptr);
+        std::fprintf(ppm, "P6 %d %d 255\n", w, h);
+        for (int i = 0; i < w * h; ++i)
+        {
+            int rgb[3];
+            uint8_t r, g, b, a;
+            DekiPixel::ReadDstPixel<Deki::ColorFormat::ARGB8888>(fb.data(), static_cast<size_t>(i), r, g, b, a);
+            rgb[0] = r;
+            rgb[1] = g;
+            rgb[2] = b;
+            for (int k = 0; k < 3; ++k)
+            {
+                std::fputc(rgb[k], ppm);
+            }
+        }
+        std::fclose(ppm);
+    }
+}

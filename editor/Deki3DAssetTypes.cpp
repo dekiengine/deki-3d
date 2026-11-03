@@ -11,7 +11,9 @@
 
 #ifdef DEKI_EDITOR
 
+#include "ModelSettings.h"
 #include "ObjImporter.h"
+#include "../MeshAsset.h"
 
 #include <deki-editor/AssetPipeline.h>
 #include <deki-editor/AssetTypeRegistry.h>
@@ -23,17 +25,27 @@
 #include <deki-editor/TextureImporter.h>
 #include <deki-editor/TextureFormatResolve.h>
 #include <deki-editor/TextureSettings.h>
+#include <deki-editor/build/PlatformConfig.h>
 #include <deki/LogSystem.h>
 #include <deki/assets/AssetManager.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <map>
 #include <string>
 #include <vector>
 
 namespace fs = std::filesystem;
+
+namespace Deki3D
+{
+void RegisterModelInspector();  // ModelInspector.cpp
+}
 
 namespace DekiEditor
 {
@@ -50,27 +62,44 @@ public:
 
 REGISTER_EDITOR(MeshAssetType)
 
-/// A model's texture settings: its sidecar (<model.obj>.data,
-/// settings.texture, the same shape as an image's), or none.
-TextureSettings ReadModelTextureSettings(const std::string& absolutePath)
+/// The name a target is shown by: its platform's, or "the editor".
+std::string TargetName(const AssetExportTarget& target)
 {
-    std::ifstream dataFile(absolutePath + ".data");
-    if (!dataFile.is_open())
+    if (target.platformId.empty())
     {
-        return {};
+        return "the editor";
     }
-    try
+    const PlatformConfig* platform = PlatformRegistry::Instance().GetPlatform(target.platformId);
+    return platform && !platform->displayName.empty() ? platform->displayName : target.platformId;
+}
+
+/// Whether `target` draws meshes on a GPU: a platform with OpenGL, or the
+/// editor's own desktop when no platform is chosen.
+bool TargetHasGpu(const AssetExportTarget& target)
+{
+    if (target.platformId.empty())
     {
-        const nlohmann::json data = nlohmann::json::parse(dataFile);
-        if (data.contains("settings") && data["settings"].contains("texture"))
-        {
-            return ReadTextureSettings(data["settings"]["texture"]);
-        }
+        return true;
     }
-    catch (const nlohmann::json::exception&)
+    const PlatformConfig* platform = PlatformRegistry::Instance().GetPlatform(target.platformId);
+    return platform && platform->Capabilities().count("opengl") != 0;
+}
+
+/// The Max Size a model's textures are stored at on `target`: the target's
+/// own, else the model's, else none on a GPU and kDefaultMeshTextureSize on a
+/// board. 0 is no cap.
+int MeshTextureCap(const TextureSettings& settings, const AssetExportTarget& target)
+{
+    auto it = settings.targets.find(target.platformId);
+    if (it != settings.targets.end() && it->second.maxSize >= 0)
     {
+        return it->second.maxSize;
     }
-    return {};
+    if (settings.maxSize > 0)
+    {
+        return settings.maxSize;
+    }
+    return TargetHasGpu(target) ? 0 : Deki3D::kDefaultMeshTextureSize;
 }
 
 /// The format a model's texture is stored in for `target`.
@@ -82,14 +111,59 @@ Deki3D::TexelFormat ChooseTexelFormat(const TextureSettings& settings, const Ass
     return static_cast<Deki3D::TexelFormat>(static_cast<uint8_t>(f));
 }
 
-/// Compiles one .obj as `target` stores it and writes it to `outPath`.
-/// Failure is logged and writes nothing.
-bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& target, const std::string& outPath)
+std::string Megabytes(uint64_t bytes)
+{
+    char text[32];
+    std::snprintf(text, sizeof(text), "%.1f MB", static_cast<double>(bytes) / (1024.0 * 1024.0));
+    return text;
+}
+
+/// Whether a compiled mesh fits where `target` loads it: in its external
+/// memory, which is where a mesh's vertices, indices and textures go. False,
+/// with why, when it cannot. A desktop or other target with an operating
+/// system is not checked; a board that names no external memory is said to
+/// be unchecked.
+bool FitsTarget(const std::vector<uint8_t>& blob, const AssetExportTarget& target, const std::string& name,
+                std::string& why, std::vector<std::string>& warnings)
+{
+    const PlatformConfig* platform =
+        target.platformId.empty() ? nullptr : PlatformRegistry::Instance().GetPlatform(target.platformId);
+    if (!platform || platform->Capabilities().count("desktop-os") != 0 || blob.size() < sizeof(Deki3D::MeshFileHeader))
+    {
+        return true;
+    }
+    Deki3D::MeshFileHeader header;
+    std::memcpy(&header, blob.data(), sizeof(header));
+    const uint64_t indexBytes = (header.flags & Deki3D::MeshFileIndex32) ? 4 : 2;
+    const uint64_t needs = static_cast<uint64_t>(header.vertexCount) * header.vertexStride +
+                           static_cast<uint64_t>(header.indexCount) * indexBytes + header.texturePixelBytes;
+    const std::string board = TargetName(target);
+    if (platform->externalMemorySize == 0)
+    {
+        warnings.push_back(name + " takes " + Megabytes(needs) + "; " + board +
+                           " does not say how much memory it has, so the build cannot check that it fits");
+        return true;
+    }
+    if (needs > platform->externalMemorySize)
+    {
+        why = name + " needs " + Megabytes(needs) + " on " + board + ", which has " +
+              Megabytes(platform->externalMemorySize) + " of external memory for it. Lower its Max Size or " +
+              "Detail for " + board + " in the model's Targets, or leave it out of the scenes this platform builds.";
+        return false;
+    }
+    return true;
+}
+
+/// Compiles one .obj as `target` stores it and writes it to `outPath`. False,
+/// with why, when it cannot; what the target does without that it still
+/// allows goes in `warnings`.
+bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& target, const std::string& outPath,
+                    const std::string& name, bool mustFit, std::string& why, std::vector<std::string>& warnings)
 {
     std::ifstream in(absolutePath, std::ios::binary);
     if (!in)
     {
-        DEKI_LOG_WARNING("Deki3D: cannot read '%s'", absolutePath.c_str());
+        why = name + ": cannot be read";
         return false;
     }
     std::ostringstream text;
@@ -111,16 +185,49 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
         rgba = std::move(decoded.rgba);
         return true;
     };
-    const TextureSettings settings = ReadModelTextureSettings(absolutePath);
-    auto chooseFormat = [&](bool hasAlpha) { return ChooseTexelFormat(settings, target, hasAlpha); };
+    const Deki3D::ModelSettings settings = Deki3D::ReadModelSettings(absolutePath);
+    Deki3D::MeshCompileReport report;
+    Deki3D::MeshCompileOptions options;
+    options.chooseFormat = [&](bool hasAlpha) { return ChooseTexelFormat(settings.texture, target, hasAlpha); };
+    options.maxTextureSize = MeshTextureCap(settings.texture, target);
+    options.smoothTextures = settings.SmoothFor(target.platformId);
+    options.detail = settings.DetailFor(target.platformId);
+    options.report = &report;
 
     std::vector<uint8_t> blob;
     std::string error;
-    if (!Deki3D::CompileObjToMesh(text.str(), baseDirectory, decodeImage, blob, error, chooseFormat,
-                                  settings.MaxSizeFor(target.platformId)))
+    if (!Deki3D::CompileObjToMesh(text.str(), baseDirectory, decodeImage, blob, error, options))
     {
-        DEKI_LOG_WARNING("Deki3D: '%s' did not compile: %s", absolutePath.c_str(), error.c_str());
+        why = name + " did not compile: " + error;
         return false;
+    }
+    const std::string where = TargetName(target);
+    if (options.smoothTextures && !TargetHasGpu(target))
+    {
+        warnings.push_back(name + ": Smooth filtering needs a GPU; " + where + " draws its textures unfiltered");
+    }
+    // A reduction that stops well above what Detail asks says so.
+    const double asked = static_cast<double>(report.trianglesIn) * options.detail;
+    if (options.detail < 1.0f && report.trianglesOut > asked * 1.1 + 1.0)
+    {
+        char line[256];
+        std::snprintf(line, sizeof(line),
+                      ": Detail %d%% on %s asks for %u of its %u triangles; it keeps %u (%d%%), since its seams, open "
+                      "edges and material borders stay where they are",
+                      static_cast<int>(options.detail * 100.0f + 0.5f), where.c_str(),
+                      static_cast<unsigned>(asked + 0.5), report.trianglesIn, report.trianglesOut,
+                      static_cast<int>(100.0 * report.trianglesOut / std::max(1u, report.trianglesIn) + 0.5));
+        warnings.push_back(name + line);
+    }
+    std::string fit;
+    if (!FitsTarget(blob, target, name, fit, warnings))
+    {
+        if (mustFit)
+        {
+            why = fit;
+            return false;
+        }
+        warnings.push_back(fit);
     }
 
     std::error_code ec;
@@ -128,7 +235,7 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
     std::ofstream out(outPath, std::ios::binary | std::ios::trunc);
     if (!out)
     {
-        DEKI_LOG_WARNING("Deki3D: cannot write the compiled mesh to '%s'", outPath.c_str());
+        why = name + ": cannot write the compiled mesh to " + outPath;
         return false;
     }
     out.write(reinterpret_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.size()));
@@ -145,8 +252,19 @@ void HandleObjSync(const std::string& absolutePath, const std::string& guid, con
     const AssetPipeline* pipeline = AssetPipeline::Instance();
     const AssetExportTarget target = pipeline ? pipeline->GetEditorTarget() : AssetExportTarget{};
     const fs::path cachePath = fs::path(GetCacheDirectory(projectPath)) / guid;
-    if (!CompileObjFile(absolutePath, target, cachePath.string()))
+    // The editor shows what the active platform gets, even a mesh too big for
+    // it, which is said here and stops that platform's build.
+    const std::string name = fs::path(absolutePath).filename().string();
+    std::string why;
+    std::vector<std::string> warnings;
+    const bool compiled = CompileObjFile(absolutePath, target, cachePath.string(), name, false, why, warnings);
+    for (const std::string& warning : warnings)
     {
+        DEKI_LOG_WARNING("Deki3D: %s", warning.c_str());
+    }
+    if (!compiled)
+    {
+        DEKI_LOG_WARNING("Deki3D: %s", why.c_str());
         return;
     }
 
@@ -196,13 +314,19 @@ struct Deki3DAssetRegistrar
     Deki3DAssetRegistrar()
     {
         AssetTypeRegistry::Instance().RegisterCategory(".obj", AssetCategory::Data);
+        Deki3D::RegisterModelInspector();
 
         AssetPipeline::OnStarted(
             [](AssetPipeline* pipeline)
             {
                 pipeline->RegisterSyncHandler(".obj", HandleObjSync);
-                pipeline->RegisterExportEncoder(".obj", [](const AssetExportContext& ctx)
-                                                { return CompileObjFile(ctx.absolutePath, ctx.target, ctx.outPath); });
+                pipeline->RegisterExportEncoder(".obj",
+                                                [](const AssetExportContext& ctx)
+                                                {
+                                                    return CompileObjFile(ctx.absolutePath, ctx.target, ctx.outPath,
+                                                                          ctx.relativePath, true, *ctx.error,
+                                                                          *ctx.warnings);
+                                                });
             });
 
         AssetPipeline::OnImportComplete([](AssetPipeline* pipeline)

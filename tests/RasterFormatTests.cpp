@@ -290,13 +290,13 @@ TEST(MeshFile, ImporterStoresTheChosenFormat)
     {
         std::vector<uint8_t> blob;
         std::string error;
-        ASSERT_TRUE(CompileObjToMesh(obj, dir, decode, blob, error,
-                                     [&](bool hasAlpha)
-                                     {
-                                         EXPECT_TRUE(hasAlpha);
-                                         return format;
-                                     }))
-            << error;
+        MeshCompileOptions options;
+        options.chooseFormat = [&](bool hasAlpha)
+        {
+            EXPECT_TRUE(hasAlpha);
+            return format;
+        };
+        ASSERT_TRUE(CompileObjToMesh(obj, dir, decode, blob, error, options)) << error;
         MeshAsset mesh;
         ASSERT_TRUE(mesh.LoadFromMemory(blob.data(), blob.size()));
         const Material3D& m = mesh.Materials()[0];

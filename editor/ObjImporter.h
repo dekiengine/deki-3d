@@ -29,30 +29,57 @@ namespace Deki3D
 ///
 /// Textures: `mtllib` is read, and each material's `map_Kd` becomes its
 /// texture, decoded once per distinct image through the caller's
-/// `decodeImage`. Each is scaled to powers of two (the sampler masks rather
-/// than divides) and capped, then stored in the blob in the format
-/// `chooseFormat` picks (RGB565 when it is empty). A texture with transparent
-/// pixels turns its material's alpha test on when its format keeps alpha. An
-/// empty `decodeImage` skips textures, which lets the tests run without the
-/// editor's image loading.
+/// `decodeImage`; a `map_d` beside it becomes that texture's alpha. Each is
+/// scaled to powers of two (the sampler masks rather than divides) and
+/// capped, then stored in the blob in the format `chooseFormat` picks (RGB565
+/// when it is empty). A texture with transparent pixels turns its material's
+/// alpha test on when its format keeps alpha. An empty `decodeImage` skips
+/// textures, which lets the tests run without the editor's image loading.
 ///
-/// Returns false with `error` set on malformed input, or when the mesh needs
-/// more than 65535 vertices, which the 16-bit index buffer cannot address.
+/// Indices are 16-bit when the mesh has at most 65535 vertices, and 32-bit
+/// past that, so a mesh of any size compiles. Whether a target can hold it is
+/// the caller's to say.
+///
+/// Returns false with `error` set on malformed input.
 using ImageDecoder =
     std::function<bool(const std::string& absolutePath, int& outWidth, int& outHeight, std::vector<uint8_t>& outRgba)>;
 
-/// A mesh texture's size cap when its model sets no Max Size. At RGB565 a
-/// 256 x 256 texture is 128 KB, already more than a small board wants resident.
+/// A mesh texture's size cap on a target without a GPU, when its model sets no
+/// Max Size there. At RGB565 a 256 x 256 texture is 128 KB, already more than
+/// a small board wants resident. A GPU target has no default cap.
 constexpr int kDefaultMeshTextureSize = 256;
 
 /// The format to store a texture in, given whether it has transparent pixels.
 using TextureFormatChooser = std::function<TexelFormat(bool hasAlpha)>;
 
-/// `maxTextureSize` caps the texture's larger side (its Max Size); the stored
-/// sides are the largest powers of two within it.
+/// What a compile did, for the editor to say.
+struct MeshCompileReport
+{
+    uint32_t trianglesIn = 0;   // in the model
+    uint32_t trianglesOut = 0;  // in the compiled mesh
+    uint32_t verticesOut = 0;
+};
+
+/// How one target stores the mesh. The editor fills it from the model's
+/// settings for that target.
+struct MeshCompileOptions
+{
+    /// The format each texture is stored in. Empty: RGB565.
+    TextureFormatChooser chooseFormat;
+    /// The largest side a texture is stored at (its Max Size): the stored
+    /// sides are the largest powers of two within it. 0: no cap.
+    int maxTextureSize = kDefaultMeshTextureSize;
+    /// Textures filter smoothly on the GPU (Texture3D::smooth).
+    bool smoothTextures = false;
+    /// The share of the model's triangles to keep, 1 for all. Below 1 the
+    /// mesh is reduced (SimplifyMesh), which may stop above it.
+    float detail = 1.0f;
+    /// Filled in when set.
+    MeshCompileReport* report = nullptr;
+};
+
 bool CompileObjToMesh(const std::string& objText, const std::string& baseDirectory, const ImageDecoder& decodeImage,
-                      std::vector<uint8_t>& outBlob, std::string& error, const TextureFormatChooser& chooseFormat = {},
-                      int maxTextureSize = kDefaultMeshTextureSize);
+                      std::vector<uint8_t>& outBlob, std::string& error, const MeshCompileOptions& options = {});
 
 }  // namespace Deki3D
 

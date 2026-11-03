@@ -530,7 +530,7 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
 
             for (int k = 0; k < 3; ++k)
             {
-                const void* vtx = mesh.VertexAt(mesh.indices[i + k]);
+                const void* vtx = mesh.VertexAt(mesh.IndexAt(i + k));
                 objPos[k] = ReadVec3(vtx, layout.positionOffset);
 
                 float w = 1.0f;

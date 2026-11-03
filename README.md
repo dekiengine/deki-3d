@@ -57,14 +57,40 @@ one and a Directional one, that light it exactly as before.
 
 Drop a `.obj` into the project. The editor compiles it to a flat binary in the
 asset cache and a `MeshComponent` can then point at it. The `mtllib` it names
-is read too, and the first `map_Kd` becomes the mesh's texture, stored inside
-the compiled mesh as RGB565 at a power-of-two size. Faces may be polygons,
-indices may be negative, `usemtl` starts a submesh, and normals are generated
-when the file has none.
+is read too: each material's `map_Kd` becomes its texture, and a `map_d`
+beside it the texture's cutout. Faces may be polygons, indices may be
+negative, `usemtl` starts a submesh, paths may use either slash, and normals
+are generated when the file has none.
 
-Two limits worth knowing: 65535 vertices per mesh, because the index buffer is
-16-bit, and one texture per mesh, so a model with several materials draws them
-all with the first.
+A mesh of any size compiles. Its indices are 16-bit while it has at most
+65535 vertices and 32-bit past that, so only a big mesh pays for the larger;
+both renderers draw either.
+
+### Each platform gets its own build
+
+The model keeps everything; each platform's build of it keeps what that
+platform can use. The Model inspector shows what the editor's build holds,
+then the Targets cards: Default for every platform, and one per platform the
+project has, which may differ from it:
+
+- **Format**: the textures' format. Automatic follows the platform's screen.
+- **Max Size**: the textures' largest side. Automatic is no limit where the
+  platform has a GPU and 256 on a board.
+- **Filter**: Point, or Smooth: blended between texels, from mipmaps where it
+  shrinks, on the GPU. A board draws Point, and its build says so.
+- **Detail**: the share of the triangles kept (All, 75% down to 1%). The
+  mesh is reduced by collapsing the edges that change its shape least; its
+  seams, open edges and material borders stay where they are, so a model of
+  many pieces may keep more than asked, and the build says how many.
+
+They are kept in the model's `.data` (`settings.texture` and
+`settings.model`). The editor's own build follows the active platform, so the
+viewport shows what that platform gets.
+
+A board build checks that each model fits: a mesh needs its vertices,
+indices and textures in the board's external memory, and one that needs more
+than the board has stops the build, naming the model, what it needs and what
+the board has. A board that declares no memory is said to be unchecked.
 
 ## Seeing it in the editor
 

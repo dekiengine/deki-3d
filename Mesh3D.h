@@ -108,6 +108,10 @@ struct Texture3D
     // Holes, for a material with alphaTest: palette index 0, RGB565 magenta,
     // or alpha below half for the formats that carry alpha.
     bool hasAlpha = false;
+    // Filtered on the GPU: blended between texels, and from smaller copies
+    // (mipmaps) where it shrinks. Off, or on the software rasteriser, each
+    // pixel takes its nearest texel.
+    bool smooth = false;
     // Changes whenever the data behind the pointers does (NextRevision()), so
     // a GPU backend can keep its upload. 0: not tracked, uploaded each use.
     uint32_t revision = 0;
@@ -147,8 +151,12 @@ struct Mesh3D
     uint32_t vertexCount = 0;
     VertexLayout layout;
 
-    const uint16_t* indices = nullptr;  // 16-bit: 65535 vertices per mesh
+    // 16-bit (indexBytes 2) or 32-bit (4) indices. A mesh is stored with the
+    // smaller whenever its vertices fit, so only one over 65535 vertices
+    // pays for the larger.
+    const void* indices = nullptr;
     uint32_t indexCount = 0;
+    uint8_t indexBytes = 2;
 
     const Submesh3D* submeshes = nullptr;
     uint16_t submeshCount = 0;
@@ -164,6 +172,12 @@ struct Mesh3D
     const void* VertexAt(uint32_t index) const
     {
         return static_cast<const uint8_t*>(vertices) + static_cast<size_t>(index) * layout.stride;
+    }
+
+    /// The i-th index, whichever width the mesh is stored at.
+    uint32_t IndexAt(uint32_t i) const
+    {
+        return indexBytes == 4 ? static_cast<const uint32_t*>(indices)[i] : static_cast<const uint16_t*>(indices)[i];
     }
 };
 

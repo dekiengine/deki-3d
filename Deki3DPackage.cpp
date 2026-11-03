@@ -77,8 +77,9 @@ extern "C"
         Deki3DEnsureRegistered();
     }
 
-    // No ImGui context export: deki-3d draws no editor UI of its own. The
-    // editor draws its component inspectors through reflection.
+    // No ImGui context export: deki-3d calls no ImGui itself. The editor
+    // draws its component inspectors through reflection, and the Model
+    // inspector draws through EditorUI and the editor's target cards.
 
     DEKI_3D_API const char* Deki3DGetName(void)
     {
