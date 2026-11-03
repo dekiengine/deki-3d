@@ -21,21 +21,21 @@ namespace Deki3D
 {
 
 const char* const kMeshShaderHead = R"(
-float4x4 uMvp;
-float4x4 uNormalMatrix;  // rotation only, as in the software rasteriser
-float3 uLightDir;        // normalised, the way the light travels
-float uAmbient;
-int uShading;            // ShadingModel: 0 unlit, 1 vertex lit, 2 flat
-int uHasNormals;
-int uAffine;             // texturing without perspective correction
-int uSnap;               // projected vertices on whole pixels
-float2 uViewport;
-float uTime;             // seconds, for a shader that moves
-float3 uParams;          // the component's shader parameters
-float4 uColor;           // the component's shader colour
-int uTexMode;            // 0 none, 1 colour texels, 2 coverage only (ALPHA8)
-int uAlphaTest;          // discard the texels the texture calls holes
-float4 uTint;
+uniform float4x4 uMvp;
+uniform float4x4 uNormalMatrix;  // rotation only, as in the software rasteriser
+uniform float3 uLightDir;        // normalised, the way the light travels
+uniform float uAmbient;
+uniform int uShading;            // ShadingModel: 0 unlit, 1 vertex lit, 2 flat
+uniform int uHasNormals;
+uniform int uAffine;             // texturing without perspective correction
+uniform int uSnap;               // projected vertices on whole pixels
+uniform float2 uViewport;
+uniform float uTime;             // seconds, for a shader that moves
+uniform float3 uParams;          // the component's shader parameters
+uniform float4 uColor;           // the component's shader colour
+uniform int uTexMode;            // 0 none, 1 colour texels, 2 coverage only (ALPHA8)
+uniform int uAlphaTest;          // discard the texels the texture calls holes
+uniform float4 uTint;
 
 Texture2D uTexture;
 SamplerState uTextureSampler;

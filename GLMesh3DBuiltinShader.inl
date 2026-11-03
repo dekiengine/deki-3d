@@ -4,7 +4,7 @@
 
 const char* const kBuiltinMeshVertexES = R"deki(#version 300 es
 
-struct type_Globals
+struct GlobalParams_std140
 {
     mat4 uMvp;
     mat4 uNormalMatrix;
@@ -23,12 +23,12 @@ struct type_Globals
     vec4 uTint;
 };
 
-uniform type_Globals u;
+uniform GlobalParams_std140 u;
 
-layout(location = 0) in vec3 in_var_POSITION;
-layout(location = 1) in vec3 in_var_NORMAL;
-layout(location = 2) in vec2 in_var_TEXCOORD0;
-layout(location = 3) in vec4 in_var_COLOR0;
+layout(location = 0) in vec3 v_position;
+layout(location = 3) in vec4 v_color;
+layout(location = 1) in vec3 v_normal;
+layout(location = 2) in vec2 v_uv;
 out vec4 vary0;
 out float vary1;
 out vec2 vary2;
@@ -38,74 +38,69 @@ out vec3 vary5;
 
 void main()
 {
-    vec4 _66 = vec4(in_var_POSITION, 1.0) * u.uMvp;
-    bool _74;
+    vec4 clip = vec4(v_position, 1.0) * u.uMvp;
+    bool _11;
     if (u.uSnap != 0)
     {
-        _74 = _66.w > 0.0;
+        _11 = clip.w > 0.0;
     }
     else
     {
-        _74 = false;
+        _11 = false;
     }
-    vec4 _93;
-    if (_74)
+    if (_11)
     {
-        float _78 = _66.w;
-        vec2 _91 = (((floor(((((_66.xy / vec2(_78)) * 0.5) + vec2(0.5)) * u.uViewport) + vec2(0.5)) / u.uViewport) * 2.0) - vec2(1.0)) * _78;
-        _93 = vec4(_91.x, _91.y, _66.z, _66.w);
+        vec4 _70 = clip;
+        vec2 _97 = (((floor(((((_70.xy / vec2(_70.w)) * 0.5) + vec2(0.5)) * u.uViewport) + vec2(0.5)) / u.uViewport) * 2.0) - vec2(1.0)) * _70.w;
+        vec4 _255 = _70;
+        _255.x = _97.x;
+        _255.y = _97.y;
+        clip = _255;
     }
-    else
-    {
-        _93 = _66;
-    }
-    mat3 _102 = mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
-    vec3 _103 = in_var_NORMAL * _102;
-    bool _112;
+    vec4 _237 = clip;
+    vec4 _238 = v_color;
+    vec3 _243 = v_normal * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
+    float _239 = 1.0;
     if (u.uShading == 1)
     {
-        _112 = u.uHasNormals != 0;
+        _11 = u.uHasNormals != 0;
     }
     else
     {
-        _112 = false;
+        _11 = false;
     }
-    float _132;
-    if (_112)
+    if (_11)
     {
-        float _115 = length(_103);
-        vec3 _121;
-        if (_115 > 0.0)
+        float _150 = length(_243);
+        vec3 n;
+        if (_150 > 0.0)
         {
-            _121 = _103 / vec3(_115);
+            n = _243 / vec3(_150);
         }
         else
         {
-            _121 = _103;
+            n = _243;
         }
-        float _127 = -dot(_121, u.uLightDir);
-        _132 = u.uAmbient + ((isnan(0.0) ? _127 : (isnan(_127) ? 0.0 : max(_127, 0.0))) * (1.0 - u.uAmbient));
+        float _164 = -dot(n, u.uLightDir);
+        _239 = u.uAmbient + ((isnan(0.0) ? _164 : (isnan(_164) ? 0.0 : max(_164, 0.0))) * (1.0 - u.uAmbient));
     }
-    else
-    {
-        _132 = 1.0;
-    }
-    float _141;
+    vec3 _242 = v_position * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
+    float w;
     if (u.uAffine != 0)
     {
-        _141 = _93.w;
+        w = clip.w;
     }
     else
     {
-        _141 = 1.0;
+        w = 1.0;
     }
-    gl_Position = _93;
-    vary0 = in_var_COLOR0;
-    vary1 = _132;
-    vary2 = in_var_TEXCOORD0 * _141;
-    vary3 = _141;
-    vary4 = in_var_POSITION * _102;
-    vary5 = _103;
+    gl_Position = _237;
+    vary0 = _238;
+    vary1 = _239;
+    vary2 = v_uv * w;
+    vary3 = w;
+    vary4 = _242;
+    vary5 = _243;
 }
 
 )deki";
@@ -114,7 +109,7 @@ const char* const kBuiltinMeshFragmentES = R"deki(#version 300 es
 precision highp float;
 precision highp int;
 
-struct type_Globals
+struct GlobalParams_std140
 {
     mat4 uMvp;
     mat4 uNormalMatrix;
@@ -133,104 +128,95 @@ struct type_Globals
     vec4 uTint;
 };
 
-uniform type_Globals u;
+uniform GlobalParams_std140 u;
 
 uniform highp sampler2D uTexture;
 
 in vec4 vary0;
-in float vary1;
 in vec2 vary2;
 in float vary3;
 in vec3 vary4;
+in float vary1;
 layout(location = 0) out vec4 fragColor;
 
 void main()
 {
-    vec4 _61 = vary0 * u.uTint;
-    vec4 _82;
-    float _83;
+    vec4 _53 = vary0 * u.uTint;
+    vec4 colour;
+    float coverage;
     if (u.uTexMode != 0)
     {
-        vec4 _72 = texture(uTexture, vary2 / vec2(vary3));
-        vec4 _81;
+        vec4 _sampled = texture(uTexture, vary2 / vec2(vary3));
         if (u.uTexMode == 1)
         {
-            _81 = vec4(_72.xyz, 1.0);
+            colour = vec4(_sampled.xyz, 1.0);
         }
         else
         {
-            _81 = _61;
+            colour = _53;
         }
-        _82 = _81;
-        _83 = _72.w;
+        coverage = _sampled.w;
     }
     else
     {
-        _82 = _61;
-        _83 = 1.0;
+        coverage = 1.0;
+        colour = _53;
     }
-    bool _90;
+    bool _13;
     if (u.uAlphaTest != 0)
     {
-        _90 = _83 < 0.5;
+        _13 = coverage < 0.5;
     }
     else
     {
-        _90 = false;
+        _13 = false;
     }
-    if (_90)
+    if (_13)
     {
         discard;
     }
-    vec3 _93 = dFdx(vary4);
-    vec3 _94 = dFdy(vary4);
-    vec3 _95 = cross(_93, _94);
-    float _96 = length(_95);
-    vec3 _103;
-    if (_96 > 0.0)
+    vec3 _197 = dFdx(vary4);
+    vec3 _200 = dFdy(vary4);
+    vec3 _131 = cross(_197, _200);
+    float _133 = length(_131);
+    vec3 face;
+    if (_133 > 0.0)
     {
-        _103 = _95 / vec3(_96);
+        face = _131 / vec3(_133);
     }
     else
     {
-        _103 = vec3(0.0, 0.0, 1.0);
+        face = vec3(0.0, 0.0, 1.0);
     }
-    vec3 _108;
     if (!gl_FrontFacing)
     {
-        _108 = -_103;
+        face = -face;
     }
-    else
-    {
-        _108 = _103;
-    }
-    float _129;
+    float light;
     if (u.uShading == 0)
     {
-        _129 = 1.0;
+        light = 1.0;
     }
     else
     {
-        float _128;
         if (u.uShading == 2)
         {
-            float _123 = -dot(_108, u.uLightDir);
-            _128 = u.uAmbient + ((isnan(0.0) ? _123 : (isnan(_123) ? 0.0 : max(_123, 0.0))) * (1.0 - u.uAmbient));
+            float _171 = -dot(face, u.uLightDir);
+            light = u.uAmbient + ((isnan(0.0) ? _171 : (isnan(_171) ? 0.0 : max(_171, 0.0))) * (1.0 - u.uAmbient));
         }
         else
         {
-            _128 = vary1;
+            light = vary1;
         }
-        _129 = _128;
     }
-    fragColor = vec4(_82.xyz * _129, 1.0);
+    fragColor = vec4(colour.xyz * light, 1.0);
 }
 
 )deki";
 
 const char* const kBuiltinMeshVertexGL = R"deki(#version 330
 
-struct type_Globals
+struct GlobalParams_std140
 {
     mat4 uMvp;
     mat4 uNormalMatrix;
@@ -249,12 +235,12 @@ struct type_Globals
     vec4 uTint;
 };
 
-uniform type_Globals u;
+uniform GlobalParams_std140 u;
 
-layout(location = 0) in vec3 in_var_POSITION;
-layout(location = 1) in vec3 in_var_NORMAL;
-layout(location = 2) in vec2 in_var_TEXCOORD0;
-layout(location = 3) in vec4 in_var_COLOR0;
+layout(location = 0) in vec3 v_position;
+layout(location = 3) in vec4 v_color;
+layout(location = 1) in vec3 v_normal;
+layout(location = 2) in vec2 v_uv;
 out vec4 vary0;
 out float vary1;
 out vec2 vary2;
@@ -264,81 +250,76 @@ out vec3 vary5;
 
 void main()
 {
-    vec4 _66 = vec4(in_var_POSITION, 1.0) * u.uMvp;
-    bool _74;
+    vec4 clip = vec4(v_position, 1.0) * u.uMvp;
+    bool _11;
     if (u.uSnap != 0)
     {
-        _74 = _66.w > 0.0;
+        _11 = clip.w > 0.0;
     }
     else
     {
-        _74 = false;
+        _11 = false;
     }
-    vec4 _93;
-    if (_74)
+    if (_11)
     {
-        float _78 = _66.w;
-        vec2 _91 = (((floor(((((_66.xy / vec2(_78)) * 0.5) + vec2(0.5)) * u.uViewport) + vec2(0.5)) / u.uViewport) * 2.0) - vec2(1.0)) * _78;
-        _93 = vec4(_91.x, _91.y, _66.z, _66.w);
+        vec4 _70 = clip;
+        vec2 _97 = (((floor(((((_70.xy / vec2(_70.w)) * 0.5) + vec2(0.5)) * u.uViewport) + vec2(0.5)) / u.uViewport) * 2.0) - vec2(1.0)) * _70.w;
+        vec4 _255 = _70;
+        _255.x = _97.x;
+        _255.y = _97.y;
+        clip = _255;
     }
-    else
-    {
-        _93 = _66;
-    }
-    mat3 _102 = mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
-    vec3 _103 = in_var_NORMAL * _102;
-    bool _112;
+    vec4 _237 = clip;
+    vec4 _238 = v_color;
+    vec3 _243 = v_normal * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
+    float _239 = 1.0;
     if (u.uShading == 1)
     {
-        _112 = u.uHasNormals != 0;
+        _11 = u.uHasNormals != 0;
     }
     else
     {
-        _112 = false;
+        _11 = false;
     }
-    float _132;
-    if (_112)
+    if (_11)
     {
-        float _115 = length(_103);
-        vec3 _121;
-        if (_115 > 0.0)
+        float _150 = length(_243);
+        vec3 n;
+        if (_150 > 0.0)
         {
-            _121 = _103 / vec3(_115);
+            n = _243 / vec3(_150);
         }
         else
         {
-            _121 = _103;
+            n = _243;
         }
-        float _127 = -dot(_121, u.uLightDir);
-        _132 = u.uAmbient + ((isnan(0.0) ? _127 : (isnan(_127) ? 0.0 : max(_127, 0.0))) * (1.0 - u.uAmbient));
+        float _164 = -dot(n, u.uLightDir);
+        _239 = u.uAmbient + ((isnan(0.0) ? _164 : (isnan(_164) ? 0.0 : max(_164, 0.0))) * (1.0 - u.uAmbient));
     }
-    else
-    {
-        _132 = 1.0;
-    }
-    float _141;
+    vec3 _242 = v_position * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
+    float w;
     if (u.uAffine != 0)
     {
-        _141 = _93.w;
+        w = clip.w;
     }
     else
     {
-        _141 = 1.0;
+        w = 1.0;
     }
-    gl_Position = _93;
-    vary0 = in_var_COLOR0;
-    vary1 = _132;
-    vary2 = in_var_TEXCOORD0 * _141;
-    vary3 = _141;
-    vary4 = in_var_POSITION * _102;
-    vary5 = _103;
+    gl_Position = _237;
+    vary0 = _238;
+    vary1 = _239;
+    vary2 = v_uv * w;
+    vary3 = w;
+    vary4 = _242;
+    vary5 = _243;
 }
 
 )deki";
 
 const char* const kBuiltinMeshFragmentGL = R"deki(#version 330
 
-struct type_Globals
+struct GlobalParams_std140
 {
     mat4 uMvp;
     mat4 uNormalMatrix;
@@ -357,97 +338,88 @@ struct type_Globals
     vec4 uTint;
 };
 
-uniform type_Globals u;
+uniform GlobalParams_std140 u;
 
 uniform sampler2D uTexture;
 
 in vec4 vary0;
-in float vary1;
 in vec2 vary2;
 in float vary3;
 in vec3 vary4;
+in float vary1;
 layout(location = 0) out vec4 fragColor;
 
 void main()
 {
-    vec4 _61 = vary0 * u.uTint;
-    vec4 _82;
-    float _83;
+    vec4 _53 = vary0 * u.uTint;
+    vec4 colour;
+    float coverage;
     if (u.uTexMode != 0)
     {
-        vec4 _72 = texture(uTexture, vary2 / vec2(vary3));
-        vec4 _81;
+        vec4 _sampled = texture(uTexture, vary2 / vec2(vary3));
         if (u.uTexMode == 1)
         {
-            _81 = vec4(_72.xyz, 1.0);
+            colour = vec4(_sampled.xyz, 1.0);
         }
         else
         {
-            _81 = _61;
+            colour = _53;
         }
-        _82 = _81;
-        _83 = _72.w;
+        coverage = _sampled.w;
     }
     else
     {
-        _82 = _61;
-        _83 = 1.0;
+        coverage = 1.0;
+        colour = _53;
     }
-    bool _90;
+    bool _13;
     if (u.uAlphaTest != 0)
     {
-        _90 = _83 < 0.5;
+        _13 = coverage < 0.5;
     }
     else
     {
-        _90 = false;
+        _13 = false;
     }
-    if (_90)
+    if (_13)
     {
         discard;
     }
-    vec3 _93 = dFdx(vary4);
-    vec3 _94 = dFdy(vary4);
-    vec3 _95 = cross(_93, _94);
-    float _96 = length(_95);
-    vec3 _103;
-    if (_96 > 0.0)
+    vec3 _197 = dFdx(vary4);
+    vec3 _200 = dFdy(vary4);
+    vec3 _131 = cross(_197, _200);
+    float _133 = length(_131);
+    vec3 face;
+    if (_133 > 0.0)
     {
-        _103 = _95 / vec3(_96);
+        face = _131 / vec3(_133);
     }
     else
     {
-        _103 = vec3(0.0, 0.0, 1.0);
+        face = vec3(0.0, 0.0, 1.0);
     }
-    vec3 _108;
     if (!gl_FrontFacing)
     {
-        _108 = -_103;
+        face = -face;
     }
-    else
-    {
-        _108 = _103;
-    }
-    float _129;
+    float light;
     if (u.uShading == 0)
     {
-        _129 = 1.0;
+        light = 1.0;
     }
     else
     {
-        float _128;
         if (u.uShading == 2)
         {
-            float _123 = -dot(_108, u.uLightDir);
-            _128 = u.uAmbient + ((isnan(0.0) ? _123 : (isnan(_123) ? 0.0 : max(_123, 0.0))) * (1.0 - u.uAmbient));
+            float _171 = -dot(face, u.uLightDir);
+            light = u.uAmbient + ((isnan(0.0) ? _171 : (isnan(_171) ? 0.0 : max(_171, 0.0))) * (1.0 - u.uAmbient));
         }
         else
         {
-            _128 = vary1;
+            light = vary1;
         }
-        _129 = _128;
     }
-    fragColor = vec4(_82.xyz * _129, 1.0);
+    fragColor = vec4(colour.xyz * light, 1.0);
 }
 
 )deki";
