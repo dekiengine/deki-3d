@@ -54,9 +54,9 @@ public:
     DEKI_EXPORT
     bool doubleSided = false;
 
-    DEKI_TOOLTIP("A .shader that draws this mesh on the GPU. Its Shade() gets what the shading model above would "
-                 "draw and returns the colour; a Displace() moves the vertices. Boards without a GPU draw the "
-                 "shading model and ignore it.")
+    DEKI_TOOLTIP("An HLSL .shader that draws this mesh on the GPU. Its Shade() gets what the shading model above "
+                 "would draw and returns the colour; a Displace() moves the vertices. A build for a board without "
+                 "a GPU stops while a scene it ships uses one.")
     DEKI_EXPORT
     Deki::AssetRef<DekiRendering::ShaderAsset> shader;
 

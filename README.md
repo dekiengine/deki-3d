@@ -130,24 +130,20 @@ meshes.
 
 ### Shaders
 
-A `MeshComponent` can name a `.shader` (deki-rendering's `ShaderAsset`). It is
-GLSL ES 3.00 in up to three parts: anything before the first marker is shared,
-`// @vertex` starts what the vertex stage adds, `// @fragment` what the
-fragment stage adds.
+A `MeshComponent` can name a `.shader` (deki-rendering's `ShaderAsset`): HLSL
+that defines either hook or both.
 
-```glsl
+```hlsl
 // A mesh that breathes and glows toward uColor.
-// @vertex
-vec3 Displace(vec3 position, vec3 normal)
+float3 Displace(float3 position, float3 normal)
 {
     return position + normal * sin(uTime * uParams.y) * uParams.x;
 }
 
-// @fragment
-vec4 Shade(Fragment f)
+float4 Shade(Fragment f)
 {
     float glow = 0.5 + 0.5 * sin(uTime * uParams.y);
-    return vec4(mix(f.base.rgb, uColor.rgb * f.light, glow), 1.0);
+    return float4(lerp(f.base.rgb, uColor.rgb * f.light, glow), 1.0);
 }
 ```
 
@@ -158,10 +154,15 @@ vec4 Shade(Fragment f)
   `f.pixel` are there to build on.
 - Uniforms: `uTime` (seconds), `uParams` and `uColor` (the component's
   `shaderParams` and `shaderColor`), `uLightDir`, `uAmbient`, `uTexture`.
+  Matrices are row-major: `mul(M, v)`.
 
-Each shader is compiled once, the first time it draws. One that does not
-compile is logged with the compiler's message, at the file's line, and the
-mesh draws its shading model instead. Boards without a GPU ignore shaders.
+The editor compiles the file to GLSL for each device that draws it
+(deki-rendering's README, "Shaders"); one that does not compile is an error
+there, at the file's line. A build for a board without a GPU stops if a scene
+it ships uses a shader. The built-in program, for meshes without a shader, is
+the same HLSL with no hooks (`editor/MeshShaderUse.cpp`), compiled into
+`GLMesh3DBuiltinShader.inl`; `GLBackend.TheBuiltInShaderIsWhatTheMeshUseCompilesTo`
+fails when that is stale, and rewrites it with `DEKI_UPDATE_GENERATED=1`.
 
 ### Uploads
 

@@ -19,8 +19,10 @@ alongside one that has them.
 - `Mesh3DSettings.renderer`: Auto (the GPU where the platform has OpenGL),
   Software or GPU.
 - `MeshComponent.shader`, `shaderParams` and `shaderColor`, and the same on
-  `Material3D`: a GPU shader for the mesh (deki-rendering's `ShaderAsset`).
-  The software rasteriser draws the shading model and warns once.
+  `Material3D`: a GPU shader for the mesh (deki-rendering's `ShaderAsset`),
+  in HLSL with `Displace()` and `Shade()` hooks (`editor/MeshShaderUse.cpp`,
+  which the built-in program is generated from too). The software rasteriser
+  draws the shading model and warns once.
 - `Mesh3DSettings.composeOnGpu` and `RasterConfig::composeOnGpu`: a GPU
   backend may draw straight into a frame the display builds on the GPU,
   leaving the CPU buffer with only the 2D drawn after the meshes. On by

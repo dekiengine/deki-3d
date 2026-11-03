@@ -31,186 +31,16 @@ namespace
 {
 
 // ---------------------------------------------------------------------------
-// Shaders. The built-in program draws every material without a shader of its
-// own: the shading model, the texture kind and the alpha test are uniforms,
-// so a batch of them never switches programs. A material with a .shader gets
-// a program of its own, the same stages with the file's code in between:
-//
-//   version, the hooks it defines   (DEKI_DISPLACE, DEKI_SHADE)
-//   declarations                    (the head below)
-//   the file's shared part, then its part for this stage
-//   main                            (calls Displace() and Shade() if hooked)
-//
-// Written for GLSL ES 3.00; a desktop context gets "#version 330 core" in
-// front instead, which accepts the same source.
+// Shaders. Written in HLSL (editor/MeshShaderUse.cpp) and compiled by the
+// editor to GLSL ES 3.00 and GLSL 3.30. The built-in program draws every
+// material without a shader of its own: the shading model, the texture kind
+// and the alpha test are uniforms, so a batch of them never switches
+// programs. It is that use with no hooks, generated into the .inl below; a
+// material with a .shader draws with the asset's "mesh" program, the same
+// stages with the file's hooks called.
 // ---------------------------------------------------------------------------
 
-const char* const kVertexHead = R"(
-layout(location = 0) in vec3 aPosition;
-layout(location = 1) in vec3 aNormal;
-layout(location = 2) in vec2 aUV;
-layout(location = 3) in vec4 aColor;
-
-uniform mat4 uMvp;
-uniform mat4 uNormalMatrix;  // rotation only, as in the software rasteriser
-uniform vec3 uLightDir;      // normalised, the way the light travels
-uniform float uAmbient;
-uniform int uShading;        // ShadingModel: 0 unlit, 1 vertex lit, 2 flat
-uniform int uHasNormals;
-uniform int uAffine;         // texturing without perspective correction
-uniform int uSnap;           // projected vertices on whole pixels
-uniform vec2 uViewport;
-uniform float uTime;         // seconds, for a shader that moves
-uniform vec3 uParams;        // the component's shader parameters
-uniform vec4 uColor;         // the component's shader colour
-
-out vec4 vColor;
-out float vLight;
-out vec2 vUVw;
-out float vW;
-out vec3 vFacePos;
-out vec3 vNormal;
-)";
-
-const char* const kVertexMain = R"(
-void main()
-{
-    vec3 position = aPosition;
-#ifdef DEKI_DISPLACE
-    position = Displace(aPosition, aNormal);
-#endif
-    vec4 clip = uMvp * vec4(position, 1.0);
-    if (uSnap != 0 && clip.w > 0.0)
-    {
-        vec2 pixel = floor((clip.xy / clip.w * 0.5 + 0.5) * uViewport + 0.5);
-        clip.xy = (pixel / uViewport * 2.0 - 1.0) * clip.w;
-    }
-    gl_Position = clip;
-
-    vColor = aColor;
-    vNormal = mat3(uNormalMatrix) * aNormal;
-    vLight = 1.0;
-    if (uShading == 1 && uHasNormals != 0)
-    {
-        vec3 n = vNormal;
-        float len = length(n);
-        if (len > 0.0)
-        {
-            n /= len;
-        }
-        vLight = uAmbient + max(-dot(n, uLightDir), 0.0) * (1.0 - uAmbient);
-    }
-    // For the flat model's face normal, from screen-space derivatives.
-    vFacePos = mat3(uNormalMatrix) * position;
-
-    // Affine texturing: interpolating uv*w and w perspective-correctly, then
-    // dividing, leaves uv interpolated linearly across the screen.
-    float w = uAffine != 0 ? clip.w : 1.0;
-    vUVw = aUV * w;
-    vW = w;
-}
-)";
-
-const char* const kFragmentHead = R"(
-// Both, explicitly: in GLSL ES a fragment shader's int is mediump unless
-// told otherwise, and a uniform shared with the vertex shader (highp by
-// default) then fails to link. Desktop GL ignores precision, so only ES
-// drivers catch it.
-precision highp float;
-precision highp int;
-
-in vec4 vColor;
-in float vLight;
-in vec2 vUVw;
-in float vW;
-in vec3 vFacePos;
-in vec3 vNormal;
-
-uniform sampler2D uTexture;
-uniform int uTexMode;    // 0 none, 1 colour texels, 2 coverage only (ALPHA8)
-uniform int uAlphaTest;  // discard the texels the texture calls holes
-uniform vec4 uTint;
-uniform int uShading;
-uniform int uHasNormals;
-uniform vec3 uLightDir;
-uniform float uAmbient;
-uniform float uTime;
-uniform vec3 uParams;
-uniform vec4 uColor;
-
-out vec4 fragColor;
-
-// What a shader's Shade() is given for each pixel.
-struct Fragment
-{
-    vec4 base;    // what the shading model draws: albedo times the light
-    vec4 albedo;  // before the light: the texel, or vertex colour times tint
-    vec2 uv;
-    vec3 normal;  // world space: the vertex normal, or the face's when flat
-    float light;  // the shading model's light, 0 to 1
-    vec2 pixel;   // window position, gl_FragCoord.xy
-};
-)";
-
-const char* const kFragmentMain = R"(
-void main()
-{
-    vec4 colour = vColor * uTint;
-    float coverage = 1.0;
-    vec2 uv = vUVw / vW;
-    if (uTexMode != 0)
-    {
-        vec4 texel = texture(uTexture, uv);
-        coverage = texel.a;
-        if (uTexMode == 1)
-        {
-            // The texel alone, as the software rasteriser draws it: vertex
-            // colour and tint colour only untextured and coverage-only meshes.
-            colour = vec4(texel.rgb, 1.0);
-        }
-    }
-    if (uAlphaTest != 0 && coverage < 0.5)
-    {
-        discard;
-    }
-
-    // The face normal, from screen-space derivatives: they face the viewer,
-    // and a back face's normal does not.
-    vec3 face = cross(dFdx(vFacePos), dFdy(vFacePos));
-    float faceLen = length(face);
-    face = faceLen > 0.0 ? face / faceLen : vec3(0.0, 0.0, 1.0);
-    if (!gl_FrontFacing)
-    {
-        face = -face;
-    }
-
-    float light = vLight;
-    if (uShading == 0)
-    {
-        light = 1.0;
-    }
-    else if (uShading == 2)
-    {
-        light = uAmbient + max(-dot(face, uLightDir), 0.0) * (1.0 - uAmbient);
-    }
-    vec4 base = vec4(colour.rgb * light, 1.0);
-
-#ifdef DEKI_SHADE
-    Fragment f;
-    f.base = base;
-    f.albedo = vec4(colour.rgb, coverage);
-    f.uv = uv;
-    float vertexLen = length(vNormal);
-    f.normal = (uShading == 2 || uHasNormals == 0 || vertexLen == 0.0) ? face : vNormal / vertexLen;
-    f.light = light;
-    f.pixel = gl_FragCoord.xy;
-    // Opaque: the meshes cover what is below them, as in the rasteriser.
-    fragColor = vec4(Shade(f).rgb, 1.0);
-#else
-    fragColor = base;
-#endif
-}
-)";
+#include "GLMesh3DBuiltinShader.inl"
 
 enum Attribute : GLuint
 {
@@ -344,6 +174,10 @@ public:
     {
         GLuint id = 0;
         Uniforms u{};
+        // Whether its text reads uTime. Not from the uniform's location: the
+        // uniforms are one struct, and some drivers (Mesa) keep every member
+        // of a struct that is used at all.
+        bool readsTime = false;
     };
 
     /// The program that draws `shader`: its own, compiled the first time,
@@ -477,33 +311,25 @@ private:
         return true;
     }
 
-    /// The built-in program for `shader` null, otherwise the program with the
-    /// file's code between the built-in head and main. Id 0, with the
-    /// compiler's complaint logged, when it does not build.
+    /// The built-in program for `shader` null, otherwise the shader's "mesh"
+    /// program. Id 0, with the reason logged, when it does not build.
     Program Link(const DekiRendering::ShaderAsset* shader)
     {
-        const std::string version = m_Context->IsES() ? "#version 300 es\n" : "#version 330 core\n";
-        std::string vertex = version, fragment = version;
-        if (shader && !shader->Vertex().empty())
-        {
-            vertex += "#define DEKI_DISPLACE\n";
-        }
-        if (shader && !shader->Fragment().empty())
-        {
-            fragment += "#define DEKI_SHADE\n";
-        }
-        vertex += kVertexHead;
-        fragment += kFragmentHead;
+        const bool es = m_Context->IsES();
+        std::string vertex = es ? kBuiltinMeshVertexES : kBuiltinMeshVertexGL;
+        std::string fragment = es ? kBuiltinMeshFragmentES : kBuiltinMeshFragmentGL;
         if (shader)
         {
-            // #line, so the compiler counts the file's lines in its errors.
-            const std::string common = "#line 1\n" + shader->Common() + "\n";
-            vertex += common + "#line " + std::to_string(shader->VertexLine()) + "\n" + shader->Vertex() + "\n";
-            fragment +=
-                common + "#line " + std::to_string(shader->FragmentLine()) + "\n" + shader->Fragment() + "\n";
+            const DekiRendering::ShaderProgramSource* source = shader->Program("mesh", es);
+            if (!source)
+            {
+                DEKI_LOG_ERROR("deki-3d: a mesh's shader has neither Shade() nor Displace(), so it is not a mesh "
+                               "shader; drawing without it");
+                return {};
+            }
+            vertex = source->vertex;
+            fragment = source->fragment;
         }
-        vertex += kVertexMain;
-        fragment += kFragmentMain;
 
         const char* what = shader ? "a mesh's shader" : "the built-in mesh shader";
         const GLuint vs = Compile(gl::VERTEX_SHADER, vertex, what);
@@ -529,11 +355,17 @@ private:
             program.id = 0;
             return program;
         }
+        // The compiler keeps the uniforms in one struct, `u`, and names a
+        // texture as the shader does (deki-editor's ShaderCompiler.h).
         auto at = [&](const char* name) { return m_GL.GetUniformLocation(program.id, name); };
-        program.u = { at("uMvp"),      at("uNormalMatrix"), at("uLightDir"), at("uAmbient"),  at("uShading"),
-                      at("uHasNormals"), at("uAffine"),     at("uSnap"),     at("uViewport"), at("uTexture"),
-                      at("uTexMode"),  at("uAlphaTest"),    at("uTint"),     at("uTime"),     at("uParams"),
-                      at("uColor") };
+        program.u = { at("u.uMvp"),     at("u.uNormalMatrix"), at("u.uLightDir"), at("u.uAmbient"),
+                      at("u.uShading"), at("u.uHasNormals"),   at("u.uAffine"),   at("u.uSnap"),
+                      at("u.uViewport"), at("uTexture"),       at("u.uTexMode"),  at("u.uAlphaTest"),
+                      at("u.uTint"),    at("u.uTime"),         at("u.uParams"),   at("u.uColor") };
+        // The compiler writes a read of a member as "u.uTime"; the struct's
+        // declaration names it without the "u.".
+        program.readsTime =
+            vertex.find("u.uTime") != std::string::npos || fragment.find("u.uTime") != std::string::npos;
         return program;
     }
 
@@ -898,7 +730,7 @@ void GLMesh3DBackend::DrawMesh(const Mesh3D& mesh, const Material3D* materials,
             gl.Uniform1i(u.snap, m_Config.vertexSnap ? 1 : 0);
             gl.Uniform2f(u.viewport, static_cast<float>(m_Width), static_cast<float>(m_Height));
             gl.Uniform1f(u.time, m_Time);
-            if (u.time >= 0)
+            if (program.readsTime)
             {
                 // A shader that reads the time moves on its own.
                 Deki::Time::NoteTimeDrivenFrame();
@@ -908,8 +740,9 @@ void GLMesh3DBackend::DrawMesh(const Mesh3D& mesh, const Material3D* materials,
         }
         if (m_MeshUniformsOn != &program)
         {
-            gl.UniformMatrix4fv(u.mvp, 1, gl::kFalse, &m_Mvp->m[0][0]);
-            gl.UniformMatrix4fv(u.normalMatrix, 1, gl::kFalse, &m_NormalMatrix->m[0][0]);
+            // Transposed: the shaders read matrices row-major (ShaderCompiler.h).
+            gl.UniformMatrix4fv(u.mvp, 1, gl::kTrue, &m_Mvp->m[0][0]);
+            gl.UniformMatrix4fv(u.normalMatrix, 1, gl::kTrue, &m_NormalMatrix->m[0][0]);
             gl.Uniform1i(u.hasNormals, m_HasNormals ? 1 : 0);
             m_MeshUniformsOn = &program;
         }
