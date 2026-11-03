@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -477,6 +478,8 @@ TEST(GLBackend, TheBuiltInShaderIsWhatTheMeshUseCompilesTo)
         }
         std::fclose(in);
     }
+    // A Windows checkout may have given it CRLF line ends.
+    current.erase(std::remove(current.begin(), current.end(), '\r'), current.end());
     if (current != generated && std::getenv("DEKI_UPDATE_GENERATED"))
     {
         FILE* out = std::fopen(path.c_str(), "wb");
