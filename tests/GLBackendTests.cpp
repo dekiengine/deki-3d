@@ -298,6 +298,74 @@ TEST(GLBackend, ColouredLightsMatchSoftware)
     }
 }
 
+// A cube over a floor, the sun from the side and above: the floor is in the
+// cube's shadow on the far side and in its light on the near one, and with
+// no shadow map the two sides are lit alike.
+TEST(GLBackend, ACubeShadowsTheFloor)
+{
+    REQUIRE_GPU(gpu);
+    Cube cube = MakeCube();
+    const Deki::Mat4 cubeModel = Deki::Mat4::Identity();
+    const Deki::Mat4 floorModel = Compose(0, -1.1f, 0, 0, 0, 0, 6.0f, 0.1f, 6.0f);  // its top at y = -1
+    const Deki::Mat4 projection = Perspective(1.2f, 1.0f, 0.1f, 50.0f);
+    const Deki::Mat4 view = LookAt(Deki::Vector3(0, 9, 0.01f), Deki::Vector3(0, 0, 0), Deki::Vector3(0, 0, -1));
+    const Deki::Mat4 viewProjection = Mul(projection, view);
+
+    RasterConfig config;
+    config.ambient = Deki::Vector3(0.1f, 0.1f, 0.1f);
+    config.lightCount = 1;
+    config.lights[0].kind = Light3D::Kind::Directional;
+    config.lights[0].color = Deki::Vector3(1, 1, 1);
+    config.lights[0].direction = Deki::Vector3(-1, -1, 0).Normalized();  // from +x, falling toward -x
+    config.lights[0].shadow = 0;
+    config.shadowCount = 1;
+    const Deki::Vector3 dir = config.lights[0].direction;
+    const float radius = 9.0f;
+    config.shadows[0].viewProjection = Mul(Ortho(-radius, radius, -radius, radius, radius * 0.5f, radius * 3.5f),
+                                           LookAt(dir * (-radius * 2.0f), Deki::Vector3(0, 0, 0), Deki::Vector3(0, 1, 0)));
+    config.shadows[0].resolution = 512;
+
+    auto drawFrame = [&](bool withShadows)
+    {
+        Material3D material;
+        material.shading = ShadingModel::VertexLit;
+        std::vector<uint8_t> fb = Background(Deki::ColorFormat::ARGB8888);
+        RasterConfig c = config;
+        if (!withShadows)
+        {
+            c.shadowCount = 0;
+            c.lights[0].shadow = -1;
+        }
+        gpu.backend->BeginFrame(fb.data(), kSize, kSize, Deki::ColorFormat::ARGB8888, c);
+        if (withShadows)
+        {
+            gpu.backend->DrawShadowCaster(0, cube.mesh, &material, 1, cubeModel);
+            gpu.backend->DrawShadowCaster(0, cube.mesh, &material, 1, floorModel);
+        }
+        gpu.backend->DrawMesh(cube.mesh, &material, 1, Mul(viewProjection, cubeModel), cubeModel, cubeModel);
+        gpu.backend->DrawMesh(cube.mesh, &material, 1, Mul(viewProjection, floorModel), floorModel, floorModel);
+        gpu.backend->EndFrame();
+        return fb;
+    };
+    // The floor's brightness at a world point, seen from above.
+    auto brightness = [&](const std::vector<uint8_t>& fb, Deki::Vector3 at)
+    {
+        float w = 1.0f;
+        const Deki::Vector3 clip = TransformPoint(viewProjection, at, w);
+        const int x = static_cast<int>((clip.x / w + 1.0f) * 0.5f * kSize);
+        const int y = static_cast<int>((1.0f - clip.y / w) * 0.5f * kSize);
+        const uint8_t* p = &fb[(static_cast<size_t>(y) * kSize + x) * 4];
+        return p[0] + p[1] + p[2];
+    };
+    ASSERT_TRUE(gpu.backend->DrawsShadows());
+    const std::vector<uint8_t> lit = drawFrame(false);
+    const std::vector<uint8_t> shadowed = drawFrame(true);
+    const Deki::Vector3 farSide(-2.2f, -1.0f, 0.0f), nearSide(2.2f, -1.0f, 0.0f);
+    EXPECT_NEAR(brightness(lit, farSide), brightness(lit, nearSide), 6) << "without shadows, alike";
+    EXPECT_LT(brightness(shadowed, farSide), brightness(lit, farSide) / 3) << "in the cube's shadow";
+    EXPECT_NEAR(brightness(shadowed, nearSide), brightness(lit, nearSide), 6) << "in its light";
+}
+
 TEST(GLBackend, TexturedQuadMatchesSoftware)
 {
     REQUIRE_GPU(gpu);

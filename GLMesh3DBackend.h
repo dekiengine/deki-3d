@@ -58,6 +58,9 @@ public:
     void EndFrame() override;
     /// Only when it reads back: into the presenter's frame, nothing.
     bool WritesBuffer() const override { return m_Presenter == nullptr; }
+    bool DrawsShadows() const override { return true; }
+    void DrawShadowCaster(int slot, const Mesh3D& mesh, const Material3D* materials, uint16_t materialCount,
+                          const Deki::Mat4& model) override;
 
 private:
     /// Sets the GPU up for the batch, at its first mesh: pushes the 2D drawn
@@ -69,12 +72,23 @@ private:
     /// Widens the readback rectangle by where `mesh` can land on screen.
     void Cover(const Mesh3D& mesh, const Deki::Mat4& mvp);
     void ReleaseTargets();
+    /// Makes shadow map `slot` a depth texture `size` pixels square with its
+    /// framebuffer, if it is not already. False when the GPU cannot.
+    bool EnsureShadowMap(int slot, int size);
+    void ReleaseShadowMaps();
+    /// Binds the shadow maps to texture units 1 and 2 for the frame's meshes
+    /// (a map the frame does not use as a 1x1 one, never sampled).
+    void BindShadowMaps();
 
     GLDevice& m_Device;
 
     unsigned int m_Framebuffer = 0;
     unsigned int m_ColorBuffer = 0;
     unsigned int m_DepthBuffer = 0;
+    unsigned int m_ShadowFramebuffer[RasterConfig::kMaxShadows] = {};
+    unsigned int m_ShadowTexture[RasterConfig::kMaxShadows] = {};
+    int m_ShadowSize[RasterConfig::kMaxShadows] = {};
+    bool m_ShadowCleared[RasterConfig::kMaxShadows] = {};  // in this batch's frame
     int32_t m_TargetWidth = 0;
     int32_t m_TargetHeight = 0;
 

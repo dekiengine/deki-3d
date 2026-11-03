@@ -170,6 +170,7 @@ public:
     {
         GLint mvp, model, normalMatrix, ambient, lightCount, shading, hasNormals, affine, snap, viewport;
         GLint texture, texMode, alphaTest, tint, time, params, color;
+        GLint shadowMatrix0, shadowMatrix1, shadowBias, shadowMap0, shadowMap1;
         GLint lightPosition[RasterConfig::kMaxLights], lightDirection[RasterConfig::kMaxLights];
         GLint lightColor[RasterConfig::kMaxLights], lightCone[RasterConfig::kMaxLights];
     };
@@ -378,6 +379,17 @@ private:
         program.u.time = at("u.uTime");
         program.u.params = at("u.uParams");
         program.u.color = at("u.uColor");
+        program.u.shadowMatrix0 = at("u.uShadowMatrix0");
+        program.u.shadowMatrix1 = at("u.uShadowMatrix1");
+        program.u.shadowBias = at("u.uShadowBias");
+        program.u.shadowMap0 = at("uShadowMap0");
+        program.u.shadowMap1 = at("uShadowMap1");
+        // Each sampler on its own unit, from the start: a colour and a shadow
+        // sampler on one unit is an error at the first draw.
+        m_GL.UseProgram(program.id);
+        m_GL.Uniform1i(program.u.texture, 0);
+        m_GL.Uniform1i(program.u.shadowMap0, 1);
+        m_GL.Uniform1i(program.u.shadowMap1, 2);
         // An array is a struct of its own, its elements in `data`.
         char name[48];
         for (int l = 0; l < RasterConfig::kMaxLights; ++l)
@@ -507,7 +519,177 @@ GLMesh3DBackend::~GLMesh3DBackend()
     if (m_Device.MakeCurrent())
     {
         ReleaseTargets();
+        ReleaseShadowMaps();
     }
+}
+
+void GLMesh3DBackend::ReleaseShadowMaps()
+{
+    const GL& gl = m_Device.gl();
+    for (int i = 0; i < RasterConfig::kMaxShadows; ++i)
+    {
+        if (m_ShadowFramebuffer[i])
+        {
+            gl.DeleteFramebuffers(1, &m_ShadowFramebuffer[i]);
+        }
+        if (m_ShadowTexture[i])
+        {
+            gl.DeleteTextures(1, &m_ShadowTexture[i]);
+        }
+        m_ShadowFramebuffer[i] = m_ShadowTexture[i] = 0;
+        m_ShadowSize[i] = 0;
+    }
+}
+
+bool GLMesh3DBackend::EnsureShadowMap(int slot, int size)
+{
+    if (m_ShadowTexture[slot] && m_ShadowSize[slot] == size)
+    {
+        return true;
+    }
+    const GL& gl = m_Device.gl();
+    if (!m_ShadowTexture[slot])
+    {
+        gl.GenTextures(1, &m_ShadowTexture[slot]);
+        gl.GenFramebuffers(1, &m_ShadowFramebuffer[slot]);
+    }
+    gl.ActiveTexture(slot == 0 ? gl::TEXTURE1 : gl::TEXTURE2);
+    gl.BindTexture(gl::TEXTURE_2D, m_ShadowTexture[slot]);
+    gl.TexImage2D(gl::TEXTURE_2D, 0, static_cast<GLint>(gl::DEPTH_COMPONENT24), size, size, 0, gl::DEPTH_COMPONENT,
+                  gl::UNSIGNED_INT, nullptr);
+    // Compared, not read: a lookup says how much of the light gets past,
+    // filtered between the four nearest texels.
+    gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, static_cast<GLint>(gl::LINEAR));
+    gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, static_cast<GLint>(gl::LINEAR));
+    gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, static_cast<GLint>(gl::CLAMP_TO_EDGE));
+    gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, static_cast<GLint>(gl::CLAMP_TO_EDGE));
+    gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_COMPARE_MODE, static_cast<GLint>(gl::COMPARE_REF_TO_TEXTURE));
+    gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_COMPARE_FUNC, static_cast<GLint>(gl::LEQUAL));
+    gl.ActiveTexture(gl::TEXTURE0);
+    gl.BindFramebuffer(gl::FRAMEBUFFER, m_ShadowFramebuffer[slot]);
+    gl.FramebufferTexture2D(gl::FRAMEBUFFER, gl::DEPTH_ATTACHMENT, gl::TEXTURE_2D, m_ShadowTexture[slot], 0);
+    // Depth only: no colour to draw into or read from.
+    const GLenum none = gl::NONE;
+    gl.DrawBuffers(1, &none);
+    gl.ReadBuffer(gl::NONE);
+    if (gl.CheckFramebufferStatus(gl::FRAMEBUFFER) != gl::FRAMEBUFFER_COMPLETE)
+    {
+        DEKI_LOG_WARNING("deki-3d: no %dx%d shadow map; its light casts no shadows", size, size);
+        gl.DeleteFramebuffers(1, &m_ShadowFramebuffer[slot]);
+        gl.DeleteTextures(1, &m_ShadowTexture[slot]);
+        m_ShadowFramebuffer[slot] = m_ShadowTexture[slot] = 0;
+        m_ShadowSize[slot] = 0;
+        return false;
+    }
+    m_ShadowSize[slot] = size;
+    return true;
+}
+
+void GLMesh3DBackend::BindShadowMaps()
+{
+    const GL& gl = m_Device.gl();
+    for (int i = 0; i < RasterConfig::kMaxShadows; ++i)
+    {
+        if (i >= m_Config.shadowCount && !m_ShadowTexture[i])
+        {
+            EnsureShadowMap(i, 1);
+        }
+        gl.ActiveTexture(i == 0 ? gl::TEXTURE1 : gl::TEXTURE2);
+        gl.BindTexture(gl::TEXTURE_2D, m_ShadowTexture[i]);
+    }
+    gl.ActiveTexture(gl::TEXTURE0);
+}
+
+void GLMesh3DBackend::DrawShadowCaster(int slot, const Mesh3D& mesh, const Material3D* materials,
+                                       uint16_t materialCount, const Deki::Mat4& model)
+{
+    if (!m_Ready || slot < 0 || slot >= m_Config.shadowCount || !mesh.vertices || !mesh.indices ||
+        mesh.layout.positionOffset < 0 || mesh.vertexCount == 0 || !m_Device.MakeCurrent())
+    {
+        return;
+    }
+    const ShadowMap& map = m_Config.shadows[slot];
+    const int size = std::min(std::max(map.resolution, 16), 8192);
+    if (!EnsureShadowMap(slot, size))
+    {
+        return;
+    }
+    const GL& gl = m_Device.gl();
+    // Nothing samples a map while it is drawn into.
+    for (GLenum unit : { gl::TEXTURE1, gl::TEXTURE2 })
+    {
+        gl.ActiveTexture(unit);
+        gl.BindTexture(gl::TEXTURE_2D, 0);
+    }
+    gl.ActiveTexture(gl::TEXTURE0);
+    gl.BindFramebuffer(gl::FRAMEBUFFER, m_ShadowFramebuffer[slot]);
+    gl.Viewport(0, 0, size, size);
+    gl.Disable(gl::BLEND);
+    gl.Disable(gl::SCISSOR_TEST);
+    gl.Enable(gl::DEPTH_TEST);
+    gl.DepthFunc(gl::LESS);
+    gl.DepthMask(gl::kTrue);
+    if (!m_ShadowCleared[slot])
+    {
+        m_ShadowCleared[slot] = true;
+        gl.SetClearDepth(1.0f);
+        gl.Clear(gl::DEPTH_BUFFER_BIT);
+    }
+    // Both faces cast; the slope offset keeps a lit surface off its own depth.
+    gl.Disable(gl::CULL_FACE);
+    gl.ColorMask(gl::kFalse, gl::kFalse, gl::kFalse, gl::kFalse);
+    gl.Enable(gl::POLYGON_OFFSET_FILL);
+    gl.PolygonOffset(1.5f, 4.0f);
+
+    m_Device.Use();
+    m_Device.BindMesh(mesh);
+    const Deki::Mat4 mvp = Mul(map.viewProjection, model);
+    for (uint16_t s = 0; s < mesh.submeshCount; ++s)
+    {
+        const Submesh3D& sub = mesh.submeshes[s];
+        if (static_cast<uint64_t>(sub.firstIndex) + sub.indexCount > mesh.indexCount)
+        {
+            continue;
+        }
+        const Material3D material =
+            (materials && sub.materialIndex < materialCount) ? materials[sub.materialIndex] : Material3D{};
+        // The mesh's own program, so its shader moves the vertices as when
+        // it is drawn; unlit, which samples no shadow map.
+        const GLDevice::Program& program = m_Device.ProgramFor(material.shader);
+        const GLDevice::Uniforms& u = program.u;
+        gl.UseProgram(program.id);
+        gl.UniformMatrix4fv(u.mvp, 1, gl::kTrue, &mvp.m[0][0]);
+        gl.UniformMatrix4fv(u.model, 1, gl::kTrue, &model.m[0][0]);
+        gl.UniformMatrix4fv(u.normalMatrix, 1, gl::kTrue, &model.m[0][0]);
+        gl.Uniform1i(u.hasNormals, mesh.layout.HasNormals() ? 1 : 0);
+        gl.Uniform1i(u.shading, static_cast<GLint>(ShadingModel::Unlit));
+        gl.Uniform1i(u.lightCount, 0);
+        gl.Uniform1i(u.affine, 0);
+        gl.Uniform1i(u.snap, 0);
+        gl.Uniform2f(u.viewport, static_cast<float>(size), static_cast<float>(size));
+        gl.Uniform1f(u.time, m_Time);
+        gl.Uniform1i(u.texture, 0);
+        gl.Uniform3f(u.params, material.shaderParams.x, material.shaderParams.y, material.shaderParams.z);
+        gl.Uniform1i(u.alphaTest, material.alphaTest ? 1 : 0);
+        const Texture3D* tex = material.texture;
+        if (tex && tex->Valid() && material.alphaTest)
+        {
+            m_Device.BindTexture(*tex);
+            const bool coverageOnly = !tex->palette && tex->format == TexelFormat::ALPHA8;
+            gl.Uniform1i(u.texMode, coverageOnly ? 2 : 1);
+        }
+        else
+        {
+            gl.Uniform1i(u.texMode, 0);
+        }
+        const GLsizei count = static_cast<GLsizei>(sub.indexCount - sub.indexCount % 3);
+        gl.DrawElements(gl::TRIANGLES, count, gl::UNSIGNED_SHORT,
+                        reinterpret_cast<const void*>(static_cast<uintptr_t>(sub.firstIndex) * sizeof(uint16_t)));
+    }
+    gl.Disable(gl::POLYGON_OFFSET_FILL);
+    gl.ColorMask(gl::kTrue, gl::kTrue, gl::kTrue, gl::kTrue);
+    m_Program = nullptr;  // the next mesh sets its program's uniforms again
+    m_Device.CheckErrors("drawing a shadow map");
 }
 
 void GLMesh3DBackend::ReleaseTargets()
@@ -562,6 +744,10 @@ void GLMesh3DBackend::BeginFrame(uint8_t* buffer, int32_t width, int32_t height,
     m_Config = config;
     m_Drawn = false;
     m_Started = false;
+    for (bool& cleared : m_ShadowCleared)
+    {
+        cleared = false;
+    }
     m_MinX = m_MinY = 0;
     m_MaxX = m_MaxY = -1;
     m_Ready = buffer && width > 0 && height > 0;
@@ -595,6 +781,8 @@ bool GLMesh3DBackend::Start()
     const int32_t width = m_Width;
     const int32_t height = m_Height;
     const RasterConfig& config = m_Config;
+    // First: making a map binds its framebuffer.
+    BindShadowMaps();
     if (m_Presenter)
     {
         // What sorts below these meshes goes up as a layer; what sorts above
@@ -769,8 +957,17 @@ void GLMesh3DBackend::DrawMesh(const Mesh3D& mesh, const Material3D* materials,
                 gl.Uniform4f(u.lightDirection[l], light.direction.x, light.direction.y, light.direction.z,
                              light.range);
                 gl.Uniform4f(u.lightColor[l], light.color.x, light.color.y, light.color.z, 0.0f);
-                gl.Uniform4f(u.lightCone[l], light.cosOuter, light.cosInner, 0.0f, 0.0f);
+                // Its shadow map, 1 or 2, or 0 for none.
+                const float map = light.shadow >= 0 && light.shadow < m_Config.shadowCount
+                                      ? static_cast<float>(light.shadow + 1)
+                                      : 0.0f;
+                gl.Uniform4f(u.lightCone[l], light.cosOuter, light.cosInner, map, 0.0f);
             }
+            gl.Uniform1i(u.shadowMap0, 1);
+            gl.Uniform1i(u.shadowMap1, 2);
+            gl.UniformMatrix4fv(u.shadowMatrix0, 1, gl::kTrue, &m_Config.shadows[0].viewProjection.m[0][0]);
+            gl.UniformMatrix4fv(u.shadowMatrix1, 1, gl::kTrue, &m_Config.shadows[1].viewProjection.m[0][0]);
+            gl.Uniform2f(u.shadowBias, m_Config.shadows[0].bias, m_Config.shadows[1].bias);
             gl.Uniform1i(u.affine, m_Config.perspectiveCorrect ? 0 : 1);
             gl.Uniform1i(u.snap, m_Config.vertexSnap ? 1 : 0);
             gl.Uniform2f(u.viewport, static_cast<float>(m_Width), static_cast<float>(m_Height));

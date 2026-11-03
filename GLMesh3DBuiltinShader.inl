@@ -20,6 +20,9 @@ struct GlobalParams_std140
     _Array_std140_vector_float_4_8 uLightDirection;
     _Array_std140_vector_float_4_8 uLightColor;
     _Array_std140_vector_float_4_8 uLightCone;
+    mat4 uShadowMatrix0;
+    mat4 uShadowMatrix1;
+    vec2 uShadowBias;
     int uShading;
     int uHasNormals;
     int uAffine;
@@ -45,11 +48,13 @@ out vec2 vary2;
 out float vary3;
 out vec3 vary4;
 out vec3 vary5;
+out vec3 vary6;
+out vec3 vary7;
 
 void main()
 {
-    vec4 _40 = vec4(v_position, 1.0);
-    vec4 clip = _40 * u.uMvp;
+    vec4 _43 = vec4(v_position, 1.0);
+    vec4 clip = _43 * u.uMvp;
     bool _11;
     if (u.uSnap != 0)
     {
@@ -61,18 +66,20 @@ void main()
     }
     if (_11)
     {
-        vec4 _73 = clip;
-        vec2 _100 = (((floor(((((_73.xy / vec2(_73.w)) * 0.5) + vec2(0.5)) * u.uViewport) + vec2(0.5)) / u.uViewport) * 2.0) - vec2(1.0)) * _73.w;
-        vec4 _489 = _73;
-        _489.x = _100.x;
-        _489.y = _100.y;
-        clip = _489;
+        vec4 _76 = clip;
+        vec2 _103 = (((floor(((((_76.xy / vec2(_76.w)) * 0.5) + vec2(0.5)) * u.uViewport) + vec2(0.5)) / u.uViewport) * 2.0) - vec2(1.0)) * _76.w;
+        vec4 _554 = _76;
+        _554.x = _103.x;
+        _554.y = _103.y;
+        clip = _554;
     }
-    vec4 _471 = clip;
-    vec4 _472 = v_color;
-    vec3 _477 = v_normal * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
-    vec3 _476 = (_40 * u.uModel).xyz;
-    vec3 _473 = vec3(1.0);
+    vec4 _532 = clip;
+    vec4 _533 = v_color;
+    vec3 _538 = v_normal * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
+    vec3 _537 = (_43 * u.uModel).xyz;
+    vec3 _534 = vec3(1.0);
+    vec3 _539 = vec3(0.0);
+    vec3 _540 = vec3(0.0);
     if (u.uShading == 1)
     {
         _11 = u.uHasNormals != 0;
@@ -83,81 +90,94 @@ void main()
     }
     if (_11)
     {
-        float _161 = length(_477);
+        float _170 = length(_538);
         vec3 n;
-        if (_161 > 0.0)
+        if (_170 > 0.0)
         {
-            n = _477 / vec3(_161);
+            n = _538 / vec3(_170);
         }
         else
         {
-            n = _477;
+            n = _538;
         }
-        int _369 = 0;
-        vec3 _370 = u.uAmbient;
-        vec3 _371;
-        float _372;
+        vec3 _19 = u.uAmbient;
+        vec3 _20 = vec3(0.0);
+        vec3 _21 = vec3(0.0);
+        int _418 = 0;
+        vec3 _419;
+        float _420;
         for (;;)
         {
-            bool _379_ladder_break = false;
+            bool _426_ladder_break = false;
             do
             {
-                if (!(_369 < u.uLightCount))
+                if (!(_418 < u.uLightCount))
                 {
-                    _379_ladder_break = true;
+                    _426_ladder_break = true;
                     break;
                 }
-                if (u.uLightPosition.data[_369].w > 0.5)
+                if (u.uLightPosition.data[_418].w > 0.5)
                 {
-                    vec3 _402 = u.uLightPosition.data[_369].xyz - _476;
-                    float _407 = dot(_402, _402);
-                    float _410 = 1.0 - (_407 / (u.uLightDirection.data[_369].w * u.uLightDirection.data[_369].w));
-                    if (_410 <= 0.0)
+                    vec3 _449 = u.uLightPosition.data[_418].xyz - _537;
+                    float _454 = dot(_449, _449);
+                    float _457 = 1.0 - (_454 / (u.uLightDirection.data[_418].w * u.uLightDirection.data[_418].w));
+                    if (_457 <= 0.0)
                     {
-                        _371 = _370;
                         break;
                     }
-                    float _415 = _410 * _410;
-                    if (_407 > 0.0)
+                    float _461 = _457 * _457;
+                    if (_454 > 0.0)
                     {
-                        _371 = _402 * inversesqrt(_407);
+                        _419 = _449 * inversesqrt(_454);
                     }
                     else
                     {
-                        _371 = _402;
+                        _419 = _449;
                     }
-                    if (u.uLightPosition.data[_369].w > 1.5)
+                    if (u.uLightPosition.data[_418].w > 1.5)
                     {
-                        float _437 = clamp(((-dot(_371, u.uLightDirection.data[_369].xyz)) - u.uLightCone.data[_369].x) / (u.uLightCone.data[_369].y - u.uLightCone.data[_369].x), 0.0, 1.0);
-                        _372 = _415 * ((_437 * _437) * (3.0 - (2.0 * _437)));
+                        float _483 = clamp(((-dot(_419, u.uLightDirection.data[_418].xyz)) - u.uLightCone.data[_418].x) / (u.uLightCone.data[_418].y - u.uLightCone.data[_418].x), 0.0, 1.0);
+                        _420 = _461 * ((_483 * _483) * (3.0 - (2.0 * _483)));
                     }
                     else
                     {
-                        _372 = _415;
+                        _420 = _461;
                     }
                 }
                 else
                 {
-                    _371 = -u.uLightDirection.data[_369].xyz;
-                    _372 = 1.0;
+                    _419 = -u.uLightDirection.data[_418].xyz;
+                    _420 = 1.0;
                 }
-                float _454 = dot(n, _371);
-                _371 = _370 + (u.uLightColor.data[_369].xyz * ((isnan(0.0) ? _454 : (isnan(_454) ? 0.0 : max(_454, 0.0))) * _372));
+                float _500 = dot(n, _419);
+                vec3 _504 = u.uLightColor.data[_418].xyz * ((isnan(0.0) ? _500 : (isnan(_500) ? 0.0 : max(_500, 0.0))) * _420);
+                if (u.uLightCone.data[_418].z > 1.5)
+                {
+                    _21 += _504;
+                }
+                else
+                {
+                    if (u.uLightCone.data[_418].z > 0.5)
+                    {
+                        _20 += _504;
+                    }
+                    else
+                    {
+                        _19 += _504;
+                    }
+                }
                 break;
             } while(false);
-            if (_379_ladder_break)
+            if (_426_ladder_break)
             {
                 break;
             }
-            _369++;
-            _370 = _371;
+            _418++;
             continue;
         }
-        bvec3 _498 = isnan(_370);
-        bvec3 _499 = isnan(vec3(2.0));
-        vec3 _500 = min(_370, vec3(2.0));
-        vec3 _501 = vec3(_498.x ? vec3(2.0).x : _500.x, _498.y ? vec3(2.0).y : _500.y, _498.z ? vec3(2.0).z : _500.z);
-        _473 = vec3(_499.x ? _370.x : _501.x, _499.y ? _370.y : _501.y, _499.z ? _370.z : _501.z);
+        _534 = _19;
+        _539 = _20;
+        _540 = _21;
     }
     float w;
     if (u.uAffine != 0)
@@ -168,13 +188,15 @@ void main()
     {
         w = 1.0;
     }
-    gl_Position = _471;
-    vary0 = _472;
-    vary1 = _473;
+    gl_Position = _532;
+    vary0 = _533;
+    vary1 = _534;
     vary2 = v_uv * w;
     vary3 = w;
-    vary4 = _476;
-    vary5 = _477;
+    vary4 = _537;
+    vary5 = _538;
+    vary6 = _539;
+    vary7 = _540;
 }
 
 )deki";
@@ -199,6 +221,9 @@ struct GlobalParams_std140
     _Array_std140_vector_float_4_8 uLightDirection;
     _Array_std140_vector_float_4_8 uLightColor;
     _Array_std140_vector_float_4_8 uLightCone;
+    mat4 uShadowMatrix0;
+    mat4 uShadowMatrix1;
+    vec2 uShadowBias;
     int uShading;
     int uHasNormals;
     int uAffine;
@@ -215,17 +240,21 @@ struct GlobalParams_std140
 uniform GlobalParams_std140 u;
 
 uniform highp sampler2D uTexture;
+uniform highp sampler2DShadow uShadowMap0;
+uniform highp sampler2DShadow uShadowMap1;
 
 in vec4 vary0;
 in vec2 vary2;
 in float vary3;
 in vec3 vary4;
 in vec3 vary1;
+in vec3 vary6;
+in vec3 vary7;
 layout(location = 0) out vec4 fragColor;
 
 void main()
 {
-    vec4 _56 = vary0 * u.uTint;
+    vec4 _59 = vary0 * u.uTint;
     vec4 colour;
     float coverage;
     if (u.uTexMode != 0)
@@ -237,14 +266,14 @@ void main()
         }
         else
         {
-            colour = _56;
+            colour = _59;
         }
         coverage = _sampled.w;
     }
     else
     {
         coverage = 1.0;
-        colour = _56;
+        colour = _59;
     }
     bool _13;
     if (u.uAlphaTest != 0)
@@ -259,14 +288,14 @@ void main()
     {
         discard;
     }
-    vec3 _336 = dFdx(vary4);
-    vec3 _339 = dFdy(vary4);
-    vec3 _134 = cross(_336, _339);
-    float _136 = length(_134);
+    vec3 _569 = dFdx(vary4);
+    vec3 _572 = dFdy(vary4);
+    vec3 _137 = cross(_569, _572);
+    float _139 = length(_137);
     vec3 face;
-    if (_136 > 0.0)
+    if (_139 > 0.0)
     {
-        face = _134 / vec3(_136);
+        face = _137 / vec3(_139);
     }
     else
     {
@@ -283,77 +312,457 @@ void main()
     }
     else
     {
-        if (u.uShading == 2)
+        if (u.uShading == 1)
         {
-            int _340 = 0;
-            vec3 _341 = u.uAmbient;
-            vec3 _342;
-            float _343;
-            for (;;)
+            vec3 _573;
+            if (any(greaterThan(vary6, vec3(0.0))))
             {
-                bool _350_ladder_break = false;
+                float _597;
                 do
                 {
-                    if (!(_340 < u.uLightCount))
+                    mat4 _598;
+                    if (true)
                     {
-                        _350_ladder_break = true;
-                        break;
-                    }
-                    if (u.uLightPosition.data[_340].w > 0.5)
-                    {
-                        vec3 _373 = u.uLightPosition.data[_340].xyz - vary4;
-                        float _378 = dot(_373, _373);
-                        float _381 = 1.0 - (_378 / (u.uLightDirection.data[_340].w * u.uLightDirection.data[_340].w));
-                        if (_381 <= 0.0)
-                        {
-                            _342 = _341;
-                            break;
-                        }
-                        float _386 = _381 * _381;
-                        if (_378 > 0.0)
-                        {
-                            _342 = _373 * inversesqrt(_378);
-                        }
-                        else
-                        {
-                            _342 = _373;
-                        }
-                        if (u.uLightPosition.data[_340].w > 1.5)
-                        {
-                            float _408 = clamp(((-dot(_342, u.uLightDirection.data[_340].xyz)) - u.uLightCone.data[_340].x) / (u.uLightCone.data[_340].y - u.uLightCone.data[_340].x), 0.0, 1.0);
-                            _343 = _386 * ((_408 * _408) * (3.0 - (2.0 * _408)));
-                        }
-                        else
-                        {
-                            _343 = _386;
-                        }
+                        _598 = u.uShadowMatrix0;
                     }
                     else
                     {
-                        _342 = -u.uLightDirection.data[_340].xyz;
-                        _343 = 1.0;
+                        _598 = u.uShadowMatrix1;
                     }
-                    float _425 = dot(face, _342);
-                    _342 = _341 + (u.uLightColor.data[_340].xyz * ((isnan(0.0) ? _425 : (isnan(_425) ? 0.0 : max(_425, 0.0))) * _343));
+                    vec4 _614 = vec4(vary4, 1.0) * _598;
+                    float _615 = _614.w;
+                    if (_615 <= 0.0)
+                    {
+                        _597 = 1.0;
+                        break;
+                    }
+                    vec3 _621 = _614.xyz / vec3(_615);
+                    vec2 _625 = (_621.xy * 0.5) + vec2(0.5);
+                    float _599;
+                    if (true)
+                    {
+                        _599 = u.uShadowBias.x;
+                    }
+                    else
+                    {
+                        _599 = u.uShadowBias.y;
+                    }
+                    float _638 = _599;
+                    float _639 = ((_621.z * 0.5) + 0.5) - _638;
+                    float _640 = _625.x;
+                    bool _600;
+                    if (_640 < 0.0)
+                    {
+                        _600 = true;
+                    }
+                    else
+                    {
+                        _600 = _625.y < 0.0;
+                    }
+                    if (_600)
+                    {
+                        _600 = true;
+                    }
+                    else
+                    {
+                        _600 = _640 > 1.0;
+                    }
+                    if (_600)
+                    {
+                        _600 = true;
+                    }
+                    else
+                    {
+                        _600 = _625.y > 1.0;
+                    }
+                    if (_600)
+                    {
+                        _600 = true;
+                    }
+                    else
+                    {
+                        _600 = _639 >= 1.0;
+                    }
+                    if (_600)
+                    {
+                        _597 = 1.0;
+                        break;
+                    }
+                    if (true)
+                    {
+                        _599 = textureLod(uShadowMap0, vec3(_625, _639), 0.0);
+                    }
+                    else
+                    {
+                        _599 = textureLod(uShadowMap1, vec3(_625, _639), 0.0);
+                    }
+                    _597 = _599;
                     break;
                 } while(false);
-                if (_350_ladder_break)
-                {
-                    break;
-                }
-                _340++;
-                _341 = _342;
-                continue;
+                _573 = vary1 + (vary6 * _597);
             }
-            bvec3 _450 = isnan(_341);
-            bvec3 _451 = isnan(vec3(2.0));
-            vec3 _452 = min(_341, vec3(2.0));
-            vec3 _453 = vec3(_450.x ? vec3(2.0).x : _452.x, _450.y ? vec3(2.0).y : _452.y, _450.z ? vec3(2.0).z : _452.z);
-            light = vec3(_451.x ? _341.x : _453.x, _451.y ? _341.y : _453.y, _451.z ? _341.z : _453.z);
+            else
+            {
+                _573 = vary1;
+            }
+            if (any(greaterThan(vary7, vec3(0.0))))
+            {
+                float _681;
+                do
+                {
+                    mat4 _682;
+                    if (false)
+                    {
+                        _682 = u.uShadowMatrix0;
+                    }
+                    else
+                    {
+                        _682 = u.uShadowMatrix1;
+                    }
+                    vec4 _698 = vec4(vary4, 1.0) * _682;
+                    float _699 = _698.w;
+                    if (_699 <= 0.0)
+                    {
+                        _681 = 1.0;
+                        break;
+                    }
+                    vec3 _705 = _698.xyz / vec3(_699);
+                    vec2 _709 = (_705.xy * 0.5) + vec2(0.5);
+                    float _683;
+                    if (false)
+                    {
+                        _683 = u.uShadowBias.x;
+                    }
+                    else
+                    {
+                        _683 = u.uShadowBias.y;
+                    }
+                    float _722 = _683;
+                    float _723 = ((_705.z * 0.5) + 0.5) - _722;
+                    float _724 = _709.x;
+                    bool _684;
+                    if (_724 < 0.0)
+                    {
+                        _684 = true;
+                    }
+                    else
+                    {
+                        _684 = _709.y < 0.0;
+                    }
+                    if (_684)
+                    {
+                        _684 = true;
+                    }
+                    else
+                    {
+                        _684 = _724 > 1.0;
+                    }
+                    if (_684)
+                    {
+                        _684 = true;
+                    }
+                    else
+                    {
+                        _684 = _709.y > 1.0;
+                    }
+                    if (_684)
+                    {
+                        _684 = true;
+                    }
+                    else
+                    {
+                        _684 = _723 >= 1.0;
+                    }
+                    if (_684)
+                    {
+                        _681 = 1.0;
+                        break;
+                    }
+                    if (false)
+                    {
+                        _683 = textureLod(uShadowMap0, vec3(_709, _723), 0.0);
+                    }
+                    else
+                    {
+                        _683 = textureLod(uShadowMap1, vec3(_709, _723), 0.0);
+                    }
+                    _681 = _683;
+                    break;
+                } while(false);
+                _573 += (vary7 * _681);
+            }
+            bvec3 _1087 = isnan(_573);
+            bvec3 _1088 = isnan(vec3(2.0));
+            vec3 _1089 = min(_573, vec3(2.0));
+            vec3 _1090 = vec3(_1087.x ? vec3(2.0).x : _1089.x, _1087.y ? vec3(2.0).y : _1089.y, _1087.z ? vec3(2.0).z : _1089.z);
+            light = vec3(_1088.x ? _573.x : _1090.x, _1088.y ? _573.y : _1090.y, _1088.z ? _573.z : _1090.z);
         }
         else
         {
-            light = vary1;
+            if (u.uShading == 2)
+            {
+                vec3 _764 = u.uAmbient;
+                vec3 _765 = vec3(0.0);
+                vec3 _766 = vec3(0.0);
+                int _774 = 0;
+                vec3 _775;
+                float _776;
+                for (;;)
+                {
+                    bool _782_ladder_break = false;
+                    do
+                    {
+                        if (!(_774 < u.uLightCount))
+                        {
+                            _782_ladder_break = true;
+                            break;
+                        }
+                        if (u.uLightPosition.data[_774].w > 0.5)
+                        {
+                            vec3 _805 = u.uLightPosition.data[_774].xyz - vary4;
+                            float _810 = dot(_805, _805);
+                            float _813 = 1.0 - (_810 / (u.uLightDirection.data[_774].w * u.uLightDirection.data[_774].w));
+                            if (_813 <= 0.0)
+                            {
+                                break;
+                            }
+                            float _817 = _813 * _813;
+                            if (_810 > 0.0)
+                            {
+                                _775 = _805 * inversesqrt(_810);
+                            }
+                            else
+                            {
+                                _775 = _805;
+                            }
+                            if (u.uLightPosition.data[_774].w > 1.5)
+                            {
+                                float _839 = clamp(((-dot(_775, u.uLightDirection.data[_774].xyz)) - u.uLightCone.data[_774].x) / (u.uLightCone.data[_774].y - u.uLightCone.data[_774].x), 0.0, 1.0);
+                                _776 = _817 * ((_839 * _839) * (3.0 - (2.0 * _839)));
+                            }
+                            else
+                            {
+                                _776 = _817;
+                            }
+                        }
+                        else
+                        {
+                            _775 = -u.uLightDirection.data[_774].xyz;
+                            _776 = 1.0;
+                        }
+                        float _856 = dot(face, _775);
+                        vec3 _860 = u.uLightColor.data[_774].xyz * ((isnan(0.0) ? _856 : (isnan(_856) ? 0.0 : max(_856, 0.0))) * _776);
+                        if (u.uLightCone.data[_774].z > 1.5)
+                        {
+                            _766 += _860;
+                        }
+                        else
+                        {
+                            if (u.uLightCone.data[_774].z > 0.5)
+                            {
+                                _765 += _860;
+                            }
+                            else
+                            {
+                                _764 += _860;
+                            }
+                        }
+                        break;
+                    } while(false);
+                    if (_782_ladder_break)
+                    {
+                        break;
+                    }
+                    _774++;
+                    continue;
+                }
+                vec3 _888;
+                if (any(greaterThan(_765, vec3(0.0))))
+                {
+                    float _912;
+                    do
+                    {
+                        mat4 _913;
+                        if (true)
+                        {
+                            _913 = u.uShadowMatrix0;
+                        }
+                        else
+                        {
+                            _913 = u.uShadowMatrix1;
+                        }
+                        vec4 _929 = vec4(vary4, 1.0) * _913;
+                        float _930 = _929.w;
+                        if (_930 <= 0.0)
+                        {
+                            _912 = 1.0;
+                            break;
+                        }
+                        vec3 _936 = _929.xyz / vec3(_930);
+                        vec2 _940 = (_936.xy * 0.5) + vec2(0.5);
+                        float _914;
+                        if (true)
+                        {
+                            _914 = u.uShadowBias.x;
+                        }
+                        else
+                        {
+                            _914 = u.uShadowBias.y;
+                        }
+                        float _953 = _914;
+                        float _954 = ((_936.z * 0.5) + 0.5) - _953;
+                        float _955 = _940.x;
+                        bool _915;
+                        if (_955 < 0.0)
+                        {
+                            _915 = true;
+                        }
+                        else
+                        {
+                            _915 = _940.y < 0.0;
+                        }
+                        if (_915)
+                        {
+                            _915 = true;
+                        }
+                        else
+                        {
+                            _915 = _955 > 1.0;
+                        }
+                        if (_915)
+                        {
+                            _915 = true;
+                        }
+                        else
+                        {
+                            _915 = _940.y > 1.0;
+                        }
+                        if (_915)
+                        {
+                            _915 = true;
+                        }
+                        else
+                        {
+                            _915 = _954 >= 1.0;
+                        }
+                        if (_915)
+                        {
+                            _912 = 1.0;
+                            break;
+                        }
+                        if (true)
+                        {
+                            _914 = textureLod(uShadowMap0, vec3(_940, _954), 0.0);
+                        }
+                        else
+                        {
+                            _914 = textureLod(uShadowMap1, vec3(_940, _954), 0.0);
+                        }
+                        _912 = _914;
+                        break;
+                    } while(false);
+                    _888 = _764 + (_765 * _912);
+                }
+                else
+                {
+                    _888 = _764;
+                }
+                if (any(greaterThan(_766, vec3(0.0))))
+                {
+                    float _996;
+                    do
+                    {
+                        mat4 _997;
+                        if (false)
+                        {
+                            _997 = u.uShadowMatrix0;
+                        }
+                        else
+                        {
+                            _997 = u.uShadowMatrix1;
+                        }
+                        vec4 _1013 = vec4(vary4, 1.0) * _997;
+                        float _1014 = _1013.w;
+                        if (_1014 <= 0.0)
+                        {
+                            _996 = 1.0;
+                            break;
+                        }
+                        vec3 _1020 = _1013.xyz / vec3(_1014);
+                        vec2 _1024 = (_1020.xy * 0.5) + vec2(0.5);
+                        float _998;
+                        if (false)
+                        {
+                            _998 = u.uShadowBias.x;
+                        }
+                        else
+                        {
+                            _998 = u.uShadowBias.y;
+                        }
+                        float _1037 = _998;
+                        float _1038 = ((_1020.z * 0.5) + 0.5) - _1037;
+                        float _1039 = _1024.x;
+                        bool _999;
+                        if (_1039 < 0.0)
+                        {
+                            _999 = true;
+                        }
+                        else
+                        {
+                            _999 = _1024.y < 0.0;
+                        }
+                        if (_999)
+                        {
+                            _999 = true;
+                        }
+                        else
+                        {
+                            _999 = _1039 > 1.0;
+                        }
+                        if (_999)
+                        {
+                            _999 = true;
+                        }
+                        else
+                        {
+                            _999 = _1024.y > 1.0;
+                        }
+                        if (_999)
+                        {
+                            _999 = true;
+                        }
+                        else
+                        {
+                            _999 = _1038 >= 1.0;
+                        }
+                        if (_999)
+                        {
+                            _996 = 1.0;
+                            break;
+                        }
+                        if (false)
+                        {
+                            _998 = textureLod(uShadowMap0, vec3(_1024, _1038), 0.0);
+                        }
+                        else
+                        {
+                            _998 = textureLod(uShadowMap1, vec3(_1024, _1038), 0.0);
+                        }
+                        _996 = _998;
+                        break;
+                    } while(false);
+                    _888 += (_766 * _996);
+                }
+                bvec3 _1097 = isnan(_888);
+                bvec3 _1098 = isnan(vec3(2.0));
+                vec3 _1099 = min(_888, vec3(2.0));
+                vec3 _1100 = vec3(_1097.x ? vec3(2.0).x : _1099.x, _1097.y ? vec3(2.0).y : _1099.y, _1097.z ? vec3(2.0).z : _1099.z);
+                light = vec3(_1098.x ? _888.x : _1100.x, _1098.y ? _888.y : _1100.y, _1098.z ? _888.z : _1100.z);
+            }
+            else
+            {
+                light = vary1;
+            }
         }
     }
     fragColor = vec4(colour.xyz * light, 1.0);
@@ -379,6 +788,9 @@ struct GlobalParams_std140
     _Array_std140_vector_float_4_8 uLightDirection;
     _Array_std140_vector_float_4_8 uLightColor;
     _Array_std140_vector_float_4_8 uLightCone;
+    mat4 uShadowMatrix0;
+    mat4 uShadowMatrix1;
+    vec2 uShadowBias;
     int uShading;
     int uHasNormals;
     int uAffine;
@@ -404,11 +816,13 @@ out vec2 vary2;
 out float vary3;
 out vec3 vary4;
 out vec3 vary5;
+out vec3 vary6;
+out vec3 vary7;
 
 void main()
 {
-    vec4 _40 = vec4(v_position, 1.0);
-    vec4 clip = _40 * u.uMvp;
+    vec4 _43 = vec4(v_position, 1.0);
+    vec4 clip = _43 * u.uMvp;
     bool _11;
     if (u.uSnap != 0)
     {
@@ -420,18 +834,20 @@ void main()
     }
     if (_11)
     {
-        vec4 _73 = clip;
-        vec2 _100 = (((floor(((((_73.xy / vec2(_73.w)) * 0.5) + vec2(0.5)) * u.uViewport) + vec2(0.5)) / u.uViewport) * 2.0) - vec2(1.0)) * _73.w;
-        vec4 _489 = _73;
-        _489.x = _100.x;
-        _489.y = _100.y;
-        clip = _489;
+        vec4 _76 = clip;
+        vec2 _103 = (((floor(((((_76.xy / vec2(_76.w)) * 0.5) + vec2(0.5)) * u.uViewport) + vec2(0.5)) / u.uViewport) * 2.0) - vec2(1.0)) * _76.w;
+        vec4 _554 = _76;
+        _554.x = _103.x;
+        _554.y = _103.y;
+        clip = _554;
     }
-    vec4 _471 = clip;
-    vec4 _472 = v_color;
-    vec3 _477 = v_normal * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
-    vec3 _476 = (_40 * u.uModel).xyz;
-    vec3 _473 = vec3(1.0);
+    vec4 _532 = clip;
+    vec4 _533 = v_color;
+    vec3 _538 = v_normal * mat3(u.uNormalMatrix[0].xyz, u.uNormalMatrix[1].xyz, u.uNormalMatrix[2].xyz);
+    vec3 _537 = (_43 * u.uModel).xyz;
+    vec3 _534 = vec3(1.0);
+    vec3 _539 = vec3(0.0);
+    vec3 _540 = vec3(0.0);
     if (u.uShading == 1)
     {
         _11 = u.uHasNormals != 0;
@@ -442,81 +858,94 @@ void main()
     }
     if (_11)
     {
-        float _161 = length(_477);
+        float _170 = length(_538);
         vec3 n;
-        if (_161 > 0.0)
+        if (_170 > 0.0)
         {
-            n = _477 / vec3(_161);
+            n = _538 / vec3(_170);
         }
         else
         {
-            n = _477;
+            n = _538;
         }
-        int _369 = 0;
-        vec3 _370 = u.uAmbient;
-        vec3 _371;
-        float _372;
+        vec3 _19 = u.uAmbient;
+        vec3 _20 = vec3(0.0);
+        vec3 _21 = vec3(0.0);
+        int _418 = 0;
+        vec3 _419;
+        float _420;
         for (;;)
         {
-            bool _379_ladder_break = false;
+            bool _426_ladder_break = false;
             do
             {
-                if (!(_369 < u.uLightCount))
+                if (!(_418 < u.uLightCount))
                 {
-                    _379_ladder_break = true;
+                    _426_ladder_break = true;
                     break;
                 }
-                if (u.uLightPosition.data[_369].w > 0.5)
+                if (u.uLightPosition.data[_418].w > 0.5)
                 {
-                    vec3 _402 = u.uLightPosition.data[_369].xyz - _476;
-                    float _407 = dot(_402, _402);
-                    float _410 = 1.0 - (_407 / (u.uLightDirection.data[_369].w * u.uLightDirection.data[_369].w));
-                    if (_410 <= 0.0)
+                    vec3 _449 = u.uLightPosition.data[_418].xyz - _537;
+                    float _454 = dot(_449, _449);
+                    float _457 = 1.0 - (_454 / (u.uLightDirection.data[_418].w * u.uLightDirection.data[_418].w));
+                    if (_457 <= 0.0)
                     {
-                        _371 = _370;
                         break;
                     }
-                    float _415 = _410 * _410;
-                    if (_407 > 0.0)
+                    float _461 = _457 * _457;
+                    if (_454 > 0.0)
                     {
-                        _371 = _402 * inversesqrt(_407);
+                        _419 = _449 * inversesqrt(_454);
                     }
                     else
                     {
-                        _371 = _402;
+                        _419 = _449;
                     }
-                    if (u.uLightPosition.data[_369].w > 1.5)
+                    if (u.uLightPosition.data[_418].w > 1.5)
                     {
-                        float _437 = clamp(((-dot(_371, u.uLightDirection.data[_369].xyz)) - u.uLightCone.data[_369].x) / (u.uLightCone.data[_369].y - u.uLightCone.data[_369].x), 0.0, 1.0);
-                        _372 = _415 * ((_437 * _437) * (3.0 - (2.0 * _437)));
+                        float _483 = clamp(((-dot(_419, u.uLightDirection.data[_418].xyz)) - u.uLightCone.data[_418].x) / (u.uLightCone.data[_418].y - u.uLightCone.data[_418].x), 0.0, 1.0);
+                        _420 = _461 * ((_483 * _483) * (3.0 - (2.0 * _483)));
                     }
                     else
                     {
-                        _372 = _415;
+                        _420 = _461;
                     }
                 }
                 else
                 {
-                    _371 = -u.uLightDirection.data[_369].xyz;
-                    _372 = 1.0;
+                    _419 = -u.uLightDirection.data[_418].xyz;
+                    _420 = 1.0;
                 }
-                float _454 = dot(n, _371);
-                _371 = _370 + (u.uLightColor.data[_369].xyz * ((isnan(0.0) ? _454 : (isnan(_454) ? 0.0 : max(_454, 0.0))) * _372));
+                float _500 = dot(n, _419);
+                vec3 _504 = u.uLightColor.data[_418].xyz * ((isnan(0.0) ? _500 : (isnan(_500) ? 0.0 : max(_500, 0.0))) * _420);
+                if (u.uLightCone.data[_418].z > 1.5)
+                {
+                    _21 += _504;
+                }
+                else
+                {
+                    if (u.uLightCone.data[_418].z > 0.5)
+                    {
+                        _20 += _504;
+                    }
+                    else
+                    {
+                        _19 += _504;
+                    }
+                }
                 break;
             } while(false);
-            if (_379_ladder_break)
+            if (_426_ladder_break)
             {
                 break;
             }
-            _369++;
-            _370 = _371;
+            _418++;
             continue;
         }
-        bvec3 _498 = isnan(_370);
-        bvec3 _499 = isnan(vec3(2.0));
-        vec3 _500 = min(_370, vec3(2.0));
-        vec3 _501 = vec3(_498.x ? vec3(2.0).x : _500.x, _498.y ? vec3(2.0).y : _500.y, _498.z ? vec3(2.0).z : _500.z);
-        _473 = vec3(_499.x ? _370.x : _501.x, _499.y ? _370.y : _501.y, _499.z ? _370.z : _501.z);
+        _534 = _19;
+        _539 = _20;
+        _540 = _21;
     }
     float w;
     if (u.uAffine != 0)
@@ -527,13 +956,15 @@ void main()
     {
         w = 1.0;
     }
-    gl_Position = _471;
-    vary0 = _472;
-    vary1 = _473;
+    gl_Position = _532;
+    vary0 = _533;
+    vary1 = _534;
     vary2 = v_uv * w;
     vary3 = w;
-    vary4 = _476;
-    vary5 = _477;
+    vary4 = _537;
+    vary5 = _538;
+    vary6 = _539;
+    vary7 = _540;
 }
 
 )deki";
@@ -556,6 +987,9 @@ struct GlobalParams_std140
     _Array_std140_vector_float_4_8 uLightDirection;
     _Array_std140_vector_float_4_8 uLightColor;
     _Array_std140_vector_float_4_8 uLightCone;
+    mat4 uShadowMatrix0;
+    mat4 uShadowMatrix1;
+    vec2 uShadowBias;
     int uShading;
     int uHasNormals;
     int uAffine;
@@ -572,17 +1006,21 @@ struct GlobalParams_std140
 uniform GlobalParams_std140 u;
 
 uniform sampler2D uTexture;
+uniform sampler2DShadow uShadowMap0;
+uniform sampler2DShadow uShadowMap1;
 
 in vec4 vary0;
 in vec2 vary2;
 in float vary3;
 in vec3 vary4;
 in vec3 vary1;
+in vec3 vary6;
+in vec3 vary7;
 layout(location = 0) out vec4 fragColor;
 
 void main()
 {
-    vec4 _56 = vary0 * u.uTint;
+    vec4 _59 = vary0 * u.uTint;
     vec4 colour;
     float coverage;
     if (u.uTexMode != 0)
@@ -594,14 +1032,14 @@ void main()
         }
         else
         {
-            colour = _56;
+            colour = _59;
         }
         coverage = _sampled.w;
     }
     else
     {
         coverage = 1.0;
-        colour = _56;
+        colour = _59;
     }
     bool _13;
     if (u.uAlphaTest != 0)
@@ -616,14 +1054,14 @@ void main()
     {
         discard;
     }
-    vec3 _336 = dFdx(vary4);
-    vec3 _339 = dFdy(vary4);
-    vec3 _134 = cross(_336, _339);
-    float _136 = length(_134);
+    vec3 _569 = dFdx(vary4);
+    vec3 _572 = dFdy(vary4);
+    vec3 _137 = cross(_569, _572);
+    float _139 = length(_137);
     vec3 face;
-    if (_136 > 0.0)
+    if (_139 > 0.0)
     {
-        face = _134 / vec3(_136);
+        face = _137 / vec3(_139);
     }
     else
     {
@@ -640,77 +1078,457 @@ void main()
     }
     else
     {
-        if (u.uShading == 2)
+        if (u.uShading == 1)
         {
-            int _340 = 0;
-            vec3 _341 = u.uAmbient;
-            vec3 _342;
-            float _343;
-            for (;;)
+            vec3 _573;
+            if (any(greaterThan(vary6, vec3(0.0))))
             {
-                bool _350_ladder_break = false;
+                float _597;
                 do
                 {
-                    if (!(_340 < u.uLightCount))
+                    mat4 _598;
+                    if (true)
                     {
-                        _350_ladder_break = true;
-                        break;
-                    }
-                    if (u.uLightPosition.data[_340].w > 0.5)
-                    {
-                        vec3 _373 = u.uLightPosition.data[_340].xyz - vary4;
-                        float _378 = dot(_373, _373);
-                        float _381 = 1.0 - (_378 / (u.uLightDirection.data[_340].w * u.uLightDirection.data[_340].w));
-                        if (_381 <= 0.0)
-                        {
-                            _342 = _341;
-                            break;
-                        }
-                        float _386 = _381 * _381;
-                        if (_378 > 0.0)
-                        {
-                            _342 = _373 * inversesqrt(_378);
-                        }
-                        else
-                        {
-                            _342 = _373;
-                        }
-                        if (u.uLightPosition.data[_340].w > 1.5)
-                        {
-                            float _408 = clamp(((-dot(_342, u.uLightDirection.data[_340].xyz)) - u.uLightCone.data[_340].x) / (u.uLightCone.data[_340].y - u.uLightCone.data[_340].x), 0.0, 1.0);
-                            _343 = _386 * ((_408 * _408) * (3.0 - (2.0 * _408)));
-                        }
-                        else
-                        {
-                            _343 = _386;
-                        }
+                        _598 = u.uShadowMatrix0;
                     }
                     else
                     {
-                        _342 = -u.uLightDirection.data[_340].xyz;
-                        _343 = 1.0;
+                        _598 = u.uShadowMatrix1;
                     }
-                    float _425 = dot(face, _342);
-                    _342 = _341 + (u.uLightColor.data[_340].xyz * ((isnan(0.0) ? _425 : (isnan(_425) ? 0.0 : max(_425, 0.0))) * _343));
+                    vec4 _614 = vec4(vary4, 1.0) * _598;
+                    float _615 = _614.w;
+                    if (_615 <= 0.0)
+                    {
+                        _597 = 1.0;
+                        break;
+                    }
+                    vec3 _621 = _614.xyz / vec3(_615);
+                    vec2 _625 = (_621.xy * 0.5) + vec2(0.5);
+                    float _599;
+                    if (true)
+                    {
+                        _599 = u.uShadowBias.x;
+                    }
+                    else
+                    {
+                        _599 = u.uShadowBias.y;
+                    }
+                    float _638 = _599;
+                    float _639 = ((_621.z * 0.5) + 0.5) - _638;
+                    float _640 = _625.x;
+                    bool _600;
+                    if (_640 < 0.0)
+                    {
+                        _600 = true;
+                    }
+                    else
+                    {
+                        _600 = _625.y < 0.0;
+                    }
+                    if (_600)
+                    {
+                        _600 = true;
+                    }
+                    else
+                    {
+                        _600 = _640 > 1.0;
+                    }
+                    if (_600)
+                    {
+                        _600 = true;
+                    }
+                    else
+                    {
+                        _600 = _625.y > 1.0;
+                    }
+                    if (_600)
+                    {
+                        _600 = true;
+                    }
+                    else
+                    {
+                        _600 = _639 >= 1.0;
+                    }
+                    if (_600)
+                    {
+                        _597 = 1.0;
+                        break;
+                    }
+                    if (true)
+                    {
+                        _599 = textureLod(uShadowMap0, vec3(_625, _639), 0.0);
+                    }
+                    else
+                    {
+                        _599 = textureLod(uShadowMap1, vec3(_625, _639), 0.0);
+                    }
+                    _597 = _599;
                     break;
                 } while(false);
-                if (_350_ladder_break)
-                {
-                    break;
-                }
-                _340++;
-                _341 = _342;
-                continue;
+                _573 = vary1 + (vary6 * _597);
             }
-            bvec3 _450 = isnan(_341);
-            bvec3 _451 = isnan(vec3(2.0));
-            vec3 _452 = min(_341, vec3(2.0));
-            vec3 _453 = vec3(_450.x ? vec3(2.0).x : _452.x, _450.y ? vec3(2.0).y : _452.y, _450.z ? vec3(2.0).z : _452.z);
-            light = vec3(_451.x ? _341.x : _453.x, _451.y ? _341.y : _453.y, _451.z ? _341.z : _453.z);
+            else
+            {
+                _573 = vary1;
+            }
+            if (any(greaterThan(vary7, vec3(0.0))))
+            {
+                float _681;
+                do
+                {
+                    mat4 _682;
+                    if (false)
+                    {
+                        _682 = u.uShadowMatrix0;
+                    }
+                    else
+                    {
+                        _682 = u.uShadowMatrix1;
+                    }
+                    vec4 _698 = vec4(vary4, 1.0) * _682;
+                    float _699 = _698.w;
+                    if (_699 <= 0.0)
+                    {
+                        _681 = 1.0;
+                        break;
+                    }
+                    vec3 _705 = _698.xyz / vec3(_699);
+                    vec2 _709 = (_705.xy * 0.5) + vec2(0.5);
+                    float _683;
+                    if (false)
+                    {
+                        _683 = u.uShadowBias.x;
+                    }
+                    else
+                    {
+                        _683 = u.uShadowBias.y;
+                    }
+                    float _722 = _683;
+                    float _723 = ((_705.z * 0.5) + 0.5) - _722;
+                    float _724 = _709.x;
+                    bool _684;
+                    if (_724 < 0.0)
+                    {
+                        _684 = true;
+                    }
+                    else
+                    {
+                        _684 = _709.y < 0.0;
+                    }
+                    if (_684)
+                    {
+                        _684 = true;
+                    }
+                    else
+                    {
+                        _684 = _724 > 1.0;
+                    }
+                    if (_684)
+                    {
+                        _684 = true;
+                    }
+                    else
+                    {
+                        _684 = _709.y > 1.0;
+                    }
+                    if (_684)
+                    {
+                        _684 = true;
+                    }
+                    else
+                    {
+                        _684 = _723 >= 1.0;
+                    }
+                    if (_684)
+                    {
+                        _681 = 1.0;
+                        break;
+                    }
+                    if (false)
+                    {
+                        _683 = textureLod(uShadowMap0, vec3(_709, _723), 0.0);
+                    }
+                    else
+                    {
+                        _683 = textureLod(uShadowMap1, vec3(_709, _723), 0.0);
+                    }
+                    _681 = _683;
+                    break;
+                } while(false);
+                _573 += (vary7 * _681);
+            }
+            bvec3 _1087 = isnan(_573);
+            bvec3 _1088 = isnan(vec3(2.0));
+            vec3 _1089 = min(_573, vec3(2.0));
+            vec3 _1090 = vec3(_1087.x ? vec3(2.0).x : _1089.x, _1087.y ? vec3(2.0).y : _1089.y, _1087.z ? vec3(2.0).z : _1089.z);
+            light = vec3(_1088.x ? _573.x : _1090.x, _1088.y ? _573.y : _1090.y, _1088.z ? _573.z : _1090.z);
         }
         else
         {
-            light = vary1;
+            if (u.uShading == 2)
+            {
+                vec3 _764 = u.uAmbient;
+                vec3 _765 = vec3(0.0);
+                vec3 _766 = vec3(0.0);
+                int _774 = 0;
+                vec3 _775;
+                float _776;
+                for (;;)
+                {
+                    bool _782_ladder_break = false;
+                    do
+                    {
+                        if (!(_774 < u.uLightCount))
+                        {
+                            _782_ladder_break = true;
+                            break;
+                        }
+                        if (u.uLightPosition.data[_774].w > 0.5)
+                        {
+                            vec3 _805 = u.uLightPosition.data[_774].xyz - vary4;
+                            float _810 = dot(_805, _805);
+                            float _813 = 1.0 - (_810 / (u.uLightDirection.data[_774].w * u.uLightDirection.data[_774].w));
+                            if (_813 <= 0.0)
+                            {
+                                break;
+                            }
+                            float _817 = _813 * _813;
+                            if (_810 > 0.0)
+                            {
+                                _775 = _805 * inversesqrt(_810);
+                            }
+                            else
+                            {
+                                _775 = _805;
+                            }
+                            if (u.uLightPosition.data[_774].w > 1.5)
+                            {
+                                float _839 = clamp(((-dot(_775, u.uLightDirection.data[_774].xyz)) - u.uLightCone.data[_774].x) / (u.uLightCone.data[_774].y - u.uLightCone.data[_774].x), 0.0, 1.0);
+                                _776 = _817 * ((_839 * _839) * (3.0 - (2.0 * _839)));
+                            }
+                            else
+                            {
+                                _776 = _817;
+                            }
+                        }
+                        else
+                        {
+                            _775 = -u.uLightDirection.data[_774].xyz;
+                            _776 = 1.0;
+                        }
+                        float _856 = dot(face, _775);
+                        vec3 _860 = u.uLightColor.data[_774].xyz * ((isnan(0.0) ? _856 : (isnan(_856) ? 0.0 : max(_856, 0.0))) * _776);
+                        if (u.uLightCone.data[_774].z > 1.5)
+                        {
+                            _766 += _860;
+                        }
+                        else
+                        {
+                            if (u.uLightCone.data[_774].z > 0.5)
+                            {
+                                _765 += _860;
+                            }
+                            else
+                            {
+                                _764 += _860;
+                            }
+                        }
+                        break;
+                    } while(false);
+                    if (_782_ladder_break)
+                    {
+                        break;
+                    }
+                    _774++;
+                    continue;
+                }
+                vec3 _888;
+                if (any(greaterThan(_765, vec3(0.0))))
+                {
+                    float _912;
+                    do
+                    {
+                        mat4 _913;
+                        if (true)
+                        {
+                            _913 = u.uShadowMatrix0;
+                        }
+                        else
+                        {
+                            _913 = u.uShadowMatrix1;
+                        }
+                        vec4 _929 = vec4(vary4, 1.0) * _913;
+                        float _930 = _929.w;
+                        if (_930 <= 0.0)
+                        {
+                            _912 = 1.0;
+                            break;
+                        }
+                        vec3 _936 = _929.xyz / vec3(_930);
+                        vec2 _940 = (_936.xy * 0.5) + vec2(0.5);
+                        float _914;
+                        if (true)
+                        {
+                            _914 = u.uShadowBias.x;
+                        }
+                        else
+                        {
+                            _914 = u.uShadowBias.y;
+                        }
+                        float _953 = _914;
+                        float _954 = ((_936.z * 0.5) + 0.5) - _953;
+                        float _955 = _940.x;
+                        bool _915;
+                        if (_955 < 0.0)
+                        {
+                            _915 = true;
+                        }
+                        else
+                        {
+                            _915 = _940.y < 0.0;
+                        }
+                        if (_915)
+                        {
+                            _915 = true;
+                        }
+                        else
+                        {
+                            _915 = _955 > 1.0;
+                        }
+                        if (_915)
+                        {
+                            _915 = true;
+                        }
+                        else
+                        {
+                            _915 = _940.y > 1.0;
+                        }
+                        if (_915)
+                        {
+                            _915 = true;
+                        }
+                        else
+                        {
+                            _915 = _954 >= 1.0;
+                        }
+                        if (_915)
+                        {
+                            _912 = 1.0;
+                            break;
+                        }
+                        if (true)
+                        {
+                            _914 = textureLod(uShadowMap0, vec3(_940, _954), 0.0);
+                        }
+                        else
+                        {
+                            _914 = textureLod(uShadowMap1, vec3(_940, _954), 0.0);
+                        }
+                        _912 = _914;
+                        break;
+                    } while(false);
+                    _888 = _764 + (_765 * _912);
+                }
+                else
+                {
+                    _888 = _764;
+                }
+                if (any(greaterThan(_766, vec3(0.0))))
+                {
+                    float _996;
+                    do
+                    {
+                        mat4 _997;
+                        if (false)
+                        {
+                            _997 = u.uShadowMatrix0;
+                        }
+                        else
+                        {
+                            _997 = u.uShadowMatrix1;
+                        }
+                        vec4 _1013 = vec4(vary4, 1.0) * _997;
+                        float _1014 = _1013.w;
+                        if (_1014 <= 0.0)
+                        {
+                            _996 = 1.0;
+                            break;
+                        }
+                        vec3 _1020 = _1013.xyz / vec3(_1014);
+                        vec2 _1024 = (_1020.xy * 0.5) + vec2(0.5);
+                        float _998;
+                        if (false)
+                        {
+                            _998 = u.uShadowBias.x;
+                        }
+                        else
+                        {
+                            _998 = u.uShadowBias.y;
+                        }
+                        float _1037 = _998;
+                        float _1038 = ((_1020.z * 0.5) + 0.5) - _1037;
+                        float _1039 = _1024.x;
+                        bool _999;
+                        if (_1039 < 0.0)
+                        {
+                            _999 = true;
+                        }
+                        else
+                        {
+                            _999 = _1024.y < 0.0;
+                        }
+                        if (_999)
+                        {
+                            _999 = true;
+                        }
+                        else
+                        {
+                            _999 = _1039 > 1.0;
+                        }
+                        if (_999)
+                        {
+                            _999 = true;
+                        }
+                        else
+                        {
+                            _999 = _1024.y > 1.0;
+                        }
+                        if (_999)
+                        {
+                            _999 = true;
+                        }
+                        else
+                        {
+                            _999 = _1038 >= 1.0;
+                        }
+                        if (_999)
+                        {
+                            _996 = 1.0;
+                            break;
+                        }
+                        if (false)
+                        {
+                            _998 = textureLod(uShadowMap0, vec3(_1024, _1038), 0.0);
+                        }
+                        else
+                        {
+                            _998 = textureLod(uShadowMap1, vec3(_1024, _1038), 0.0);
+                        }
+                        _996 = _998;
+                        break;
+                    } while(false);
+                    _888 += (_766 * _996);
+                }
+                bvec3 _1097 = isnan(_888);
+                bvec3 _1098 = isnan(vec3(2.0));
+                vec3 _1099 = min(_888, vec3(2.0));
+                vec3 _1100 = vec3(_1097.x ? vec3(2.0).x : _1099.x, _1097.y ? vec3(2.0).y : _1099.y, _1097.z ? vec3(2.0).z : _1099.z);
+                light = vec3(_1098.x ? _888.x : _1100.x, _1098.y ? _888.y : _1100.y, _1098.z ? _888.z : _1100.z);
+            }
+            else
+            {
+                light = vary1;
+            }
         }
     }
     fragColor = vec4(colour.xyz * light, 1.0);

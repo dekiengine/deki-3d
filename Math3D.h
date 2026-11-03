@@ -145,6 +145,25 @@ inline Mat4 Perspective(float fovY, float aspect, float nearZ, float farZ)
     return m;
 }
 
+/// Right-handed orthographic projection of the box [left, right] x [bottom,
+/// top] x [-nearZ, -farZ] (looking down -Z), clip z in [-1, 1].
+inline Mat4 Ortho(float left, float right, float bottom, float top, float nearZ, float farZ)
+{
+    Mat4 m;
+    if (left == right || bottom == top || nearZ == farZ)
+    {
+        return m;  // identity rather than infinities on a degenerate box
+    }
+    m.m[0][0] = 2.0f / (right - left);
+    m.m[1][1] = 2.0f / (top - bottom);
+    m.m[2][2] = -2.0f / (farZ - nearZ);
+    m.m[3][0] = -(right + left) / (right - left);
+    m.m[3][1] = -(top + bottom) / (top - bottom);
+    m.m[3][2] = -(farZ + nearZ) / (farZ - nearZ);
+    m.m[3][3] = 1.0f;
+    return m;
+}
+
 /// A view matrix for a camera at `eye` looking at `target`.
 inline Mat4 LookAt(const Vector3& eye, const Vector3& target, const Vector3& up)
 {

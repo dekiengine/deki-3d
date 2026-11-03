@@ -12,6 +12,7 @@ class CameraComponent;
 }
 namespace Deki3D
 {
+class MeshComponent;
 
 /// Draws every MeshComponent the renderer hands it, into the same framebuffer
 /// the 2D content uses.
@@ -63,6 +64,14 @@ private:
     void Start(const Deki::Object* sceneObject);
     /// The scene's Lights into m_Config, in world space.
     void GatherLights(const Deki::Object* sceneObject);
+    /// The shadow casters of the scene and the shadow maps of the lights that
+    /// cast shadows (m_Config.shadows), fitted to them.
+    void PlanShadows(const Deki::Object* sceneObject);
+    /// Draws the shadow casters into the shadow maps.
+    void DrawShadows();
+    /// The materials `mesh` draws with, in m_Materials: its asset's, with the
+    /// component's settings over them, in `shading`.
+    void BuildMaterials(const MeshComponent& mesh, ShadingModel shading);
     /// The GPU backend, made on first use; null where there is none.
     Mesh3DBackend* Gpu();
 
@@ -91,6 +100,20 @@ private:
     bool m_Active = false;   // false when the scene has no 3D camera
     bool m_Pending = false;  // geometry is binned and not yet filled
     bool m_Lit = false;      // the scene has a Light: the lit shading models light
+    // The lights that cast shadows this frame (into m_Config.lights), and the
+    // meshes that cast them.
+    struct ShadowLight
+    {
+        int light;  // its index in m_Config.lights
+        float resolution, bias;
+    };
+    std::vector<ShadowLight> m_ShadowLights;
+    struct Caster
+    {
+        const MeshComponent* mesh;
+        Deki::Mat4 model;
+    };
+    std::vector<Caster> m_Casters;
 };
 
 }  // namespace Deki3D

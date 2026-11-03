@@ -12,8 +12,8 @@
 //   float4 Shade(Fragment f)                          colours a pixel; f is
 //                                                     what the shading model
 //                                                     would draw, and why
-// and LightAt(position, normal), the scene's light at a world position, for a
-// Shade that lights per pixel.
+// and LightAt(position, normal), the scene's light at a world position,
+// shadows and all, for a Shade that lights per pixel.
 
 #include "MeshShaderUse.h"
 
@@ -35,7 +35,12 @@ uniform int uLightCount;
 uniform float4 uLightPosition[8];
 uniform float4 uLightDirection[8];
 uniform float4 uLightColor[8];
-uniform float4 uLightCone[8];
+uniform float4 uLightCone[8];    // z: the shadow map it casts into, 1 or 2, or 0
+// The shadow maps (Mesh3DBackend.h's ShadowMap): world to each light's clip
+// space, and each one's depth bias.
+uniform float4x4 uShadowMatrix0;
+uniform float4x4 uShadowMatrix1;
+uniform float2 uShadowBias;
 uniform int uShading;            // ShadingModel: 0 unlit, 1 vertex lit, 2 flat
 uniform int uHasNormals;
 uniform int uAffine;             // texturing without perspective correction
@@ -50,13 +55,42 @@ uniform float4 uTint;
 
 Texture2D uTexture;
 SamplerState uTextureSampler;
+Texture2D uShadowMap0;
+SamplerComparisonState uShadowMap0Sampler;
+Texture2D uShadowMap1;
+SamplerComparisonState uShadowMap1Sampler;
+
+// How much of shadow map `map`'s light (1 or 2) reaches `position`: 0 in its
+// shadow, 1 in its light, between at a shadow's edge (the depth compare
+// filtered over the four nearest texels). Outside the map, all of it.
+float ShadowAt(int map, float3 position)
+{
+    const float4 p = mul(map == 1 ? uShadowMatrix0 : uShadowMatrix1, float4(position, 1.0));
+    if (p.w <= 0.0)
+    {
+        return 1.0;
+    }
+    const float3 ndc = p.xyz / p.w;
+    const float2 uv = ndc.xy * 0.5 + 0.5;
+    const float depth = ndc.z * 0.5 + 0.5 - (map == 1 ? uShadowBias.x : uShadowBias.y);
+    if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0 || depth >= 1.0)
+    {
+        return 1.0;
+    }
+    return map == 1 ? uShadowMap0.SampleCmpLevelZero(uShadowMap0Sampler, uv, depth)
+                    : uShadowMap1.SampleCmpLevelZero(uShadowMap1Sampler, uv, depth);
+}
 
 // The light reaching a surface at `position` facing `normal` (unit), world
-// space: the ambient, plus each light by how near it is and how much the
-// surface faces it, up to twice a colour. Mesh3DBackend.cpp's LightAt.
-float3 LightAt(float3 position, float3 normal)
+// space, before shadows: the ambient, plus each light by how near it is and
+// how much the surface faces it (Mesh3DBackend.cpp's LightAt). In `open`
+// what no shadow map can block, in `shaded0` and `shaded1` what maps 1 and 2
+// can.
+void LightParts(float3 position, float3 normal, out float3 open, out float3 shaded0, out float3 shaded1)
 {
-    float3 sum = uAmbient;
+    open = uAmbient;
+    shaded0 = float3(0.0, 0.0, 0.0);
+    shaded1 = float3(0.0, 0.0, 0.0);
     for (int i = 0; i < uLightCount; i++)
     {
         const float4 at = uLightPosition[i];
@@ -85,9 +119,45 @@ float3 LightAt(float3 position, float3 normal)
                 share *= s * s * (3.0 - 2.0 * s);
             }
         }
-        sum += uLightColor[i].rgb * (max(dot(normal, toward), 0.0) * share);
+        const float3 light = uLightColor[i].rgb * (max(dot(normal, toward), 0.0) * share);
+        const float map = uLightCone[i].z;
+        if (map > 1.5)
+        {
+            shaded1 += light;
+        }
+        else if (map > 0.5)
+        {
+            shaded0 += light;
+        }
+        else
+        {
+            open += light;
+        }
     }
-    return min(sum, 2.0);
+}
+
+// The parts put together, through the shadow maps at `position`: at most
+// twice a colour.
+float3 Shadowed(float3 open, float3 shaded0, float3 shaded1, float3 position)
+{
+    float3 light = open;
+    if (any(shaded0 > 0.0))
+    {
+        light += shaded0 * ShadowAt(1, position);
+    }
+    if (any(shaded1 > 0.0))
+    {
+        light += shaded1 * ShadowAt(2, position);
+    }
+    return min(light, 2.0);
+}
+
+// The light reaching a surface at `position` facing `normal`, shadows and all.
+float3 LightAt(float3 position, float3 normal)
+{
+    float3 open, shaded0, shaded1;
+    LightParts(position, normal, open, shaded0, shaded1);
+    return Shadowed(open, shaded0, shaded1, position);
 }
 
 // What a shader's Shade() is given for each pixel.
@@ -121,6 +191,10 @@ struct Varyings
     [[vk::location(3)]] float w : TEXCOORD2;
     [[vk::location(4)]] float3 position : TEXCOORD3;  // world space
     [[vk::location(5)]] float3 normal : TEXCOORD4;
+    // A vertex lit mesh's light from each shadow map's light, shadowed per
+    // pixel; `light` holds the rest.
+    [[vk::location(6)]] float3 shaded0 : TEXCOORD5;
+    [[vk::location(7)]] float3 shaded1 : TEXCOORD6;
 };
 
 Varyings VertexMain(VertexIn v)
@@ -142,6 +216,8 @@ Varyings VertexMain(VertexIn v)
     o.normal = mul((float3x3)uNormalMatrix, v.normal);
     o.position = mul(uModel, float4(position, 1.0)).xyz;
     o.light = float3(1.0, 1.0, 1.0);
+    o.shaded0 = float3(0.0, 0.0, 0.0);
+    o.shaded1 = float3(0.0, 0.0, 0.0);
     if (uShading == 1 && uHasNormals != 0)
     {
         float3 n = o.normal;
@@ -150,7 +226,7 @@ Varyings VertexMain(VertexIn v)
         {
             n /= len;
         }
-        o.light = LightAt(o.position, n);
+        LightParts(o.position, n, o.light, o.shaded0, o.shaded1);
     }
 
     // Affine texturing: interpolating uv*w and w perspective-correctly, then
@@ -196,6 +272,10 @@ float4 FragmentMain(Varyings i, bool frontFacing : SV_IsFrontFace) : SV_Target0
     if (uShading == 0)
     {
         light = float3(1.0, 1.0, 1.0);
+    }
+    else if (uShading == 1)
+    {
+        light = Shadowed(i.light, i.shaded0, i.shaded1, i.position);
     }
     else if (uShading == 2)
     {

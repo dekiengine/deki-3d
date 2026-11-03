@@ -25,8 +25,33 @@ hardware FPU that means emulation is only paid at vertex rate.
   Projection is Perspective; its field of view and clip planes live there.
   With an orthographic camera, meshes are not drawn.
 - `Mesh3DSettings` sets how the pass draws: the renderer, tile size, the retro
-  switches, the light and the fill threads. Put one anywhere in the scene; without one the
+  switches and the fill threads. Put one anywhere in the scene; without one the
   pass uses its declared defaults.
+- The scene's `DekiRendering::Light` components light the meshes (below,
+  "Lights"). A scene with none draws its lit meshes unlit, and says so.
+
+## Lights
+
+Lit meshes (VertexLit, Flat) are lit by the scene's Lights: the ambient, and
+up to 8 directional, point and spot lights, the strongest if there are more
+(the ones left out are named once). A surface takes each light by how near
+it is and how much it faces it, in colour, up to twice its own. A spot faces
+along its object's X axis, as in 2D.
+
+- The software rasteriser lights each vertex (a flat face at its middle) by
+  the 4 lights that reach the mesh most, and a triangle by its first vertex.
+- The GPU lights each vertex the same way and blends across the triangle.
+- Shadows, GPU only: a directional or spot light with Cast Shadows, at most
+  two in a frame, casts the shadows of every mesh with `castShadows` on (the
+  default). Each light's shadow map is drawn before the frame's meshes, with
+  each mesh's own shader, so a `Displace()` or a texture's holes shape its
+  shadow too; a lookup compares depth over the four nearest texels, for a
+  softened edge. The software rasteriser, and so a board, draws the light
+  without shadows, and says so; point lights cast none yet.
+
+A scene saved with Mesh3DSettings' old light (`lightYaw`, `lightPitch`,
+`ambient`) opens with two Lights in its place on the same object, an Ambient
+one and a Directional one, that light it exactly as before.
 
 ## Models
 
@@ -114,7 +139,7 @@ board's picture.
 ### What it draws
 
 What the software rasteriser draws: the three shading models (Unlit,
-VertexLit, Flat) against the scene's one light, textures in every `Texture3D`
+VertexLit, Flat) against the scene's lights, textures in every `Texture3D`
 format with the same holes (palette index 0, RGB565 magenta, alpha below half)
 when the material asks for the alpha test, and the retro switches
 (`perspectiveCorrect` off for affine texturing, `vertexSnap`).
@@ -150,10 +175,12 @@ float4 Shade(Fragment f)
 - `Displace(position, normal)`, optional, returns the object-space position.
 - `Shade(Fragment f)`, optional, returns the colour. `f.base` is what the
   shading model would draw; `f.albedo` (texel or vertex colour times tint,
-  alpha the coverage), `f.uv`, `f.normal` (world space), `f.light` and
-  `f.pixel` are there to build on.
+  alpha the coverage), `f.uv`, `f.normal` and `f.position` (world space),
+  `f.light` (per channel, 1 the colour as it is) and `f.pixel` are there to
+  build on. `LightAt(position, normal)` is the scene's light at a world
+  position, shadows and all, for a shader that lights per pixel.
 - Uniforms: `uTime` (seconds), `uParams` and `uColor` (the component's
-  `shaderParams` and `shaderColor`), `uLightDir`, `uAmbient`, `uTexture`.
+  `shaderParams` and `shaderColor`), `uAmbient`, the light arrays, `uTexture`.
   Matrices are row-major: `mul(M, v)`.
 
 The editor compiles the file to GLSL for each device that draws it

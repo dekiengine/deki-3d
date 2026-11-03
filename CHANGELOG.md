@@ -10,6 +10,28 @@ alongside one that has them.
 
 ## Unreleased
 
+### Lights and shadows
+- Meshes are lit by the scene's `DekiRendering::Light` components: an
+  ambient colour and up to 8 directional, point and spot lights, in colour,
+  by distance, cone and facing, up to twice a colour (`LightAt`,
+  `Light3D`, `RasterConfig::lights`). The software rasteriser lights a mesh
+  by the 4 lights that reach it most and shades per channel.
+- Shadows on the GPU, from up to two directional or spot lights a frame
+  (`ShadowMap`, `Mesh3DBackend::DrawShadowCaster`), cast by every mesh with
+  the new `MeshComponent::castShadows` (on by default). The software
+  rasteriser draws without them and says so.
+- A scene without a Light draws its lit meshes unlit and says so once per
+  mesh; a lit mesh `LightsItself()`, so the 2D light goes under it.
+- Breaking: `Mesh3DSettings` loses `lightYaw`, `lightPitch` and `ambient`; a
+  scene saved with them opens with an Ambient and a Directional Light that
+  light it as before. `RasterConfig::lightDirection` and `ambient` (a float)
+  become `ambient` (a colour) and `lights`. `DrawMesh` takes the model
+  matrix, `Identity` by default.
+- Breaking, for shaders: `Fragment.light` is a `float3`, one light per
+  channel; `Fragment.position` (world space) and `LightAt(position, normal)`
+  are new. `uLightDir` is gone.
+- `Ortho` in Math3D.h.
+
 ### Added
 - `Mesh3DBackend`: what draws the pass's meshes. `Raster3D` is one;
   `GLMesh3DBackend` draws them on the GPU, through OpenGL ES 3.0 or desktop

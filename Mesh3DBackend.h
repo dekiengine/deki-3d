@@ -38,6 +38,16 @@ struct Light3D
     float range = 1.0f;                                          // point and spot: where it fades to nothing
     float cosOuter = 0.0f;  // spot: the cosines of its cone's edge, and of where it starts to fade
     float cosInner = 0.0f;
+    int shadow = -1;  // the shadow map it casts into (RasterConfig::shadows), or -1 for none
+};
+
+/// A shadow map: a light's view of the shadow casters, which the GPU draws
+/// before the frame's meshes (Mesh3DBackend::DrawShadowCaster).
+struct ShadowMap
+{
+    Deki::Mat4 viewProjection;  // world to the light's clip space
+    int resolution = 1024;      // pixels on each side
+    float bias = 0.002f;        // depth pushed back, against a surface shadowing itself
 };
 
 /// The light reaching a surface at `position` facing `normal` (unit), world
@@ -92,6 +102,11 @@ struct RasterConfig
     Light3D lights[kMaxLights];
     int lightCount = 1;
 
+    /// Shadow maps, drawn only where the backend can (DrawsShadows).
+    static constexpr int kMaxShadows = 2;
+    ShadowMap shadows[kMaxShadows];
+    int shadowCount = 0;
+
     RasterConfig()
     {
         lights[0].color = Deki::Vector3(0.75f, 0.75f, 0.75f);
@@ -133,6 +148,25 @@ public:
 
     /// Finishes the batch. Nothing need reach the framebuffer before this.
     virtual void EndFrame() = 0;
+
+    /// Whether this backend draws shadows: the GPU's does, the software
+    /// rasteriser does not.
+    virtual bool DrawsShadows() const { return false; }
+
+    /// Draws `mesh` into shadow map `slot` of the batch's config, depth only:
+    /// a shadow caster as its light sees it. Called after BeginFrame and before
+    /// its first DrawMesh, for each caster and each map; the maps then hold
+    /// for every batch of the frame. Each material's shader moves the vertices
+    /// and its texture cuts holes, as when the mesh is drawn.
+    virtual void DrawShadowCaster(int slot, const Mesh3D& mesh, const Material3D* materials, uint16_t materialCount,
+                                  const Deki::Mat4& model)
+    {
+        (void)slot;
+        (void)mesh;
+        (void)materials;
+        (void)materialCount;
+        (void)model;
+    }
 
     /// Whether the batch's meshes reach the frame through the buffer: the
     /// software rasteriser's do, and a GPU backend's that it reads back. A

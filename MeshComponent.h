@@ -54,6 +54,11 @@ public:
     DEKI_EXPORT
     bool doubleSided = false;
 
+    DEKI_TOOLTIP("Casts shadows from the lights that cast them (Light's Cast Shadows), where the display draws "
+                 "through OpenGL.")
+    DEKI_EXPORT
+    bool castShadows = true;
+
     DEKI_TOOLTIP("An HLSL .shader that draws this mesh on the GPU. Its Shade() gets what the shading model above "
                  "would draw and returns the colour; a Displace() moves the vertices. A build for a board without "
                  "a GPU stops while a scene it ships uses one.")
