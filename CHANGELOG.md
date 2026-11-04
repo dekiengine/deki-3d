@@ -43,9 +43,11 @@ alongside one that has them.
   call on a microcontroller's FPU). w can differ by an ulp, which moves a
   texel only where its edge falls within about a millionth of a texel of a
   pixel's centre.
-- Its batches leave the frame's clear waiting until they write
-  (`QuadBlit::BeforeWriting`), so a frame lit the same all over is cleared
-  in the clear colour lit rather than lit after (deki-rendering).
+- The frame's clear is drawn by the rasteriser, under each tile as its
+  first fill reaches it (`Raster3D::SetBackground`, from
+  `QuadBlit::TakePendingClear`), rather than over the whole screen first; a
+  frame lit the same all over gets it lit (deki-rendering). Otherwise the
+  clear is made before a mesh can write (`QuadBlit::BeforeWriting`).
 - `fillThreads` 2 fills on the second core of an ESP32-S3: the fill worker is
   pinned to the core the engine is not on (it ran on the same one). deki-3d
   now needs ESP-IDF's `pthread` component.
@@ -53,8 +55,8 @@ alongside one that has them.
   spent on geometry and on filling.
 - Sponza (Detail 10%, which keeps 82k triangles, one directional and one
   ambient light) on a LilyGO T-Deck: 1 frame a second, from a reboot loop.
-  A textured corridor of 2,000 triangles at 320x240: 15 frames a second,
-  from 11.
+  Now 1.2. A textured corridor of 2,000 triangles at 320x240: 15.7 frames
+  a second, from 11.
 - `DISABLED_DrawACompiledMesh` (by hand) draws a compiled mesh file, or an
   .obj at a Detail, as a T-Deck does (320x240 RGB565, one and two threads), to
   compare a board's picture with the desktop's.

@@ -520,6 +520,7 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::
     m_Height = height;
     m_Format = format;
     m_BytesPerPixel = Deki::FrameBufferBytes(format, 1, 1);
+    m_HasBackground = false;
     m_Config = config;
     if (m_Config.tileSize < 8)
     {
@@ -1185,6 +1186,34 @@ void Raster3D::WorkerLoop(int index)
     }
 }
 
+void Raster3D::SetBackground(const uint8_t* pixel)
+{
+    std::memcpy(m_Background, pixel, std::min(m_BytesPerPixel, sizeof(m_Background)));
+    m_HasBackground = true;
+}
+
+void Raster3D::FillBackground(int originX, int originY, int maxX, int maxY)
+{
+    // Before the tile's triangles: its lines of the frame come into the cache
+    // once, here, and the triangles write into them there.
+    const int count = maxX - originX + 1;
+    for (int y = originY; y <= maxY; ++y)
+    {
+        uint8_t* row = m_Buffer + (static_cast<size_t>(y) * m_Width + originX) * m_BytesPerPixel;
+        if (m_BytesPerPixel == 2)
+        {
+            uint16_t pixel;
+            std::memcpy(&pixel, m_Background, 2);
+            std::fill_n(reinterpret_cast<uint16_t*>(row), count, pixel);
+            continue;
+        }
+        for (int x = 0; x < count; ++x)
+        {
+            std::memcpy(row + static_cast<size_t>(x) * m_BytesPerPixel, m_Background, m_BytesPerPixel);
+        }
+    }
+}
+
 void Raster3D::EndFrame()
 {
     if (!m_Buffer)
@@ -1211,6 +1240,13 @@ void Raster3D::FillAll()
     } timer{ m_Stats, started };
     const int tileCount = m_TilesX * m_TilesY;
     const int threads = static_cast<int>(m_TileDepth.size());
+    // The background goes only into the frame's first fill: later batches
+    // draw over it.
+    struct BackgroundOnce
+    {
+        bool& has;
+        ~BackgroundOnce() { has = false; }
+    } backgroundOnce{ m_HasBackground };
 
     if (threads <= 1 || tileCount <= 1 || m_Workers.empty())
     {
@@ -1273,7 +1309,7 @@ void Raster3D::FillTileRange(int start, int stride, int thread, RasterStats& sta
 void Raster3D::FillTile(int tileX, int tileY, int thread, RasterStats& stats)
 {
     const RegionArray<uint32_t>& bin = m_Bins[static_cast<size_t>(tileY) * m_TilesX + tileX];
-    if (bin.Empty())
+    if (bin.Empty() && !m_HasBackground)
     {
         return;
     }
@@ -1298,6 +1334,10 @@ void Raster3D::FillTile(int tileX, int tileY, int thread, RasterStats& stats)
         std::fill(depth, depth + static_cast<size_t>(tile) * tile, static_cast<uint16_t>(kDepthMax));
     }
 
+    if (m_HasBackground)
+    {
+        FillBackground(originX, originY, maxX, maxY);
+    }
     for (uint32_t index : bin)
     {
         FillTriangleInTile(m_Tris[index], originX, originY, maxX, maxY, depth, depthStride, originX, originY, stats);

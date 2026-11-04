@@ -518,11 +518,6 @@ void Mesh3DPass::GatherLights(const Deki::Object* sceneObject)
 
 void Mesh3DPass::EndBatch()
 {
-    // The frame's clear first, if nothing has made it yet.
-    if (m_Pending && m_Backend->WritesBuffer())
-    {
-        QuadBlit::BeforeWriting(m_Buffer);
-    }
     m_Backend->EndFrame();
     // Where the 2D is drawn on the GPU, what the batch wrote into the buffer
     // goes over the 2D before it and under the 2D after.
@@ -623,6 +618,23 @@ void Mesh3DPass::Execute(Deki::Object* obj, DekiRendering::RenderContext& ctx)
 #else
     const Deki::Mat4 normalMatrix = RotateZ(obj->GetWorldRotation());
 #endif
+
+    // The frame's clear before anything of the mesh is written: a frame of
+    // more than one batch fills while its meshes are drawn. The software
+    // rasteriser takes it as one pixel and draws it under each tile as it
+    // fills it, which saves the clear's own pass over the screen.
+    if (m_Backend->WritesBuffer() && QuadBlit::PendingClear())
+    {
+        uint8_t pixel[4];
+        if (m_Backend == &m_Raster && QuadBlit::TakePendingClear(m_Buffer, pixel))
+        {
+            m_Raster.SetBackground(pixel);
+        }
+        else
+        {
+            QuadBlit::BeforeWriting(m_Buffer);
+        }
+    }
 
     m_Backend->DrawMesh(*geometry, m_Materials.data(), static_cast<uint16_t>(m_Materials.size()),
                         Mul(m_ViewProjection, model), normalMatrix, model);

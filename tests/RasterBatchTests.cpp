@@ -72,7 +72,10 @@ struct Drawn
     RasterStats stats;
 };
 
-Drawn Draw(const Layers& layers, const std::vector<Submesh3D>& submeshes, int batchTriangles, int threads = 1)
+// `before` is what the framebuffer holds first; `background`, when given,
+// the pixel the rasteriser draws where it draws nothing.
+Drawn Draw(const Layers& layers, const std::vector<Submesh3D>& submeshes, int batchTriangles, int threads = 1,
+           uint16_t before = 0, const uint16_t* background = nullptr)
 {
     Mesh3D mesh;
     mesh.vertices = layers.vertices.data();
@@ -90,13 +93,23 @@ Drawn Draw(const Layers& layers, const std::vector<Submesh3D>& submeshes, int ba
     material.doubleSided = true;
 
     Drawn drawn;
-    drawn.pixels.assign(Deki::FrameBufferBytes(kFormat, kSize, kSize), 0);
+    drawn.pixels.resize(Deki::FrameBufferBytes(kFormat, kSize, kSize));
+    for (size_t i = 0; i < drawn.pixels.size(); i += 2)
+    {
+        DekiPixel::Store565(&drawn.pixels[i], before);
+    }
     RasterConfig config;
     config.tileSize = 16;
     config.batchTriangles = batchTriangles;
     config.threadCount = threads;
     Raster3D raster;
     raster.BeginFrame(drawn.pixels.data(), kSize, kSize, kFormat, config);
+    if (background)
+    {
+        uint8_t pixel[2];
+        DekiPixel::Store565(pixel, *background);
+        raster.SetBackground(pixel);
+    }
     raster.DrawMesh(mesh, &material, 1, Deki::Mat4::Ortho(-1, 1, -1, 1, -1, 1), Deki::Mat4::Identity());
     raster.EndFrame();
     drawn.stats = raster.Stats();
@@ -263,5 +276,31 @@ TEST(RasterBatches, DISABLED_DrawACompiledMesh)
             std::fputc(b, ppm);
         }
         std::fclose(ppm);
+    }
+}
+
+// Given the frame's clear (SetBackground), the rasteriser draws it wherever
+// it draws nothing, tiles without a triangle included: the frame comes out as
+// cleared first and drawn over, in one batch or many, on one thread or two.
+TEST(RasterBatches, TheBackgroundIsWhatAClearWouldHaveLeft)
+{
+    Layers layers;
+    layers.Add(0.7f);  // the left of the view holds nothing
+    const std::vector<Submesh3D> subs = { Whole(layers) };
+    const uint16_t clear = 0x39E7;
+    for (int batch : { 100000, 37 })
+    {
+        for (int threads : { 1, 2 })
+        {
+            const Drawn cleared = Draw(layers, subs, batch, threads, clear);
+            const Drawn taken = Draw(layers, subs, batch, threads, 0xF81F, &clear);
+            EXPECT_EQ(cleared.pixels, taken.pixels) << batch << " triangles a batch, " << threads << " thread(s)";
+            int background = 0;
+            for (size_t i = 0; i < cleared.pixels.size(); i += 2)
+            {
+                background += DekiPixel::Load565(&cleared.pixels[i]) == clear;
+            }
+            EXPECT_GT(background, kSize * 8) << "the view has room the quads leave";
+        }
     }
 }

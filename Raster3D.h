@@ -77,8 +77,17 @@ public:
     /// thread's tile depth. What a board's build counts for its 3D.
     static size_t WorkingBytes(int32_t width, int32_t height, const RasterConfig& config);
 
-    /// Fills every tile. Nothing reaches the framebuffer before this.
+    /// Fills every tile. Nothing reaches the framebuffer before this, but in a
+    /// frame of more than one batch, which fills its earlier batches as
+    /// DrawMesh fills them up.
     void EndFrame() override;
+
+    /// The frame's clear, one pixel of its format, for the frame's first fill
+    /// to draw under its triangles, tile by tile, tiles without a triangle
+    /// included: the caller then makes no clear of its own
+    /// (QuadBlit::TakePendingClear). Set after BeginFrame, before anything is
+    /// filled.
+    void SetBackground(const uint8_t* pixel);
 
     const RasterStats& Stats() const { return m_Stats; }
     const RasterConfig& Config() const { return m_Config; }
@@ -246,6 +255,10 @@ private:
     };
 
     uint8_t* m_Buffer = nullptr;
+    // SetBackground's pixel, until the fill that writes it.
+    bool m_HasBackground = false;
+    uint8_t m_Background[4] = {};
+    void FillBackground(int originX, int originY, int maxX, int maxY);
     int32_t m_Width = 0;
     int32_t m_Height = 0;
     Deki::ColorFormat m_Format = Deki::ColorFormat::RGB565;
