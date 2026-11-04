@@ -39,6 +39,9 @@ alongside one that has them.
   front of the near plane is binned from its corners' projections without
   the clip's copies, and the early backface test reads them instead of
   dividing six times. The same pixels.
+- A binned triangle keeps its colour and light once, its first corner's,
+  the only ones the fill reads: 92 bytes, not 124, written to PSRAM once and
+  read back once a tile. The same pixels.
 - One divide per span finds the w at both its ends (a divide is a library
   call on a microcontroller's FPU). w can differ by an ulp, which moves a
   texel only where its edge falls within about a millionth of a texel of a
@@ -55,7 +58,7 @@ alongside one that has them.
   spent on geometry and on filling.
 - Sponza (Detail 10%, which keeps 82k triangles, one directional and one
   ambient light) on a LilyGO T-Deck: 1 frame a second, from a reboot loop.
-  Now 1.2. A textured corridor of 2,000 triangles at 320x240: 15.7 frames
+  Now 1.2. A textured corridor of 2,000 triangles at 320x240: 16.5 frames
   a second, from 11.
 - `DISABLED_DrawACompiledMesh` (by hand) draws a compiled mesh file, or an
   .obj at a Detail, as a T-Deck does (320x240 RGB565, one and two threads), to

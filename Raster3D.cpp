@@ -947,9 +947,16 @@ void Raster3D::BinFan(ScreenVertex* sv, int count, uint16_t materialIndex)
     for (int i = 1; i + 1 < count; ++i)
     {
         RasterTri tri;
-        tri.v[0] = sv[0];
-        tri.v[1] = sv[i];
-        tri.v[2] = sv[i + 1];
+        const ScreenVertex* corners[3] = { &sv[0], &sv[i], &sv[i + 1] };
+        for (int k = 0; k < 3; ++k)
+        {
+            const ScreenVertex& c = *corners[k];
+            tri.v[k] = TriVertex{ c.x, c.y, c.invW, c.z, c.uOverW, c.vOverW };
+        }
+        tri.color = sv[0].color;
+        tri.lightR = sv[0].lightR;
+        tri.lightG = sv[0].lightG;
+        tri.lightB = sv[0].lightB;
         tri.materialIndex = materialIndex;
 
         const float area2 = (tri.v[1].x - tri.v[0].x) * (tri.v[2].y - tri.v[0].y) -
@@ -1347,9 +1354,9 @@ void Raster3D::FillTile(int tileX, int tileY, int thread, RasterStats& stats)
 void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY, uint16_t* depth,
                                   int depthStride, int tileOriginX, int tileOriginY, RasterStats& stats)
 {
-    const ScreenVertex& v0 = tri.v[0];
-    const ScreenVertex& v1 = tri.v[1];
-    const ScreenVertex& v2 = tri.v[2];
+    const TriVertex& v0 = tri.v[0];
+    const TriVertex& v1 = tri.v[1];
+    const TriVertex& v2 = tri.v[2];
 
     // Clamp the walk to where this triangle actually is inside this tile.
     const float loX = std::min(v0.x, std::min(v1.x, v2.x));
@@ -1425,8 +1432,8 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     // v directly, which are not: that error is the PlayStation-era warp, and
     // it grows with the triangle's screen size.
     const bool affine = !m_Config.perspectiveCorrect;
-    auto vertexU = [](const ScreenVertex& v) { return v.invW != 0.0f ? v.uOverW / v.invW : 0.0f; };
-    auto vertexV = [](const ScreenVertex& v) { return v.invW != 0.0f ? v.vOverW / v.invW : 0.0f; };
+    auto vertexU = [](const TriVertex& v) { return v.invW != 0.0f ? v.uOverW / v.invW : 0.0f; };
+    auto vertexV = [](const TriVertex& v) { return v.invW != 0.0f ? v.vOverW / v.invW : 0.0f; };
 
     const Gradient gU =
         affine ? MakeGradient(vertexU(v0), vertexU(v1), vertexU(v2), v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea)
@@ -1446,17 +1453,17 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     // Flat colour when there is no texture: the first vertex's colour times
     // the material tint. Vertex colours are not interpolated.
     const uint32_t tint = mat.tint;
-    const uint32_t flatRgba = ((v0.color & 0xFF) * (tint & 0xFF) / 255) |
-                              ((((v0.color >> 8) & 0xFF) * ((tint >> 8) & 0xFF) / 255) << 8) |
-                              ((((v0.color >> 16) & 0xFF) * ((tint >> 16) & 0xFF) / 255) << 16);
+    const uint32_t flatRgba = ((tri.color & 0xFF) * (tint & 0xFF) / 255) |
+                              ((((tri.color >> 8) & 0xFF) * ((tint >> 8) & 0xFF) / 255) << 8) |
+                              ((((tri.color >> 16) & 0xFF) * ((tint >> 16) & 0xFF) / 255) << 16);
     const uint16_t flatColor = To565(flatRgba);
 
     const bool lit = mat.shading != ShadingModel::Unlit;
     // The light of the triangle's first vertex, per channel: the same for every span.
     auto toShade = [](float l) { return static_cast<uint32_t>(std::min(64.0f, std::max(0.0f, l * 32.0f))); };
-    const uint32_t shadeR = lit ? toShade(v0.lightR) : 32u;
-    const uint32_t shadeG = lit ? toShade(v0.lightG) : 32u;
-    const uint32_t shadeB = lit ? toShade(v0.lightB) : 32u;
+    const uint32_t shadeR = lit ? toShade(tri.lightR) : 32u;
+    const uint32_t shadeG = lit ? toShade(tri.lightG) : 32u;
+    const uint32_t shadeB = lit ? toShade(tri.lightB) : 32u;
     const int subdiv = m_Config.perspectiveCorrect ? m_Config.spanSubdivision : (bMaxX - bMinX + 1);
 
     // What every span of this triangle shares, and the loop that fills them,

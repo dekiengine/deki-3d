@@ -106,9 +106,22 @@ private:
         float lightR, lightG, lightB;
     };
 
+    // A binned triangle's corner: what the fill interpolates.
+    struct TriVertex
+    {
+        float x, y;
+        float invW;
+        float z;
+        float uOverW, vOverW;
+    };
+    // A triangle as binned. Its colour and light are its first corner's, the
+    // only ones the fill reads, so they are kept once: 92 bytes, not 124,
+    // written to PSRAM once a triangle and read back once a tile.
     struct RasterTri
     {
-        ScreenVertex v[3];
+        TriVertex v[3];
+        uint32_t color;
+        float lightR, lightG, lightB;
         // An index into m_Materials, not a pointer to the caller's material:
         // filling waits until EndFrame, when the caller's stack copy is gone.
         uint16_t materialIndex;
