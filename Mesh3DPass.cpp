@@ -518,6 +518,11 @@ void Mesh3DPass::GatherLights(const Deki::Object* sceneObject)
 
 void Mesh3DPass::EndBatch()
 {
+    // The frame's clear first, if nothing has made it yet.
+    if (m_Pending && m_Backend->WritesBuffer())
+    {
+        QuadBlit::BeforeWriting(m_Buffer);
+    }
     m_Backend->EndFrame();
     // Where the 2D is drawn on the GPU, what the batch wrote into the buffer
     // goes over the 2D before it and under the 2D after.

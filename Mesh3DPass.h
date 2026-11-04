@@ -51,8 +51,9 @@ public:
     void EndFrame(DekiRendering::RenderContext& ctx) override;
 
     /// It writes into the buffer only when a batch of meshes ends, and then
-    /// says so itself (QuadBlit::NoteWritten), and only if its backend wrote
-    /// there: the GPU's, drawing into the display's frame, does not.
+    /// says so itself (QuadBlit::BeforeWriting, NoteWritten), and only if its
+    /// backend writes there: the GPU's, drawing into the display's frame,
+    /// does not.
     bool WritesBuffer() const override { return false; }
 
 private:
