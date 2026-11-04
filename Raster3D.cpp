@@ -416,49 +416,73 @@ uint32_t FillSpan565(const SpanArgs& a)
     return written;
 }
 
+/// The loop that fills a span, chosen once per triangle: its texture kind,
+/// the framebuffer's format, and for an RGB565 framebuffer its shading and
+/// cutout, which `a` already holds.
+using SpanFn = uint32_t (*)(const SpanArgs&);
+
 template <TexKind K, bool Cutout>
-uint32_t FillSpan565Shaded(const SpanArgs& a)
+SpanFn Span565For(const SpanArgs& a)
 {
     if (!a.lit)
     {
-        return FillSpan565<K, 0, Cutout>(a);
+        return &FillSpan565<K, 0, Cutout>;
     }
-    return a.grey ? FillSpan565<K, 1, Cutout>(a) : FillSpan565<K, 2, Cutout>(a);
+    return a.grey ? &FillSpan565<K, 1, Cutout> : &FillSpan565<K, 2, Cutout>;
 }
 
 template <TexKind K>
-uint32_t FillSpanFor(Deki::ColorFormat format, const SpanArgs& a)
+SpanFn SpanFor(Deki::ColorFormat format, const SpanArgs& a)
 {
     if constexpr (K == TexKind::Flat || K == TexKind::Palette || K == TexKind::RGB565)
     {
         if (format == Deki::ColorFormat::RGB565)
         {
-            return a.alphaTest ? FillSpan565Shaded<K, true>(a) : FillSpan565Shaded<K, false>(a);
+            return a.alphaTest ? Span565For<K, true>(a) : Span565For<K, false>(a);
         }
     }
     switch (format)
     {
-        case Deki::ColorFormat::RGB565: return FillSpan<K, Deki::ColorFormat::RGB565>(a);
-        case Deki::ColorFormat::RGB888: return FillSpan<K, Deki::ColorFormat::RGB888>(a);
-        case Deki::ColorFormat::ARGB8888: return FillSpan<K, Deki::ColorFormat::ARGB8888>(a);
-        case Deki::ColorFormat::RGB565A8: return FillSpan<K, Deki::ColorFormat::RGB565A8>(a);
+        case Deki::ColorFormat::RGB565: return &FillSpan<K, Deki::ColorFormat::RGB565>;
+        case Deki::ColorFormat::RGB888: return &FillSpan<K, Deki::ColorFormat::RGB888>;
+        case Deki::ColorFormat::ARGB8888: return &FillSpan<K, Deki::ColorFormat::ARGB8888>;
+        case Deki::ColorFormat::RGB565A8: return &FillSpan<K, Deki::ColorFormat::RGB565A8>;
     }
-    return 0;
+    return nullptr;
 }
 
-uint32_t DispatchSpan(TexKind kind, Deki::ColorFormat format, const SpanArgs& a)
+SpanFn ChooseSpan(TexKind kind, Deki::ColorFormat format, const SpanArgs& a)
 {
     switch (kind)
     {
-        case TexKind::Flat: return FillSpanFor<TexKind::Flat>(format, a);
-        case TexKind::Palette: return FillSpanFor<TexKind::Palette>(format, a);
-        case TexKind::RGB565: return FillSpanFor<TexKind::RGB565>(format, a);
-        case TexKind::RGB565A8: return FillSpanFor<TexKind::RGB565A8>(format, a);
-        case TexKind::RGB888: return FillSpanFor<TexKind::RGB888>(format, a);
-        case TexKind::RGBA8888: return FillSpanFor<TexKind::RGBA8888>(format, a);
-        case TexKind::ALPHA8: return FillSpanFor<TexKind::ALPHA8>(format, a);
+        case TexKind::Flat: return SpanFor<TexKind::Flat>(format, a);
+        case TexKind::Palette: return SpanFor<TexKind::Palette>(format, a);
+        case TexKind::RGB565: return SpanFor<TexKind::RGB565>(format, a);
+        case TexKind::RGB565A8: return SpanFor<TexKind::RGB565A8>(format, a);
+        case TexKind::RGB888: return SpanFor<TexKind::RGB888>(format, a);
+        case TexKind::RGBA8888: return SpanFor<TexKind::RGBA8888>(format, a);
+        case TexKind::ALPHA8: return SpanFor<TexKind::ALPHA8>(format, a);
     }
-    return 0;
+    return nullptr;
+}
+
+/// 1 / n for a span's steps, n up to kReciprocals: a span's length is at most
+/// its subdivision or its tile's width. Each entry is the division itself, so
+/// a span steps exactly as it did dividing.
+constexpr int kReciprocals = 256;
+const float* Reciprocals()
+{
+    static float table[kReciprocals + 1] = {};
+    static bool filled = false;
+    if (!filled)
+    {
+        for (int n = 1; n <= kReciprocals; ++n)
+        {
+            table[n] = 1.0f / static_cast<float>(n);
+        }
+        filled = true;
+    }
+    return table;
 }
 
 TexKind KindOfTexture(const Texture3D* tex)
@@ -1365,6 +1389,32 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     const uint32_t shadeB = lit ? toShade(v0.lightB) : 32u;
     const int subdiv = m_Config.perspectiveCorrect ? m_Config.spanSubdivision : (bMaxX - bMinX + 1);
 
+    // What every span of this triangle shares, and the loop that fills them,
+    // set once: a span then sets only where it is and what it steps.
+    SpanArgs span;
+    span.tex = tex;
+    span.alphaTest = mat.alphaTest;
+    span.lit = lit;
+    span.shadeR = shadeR;
+    span.shadeG = shadeG;
+    span.shadeB = shadeB;
+    span.grey = shadeR == shadeG && shadeG == shadeB && shadeR <= 32u;
+    span.flat565 = flatColor;
+    span.flatR = static_cast<uint8_t>(flatRgba & 0xFF);
+    span.flatG = static_cast<uint8_t>((flatRgba >> 8) & 0xFF);
+    span.flatB = static_cast<uint8_t>((flatRgba >> 16) & 0xFF);
+    span.uMask = uMask;
+    span.vMask = vMask;
+    span.wShift = wShift;
+    span.depthTest = m_Config.depthTest;
+    span.depthWrite = m_Config.depthWrite;
+    const SpanFn fill = ChooseSpan(kind, m_Format, span);
+    // Texels in 16.16 per unit of u and v. The width times 2^16 is exact, so
+    // this is the product it was when the span multiplied by each in turn.
+    const float uScale = textured ? static_cast<float>(tex->width) * (1 << kUvFrac) : 0.0f;
+    const float vScale = textured ? static_cast<float>(tex->height) * (1 << kUvFrac) : 0.0f;
+    const float* reciprocal = Reciprocals();
+
     // The edge walk adds three edge values per pixel. A 32-bit core takes
     // several instructions for a 64-bit add, so it walks in 32 bits wherever
     // the values over this tile's part of the triangle fit, which is any
@@ -1484,15 +1534,17 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     }
 
                     const int chunkLen = chunkEnd - runX + 1;
-                    const float inv = (chunkLen > 1) ? 1.0f / static_cast<float>(chunkLen - 1) : 0.0f;
+                    const float inv = chunkLen <= 1                  ? 0.0f
+                                      : chunkLen - 1 <= kReciprocals ? reciprocal[chunkLen - 1]
+                                                                     : 1.0f / static_cast<float>(chunkLen - 1);
 
                     int32_t u = 0, v = 0, du = 0, dv = 0;
                     if (textured)
                     {
-                        u = static_cast<int32_t>(uStart * tex->width * (1 << kUvFrac));
-                        v = static_cast<int32_t>(vStart * tex->height * (1 << kUvFrac));
-                        const int32_t uE = static_cast<int32_t>(uEnd * tex->width * (1 << kUvFrac));
-                        const int32_t vE = static_cast<int32_t>(vEnd * tex->height * (1 << kUvFrac));
+                        u = static_cast<int32_t>(uStart * uScale);
+                        v = static_cast<int32_t>(vStart * vScale);
+                        const int32_t uE = static_cast<int32_t>(uEnd * uScale);
+                        const int32_t vE = static_cast<int32_t>(vEnd * vScale);
                         du = (chunkLen > 1) ? static_cast<int32_t>((uE - u) * inv) : 0;
                         dv = (chunkLen > 1) ? static_cast<int32_t>((vE - v) * inv) : 0;
                     }
@@ -1521,7 +1573,6 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     // Row bases, so the span indexes by x alone: a per-pixel
                     // multiply for the tile offset costs more than the depth
                     // test it feeds.
-                    SpanArgs span;
                     span.fbRow = m_Buffer + static_cast<size_t>(py) * m_Width * m_BytesPerPixel;
                     span.depthRow = depth + static_cast<ptrdiff_t>(py - tileOriginY) * depthStride - tileOriginX;
                     span.x0 = runX;
@@ -1532,25 +1583,9 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     span.du = du;
                     span.dv = dv;
                     span.dz = dz;
-                    span.tex = tex;
-                    span.alphaTest = mat.alphaTest;
-                    span.lit = lit;
-                    span.shadeR = shadeR;
-                    span.shadeG = shadeG;
-                    span.shadeB = shadeB;
-                    span.grey = shadeR == shadeG && shadeG == shadeB && shadeR <= 32u;
-                    span.flat565 = flatColor;
-                    span.flatR = static_cast<uint8_t>(flatRgba & 0xFF);
-                    span.flatG = static_cast<uint8_t>((flatRgba >> 8) & 0xFF);
-                    span.flatB = static_cast<uint8_t>((flatRgba >> 16) & 0xFF);
-                    span.uMask = uMask;
-                    span.vMask = vMask;
-                    span.wShift = wShift;
-                    span.depthTest = m_Config.depthTest;
-                    span.depthWrite = m_Config.depthWrite;
 
                     // ---- the inner loop: integer only, one instance per format pair ----
-                    const uint32_t written = DispatchSpan(kind, m_Format, span);
+                    const uint32_t written = fill(span);
 
                     stats.pixelsTested += static_cast<uint32_t>(chunkEnd - runX + 1);
                     stats.pixelsWritten += written;
