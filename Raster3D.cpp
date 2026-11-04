@@ -6,6 +6,9 @@
 
 #include <algorithm>
 #include <chrono>
+#if defined(__XTENSA__)
+#include <xtensa/config/core-isa.h>  // XCHAL_HAVE_FP_RECIP
+#endif
 #include <cmath>
 #include <cstring>
 #include <thread>
@@ -116,6 +119,24 @@ inline int CeilToInt(float f)
 {
     const int i = static_cast<int>(f);
     return i + (f > static_cast<float>(i) ? 1 : 0);
+}
+
+// 1 / x, for x not 0. On an Xtensa FPU (the ESP32-S3's) a divide is a
+// library call, costing a span about 76 cycles with its register-window
+// spills; there it is the FPU's reciprocal estimate and two Newton steps,
+// inline, each doubling its correct bits to the float's 24, within an ulp of
+// the divide. Elsewhere the divide itself.
+inline float Reciprocal(float x)
+{
+#if defined(__XTENSA__) && XCHAL_HAVE_FP_RECIP
+    float r;
+    __asm__("recip0.s %0, %1" : "=f"(r) : "f"(x));
+    r = r + r * (1.0f - x * r);
+    r = r + r * (1.0f - x * r);
+    return r;
+#else
+    return 1.0f / x;
+#endif
 }
 
 inline float Eval(const Gradient& g, float dxFromV0, float dyFromV0)
@@ -1438,7 +1459,7 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     {
         return;
     }
-    const float invArea = 1.0f / area2;
+    const float invArea = Reciprocal(area2);
 
     const Gradient gInvW = MakeGradient(v0.invW, v1.invW, v2.invW, v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
     const Gradient gZ = MakeGradient(v0.z, v1.z, v2.z, v0.x, v0.y, v1.x, v1.y, v2.x, v2.y, invArea);
@@ -1604,8 +1625,8 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     const float fx1 = static_cast<float>(chunkEnd) + 0.5f - v0.x;
 
                     // The only divide in the whole loop: one per span, for
-                    // the w at both its ends, and none on the affine path. A
-                    // divide is a library call on a microcontroller's FPU.
+                    // the w at both its ends, and none on the affine path
+                    // (Reciprocal: inline where a divide is a library call).
                     float uStart, vStart, uEnd, vEnd;
                     if (affine)
                     {
@@ -1619,7 +1640,7 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                         const float invW0 = Eval(gInvW, fx0, fy);
                         const float invW1 = Eval(gInvW, fx1, fy);
                         const float both = invW0 * invW1;
-                        const float r = (both != 0.0f) ? 1.0f / both : 0.0f;
+                        const float r = (both != 0.0f) ? Reciprocal(both) : 0.0f;
                         const float w0 = invW1 * r;
                         const float w1 = invW0 * r;
                         uStart = Eval(gU, fx0, fy) * w0;

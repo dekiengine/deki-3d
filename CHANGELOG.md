@@ -42,6 +42,10 @@ alongside one that has them.
 - A binned triangle keeps its colour and light once, its first corner's,
   the only ones the fill reads: 92 bytes, not 124, written to PSRAM once and
   read back once a tile. The same pixels.
+- On an Xtensa FPU (ESP32-S3) that divide, and a triangle's 1/area, are the
+  FPU's reciprocal estimate and two Newton steps, inline, where a divide is
+  a library call: within an ulp, and the T-Deck's corridor frames come out
+  pixel for pixel the same.
 - One divide per span finds the w at both its ends (a divide is a library
   call on a microcontroller's FPU). w can differ by an ulp, which moves a
   texel only where its edge falls within about a millionth of a texel of a
@@ -58,8 +62,8 @@ alongside one that has them.
   spent on geometry and on filling.
 - Sponza (Detail 10%, which keeps 82k triangles, one directional and one
   ambient light) on a LilyGO T-Deck: 1 frame a second, from a reboot loop.
-  Now 1.2. A textured corridor of 2,000 triangles at 320x240: 16.5 frames
-  a second, from 11.
+  Now 1.3. A textured corridor of 2,000 triangles at 320x240: 20.8 frames
+  a second, from 11; of 1,000, 28.5, from 14.
 - `DISABLED_DrawACompiledMesh` (by hand) draws a compiled mesh file, or an
   .obj at a Detail, as a T-Deck does (320x240 RGB565, one and two threads), to
   compare a board's picture with the desktop's.
