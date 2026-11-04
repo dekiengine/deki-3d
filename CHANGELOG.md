@@ -46,6 +46,14 @@ alongside one that has them.
   FPU's reciprocal estimate and two Newton steps, inline, where a divide is
   a library call: within an ulp, and the T-Deck's corridor frames come out
   pixel for pixel the same.
+- A row of a triangle is bounded by two of its edges, not three: above its
+  middle corner by the two from the top corner, below by the two to the
+  bottom one (the same pixels). Its spans step from the row's values at x = 0,
+  with u and v already in texels and z in depth units, so a span keeps four
+  bases and four steps, which the FPU holds, instead of reading the whole
+  gradients back from the stack. Depth can round an ulp differently, which
+  settles a tie between two surfaces at the same depth the other way: about
+  0.5% of Sponza's pixels, in the distance.
 - One divide per span finds the w at both its ends (a divide is a library
   call on a microcontroller's FPU). w can differ by an ulp, which moves a
   texel only where its edge falls within about a millionth of a texel of a
@@ -62,8 +70,9 @@ alongside one that has them.
   spent on geometry and on filling.
 - Sponza (Detail 10%, which keeps 82k triangles, one directional and one
   ambient light) on a LilyGO T-Deck: 1 frame a second, from a reboot loop.
-  Now 1.3. A textured corridor of 2,000 triangles at 320x240: 20.8 frames
-  a second, from 11; of 1,000, 28.5, from 14.
+  Now 1.3. A textured corridor of 2,000 triangles at 320x240: 20.4 frames
+  a second (21.1 unlit), from 11; of 1,000, 26.7, from 14 (drawn in strips,
+  the frame in PSRAM).
 - `DISABLED_DrawACompiledMesh` (by hand) draws a compiled mesh file, or an
   .obj at a Detail, as a T-Deck does (320x240 RGB565, one and two threads), to
   compare a board's picture with the desktop's.

@@ -1531,6 +1531,41 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     const float vScale = textured ? static_cast<float>(tex->height) * (1 << kUvFrac) : 0.0f;
     const float* reciprocal = Reciprocals();
 
+    // What a span works out, per unit of x from a row's base: u/w and v/w
+    // already in texels (16.16), z already in depth units, so a span scales
+    // nothing; and each row's value at x = 0 worked out once, so a span
+    // keeps only the base and the step of each, which the FPU's registers
+    // hold, where the whole gradients of all four did not and were read back
+    // from the stack every span.
+    auto scaled = [](Gradient g, float k, float offset)
+    {
+        g.at0 = g.at0 * k + offset;
+        g.dx *= k;
+        g.dy *= k;
+        return g;
+    };
+    constexpr float kDepthScale = static_cast<float>(kDepthMax) * 0.5f * (1 << kDepthFrac);
+    constexpr float kDepthTop = static_cast<float>(kDepthMax) * (1 << kDepthFrac);
+    const Gradient sU = scaled(gU, uScale, 0.0f);
+    const Gradient sV = scaled(gV, vScale, 0.0f);
+    const Gradient sZ = scaled(gZ, kDepthScale, kDepthScale);
+    // Depth is clamped to its range only where a corner lies outside it: the
+    // pixels between lie between the corners.
+    auto inRange = [&](float ndcZ)
+    {
+        const float d = ndcZ * kDepthScale + kDepthScale;
+        return d >= 0.0f && d <= kDepthTop;
+    };
+    const bool clampZ = !inRange(v0.z) || !inRange(v1.z) || !inRange(v2.z);
+    auto toDepth = [clampZ, kDepthTop](float d) -> int32_t
+    {
+        if (clampZ)
+        {
+            d = std::min(std::max(d, 0.0f), kDepthTop);
+        }
+        return static_cast<int32_t>(d);
+    };
+
     // The edge walk adds three edge values per pixel. A 32-bit core takes
     // several instructions for a 64-bit add, so it walks in 32 bits wherever
     // the values over this tile's part of the triangle fit, which is any
@@ -1557,23 +1592,51 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     const bool walk32 =
         small || (fits32(rowE0, stepX0, stepY0) && fits32(rowE1, stepX1, stepY1) && fits32(rowE2, stepX2, stepY2));
 
+    // The corners by height. A row above the middle one is bounded by the
+    // two edges from the top corner, and a row from it down by the two to the
+    // bottom corner: those two meet at a corner of the triangle, and between
+    // them on that side of the middle lies only the triangle, so the third
+    // edge cannot narrow the run. Two bounds a row, not three, and the same
+    // pixels.
+    const int32_t cornerY[3] = { y0, y1, y2 };
+    int top = 0;
+    int bottom = 0;
+    for (int k = 1; k < 3; ++k)
+    {
+        top = cornerY[k] < cornerY[top] ? k : top;
+        bottom = cornerY[k] >= cornerY[bottom] ? k : bottom;
+    }
+    const bool level = top == bottom || cornerY[top] == cornerY[bottom];
+    const int middle = level ? 0 : 3 - top - bottom;
+    const int32_t middleY = cornerY[middle];
+
+    uint32_t tested = 0;
+    uint32_t written = 0;
     auto walk = [&](auto zero)
     {
         using Edge = decltype(zero);
-        Edge rowEdge0 = static_cast<Edge>(rowE0), rowEdge1 = static_cast<Edge>(rowE1),
-             rowEdge2 = static_cast<Edge>(rowE2);
-        const Edge edgeStepX0 = static_cast<Edge>(stepX0), edgeStepX1 = static_cast<Edge>(stepX1),
-                   edgeStepX2 = static_cast<Edge>(stepX2);
-        const Edge edgeStepY0 = static_cast<Edge>(stepY0), edgeStepY1 = static_cast<Edge>(stepY1),
-                   edgeStepY2 = static_cast<Edge>(stepY2);
-        for (int py = bMinY; py <= bMaxY; ++py)
+        const Edge rowEdgeStart[3] = { static_cast<Edge>(rowE0), static_cast<Edge>(rowE1), static_cast<Edge>(rowE2) };
+        const Edge stepXOf[3] = { static_cast<Edge>(stepX0), static_cast<Edge>(stepX1), static_cast<Edge>(stepX2) };
+        const Edge stepYOf[3] = { static_cast<Edge>(stepY0), static_cast<Edge>(stepY1), static_cast<Edge>(stepY2) };
+        // Edge k is the one opposite corner k (rowE0 is v0's weight): the long
+        // edge is opposite the middle corner, the top edge opposite the bottom
+        // one and the bottom edge opposite the top one. Level in 28.4 (a
+        // sliver), all three bound every row, as for any triangle.
+        const int a = level ? 0 : middle;
+        const int b = level ? 1 : bottom;
+        const int c = level ? 2 : top;
+        Edge rowA = rowEdgeStart[a], rowB = rowEdgeStart[b], rowC = rowEdgeStart[c];
+        const Edge stepXA = stepXOf[a], stepXB = stepXOf[b], stepXC = stepXOf[c];
+        const Edge stepYA = stepYOf[a], stepYB = stepYOf[b], stepYC = stepYOf[c];
+        int32_t rowY = py;  // the row centre, in 28.4
+        for (int row = bMinY; row <= bMaxY; ++row)
         {
-            // This row's covered run, from the three edges rather than by
-            // testing each pixel of the box: each edge is linear in x, so
-            // where it is >= 0 starts or ends at one division, and a triangle
-            // is convex, so the run is the one stretch where all three are.
-            // Exactly the pixels the test finds; a model of thin triangles has
-            // boxes that are mostly empty.
+            // This row's covered run, from the edges rather than by testing
+            // each pixel of the box: each edge is linear in x, so where it is
+            // >= 0 starts or ends at one division, and a triangle is convex,
+            // so the run is the one stretch where they all are. Exactly the
+            // pixels the test finds; a model of thin triangles has boxes that
+            // are mostly empty.
             int spanStart = bMinX;
             int spanEnd = bMaxX;
             const Edge last = static_cast<Edge>(bMaxX - bMinX);
@@ -1613,87 +1676,75 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     spanEnd = bMinX - 1;  // level with the row and outside it
                 }
             };
-            bound(rowEdge0, edgeStepX0);
-            bound(rowEdge1, edgeStepX1);
-            bound(rowEdge2, edgeStepX2);
+            bound(rowA, stepXA);
+            if (level || rowY < middleY)
+            {
+                bound(rowB, stepXB);
+            }
+            if (level || rowY >= middleY)
+            {
+                bound(rowC, stepXC);
+            }
             if (spanStart <= spanEnd)
             {
-                // --- one covered run, walked in subdivided spans ---
-                const float fy = static_cast<float>(py) + 0.5f - v0.y;
+                // The row's values at x = 0, from which its spans step.
+                const float fy = static_cast<float>(row) + 0.5f - v0.y;
+                const float fx = 0.5f - v0.x;
+                const float baseW = gInvW.at0 + gInvW.dy * fy + gInvW.dx * fx;
+                const float baseU = sU.at0 + sU.dy * fy + sU.dx * fx;
+                const float baseV = sV.at0 + sV.dy * fy + sV.dx * fx;
+                const float baseZ = sZ.at0 + sZ.dy * fy + sZ.dx * fx;
+                uint8_t* const fbRow = m_Buffer + static_cast<size_t>(row) * m_Width * m_BytesPerPixel;
+                uint16_t* const depthRow =
+                    depth + static_cast<ptrdiff_t>(row - tileOriginY) * depthStride - tileOriginX;
                 int runX = spanStart;
                 while (runX <= spanEnd)
                 {
                     const int chunkEnd = std::min(runX + subdiv - 1, spanEnd);
-                    const float fx0 = static_cast<float>(runX) + 0.5f - v0.x;
-                    const float fx1 = static_cast<float>(chunkEnd) + 0.5f - v0.x;
-
-                    // The only divide in the whole loop: one per span, for
-                    // the w at both its ends, and none on the affine path
-                    // (Reciprocal: inline where a divide is a library call).
-                    float uStart, vStart, uEnd, vEnd;
-                    if (affine)
-                    {
-                        uStart = Eval(gU, fx0, fy);
-                        vStart = Eval(gV, fx0, fy);
-                        uEnd = Eval(gU, fx1, fy);
-                        vEnd = Eval(gV, fx1, fy);
-                    }
-                    else
-                    {
-                        const float invW0 = Eval(gInvW, fx0, fy);
-                        const float invW1 = Eval(gInvW, fx1, fy);
-                        const float both = invW0 * invW1;
-                        const float r = (both != 0.0f) ? Reciprocal(both) : 0.0f;
-                        const float w0 = invW1 * r;
-                        const float w1 = invW0 * r;
-                        uStart = Eval(gU, fx0, fy) * w0;
-                        vStart = Eval(gV, fx0, fy) * w0;
-                        uEnd = Eval(gU, fx1, fy) * w1;
-                        vEnd = Eval(gV, fx1, fy) * w1;
-                    }
-
+                    const float xs = static_cast<float>(runX);
+                    const float xe = static_cast<float>(chunkEnd);
                     const int chunkLen = chunkEnd - runX + 1;
                     const float inv = chunkLen <= 1                  ? 0.0f
                                       : chunkLen - 1 <= kReciprocals ? reciprocal[chunkLen - 1]
                                                                      : 1.0f / static_cast<float>(chunkLen - 1);
 
+                    // The only divide in the whole loop: one per span, for
+                    // the w at both its ends, and none on the affine path
+                    // (Reciprocal: inline where a divide is a library call).
                     int32_t u = 0, v = 0, du = 0, dv = 0;
                     if (textured)
                     {
-                        u = static_cast<int32_t>(uStart * uScale);
-                        v = static_cast<int32_t>(vStart * vScale);
-                        const int32_t uE = static_cast<int32_t>(uEnd * uScale);
-                        const int32_t vE = static_cast<int32_t>(vEnd * vScale);
-                        du = (chunkLen > 1) ? static_cast<int32_t>((uE - u) * inv) : 0;
-                        dv = (chunkLen > 1) ? static_cast<int32_t>((vE - v) * inv) : 0;
+                        float uS = baseU + sU.dx * xs, uE = baseU + sU.dx * xe;
+                        float vS = baseV + sV.dx * xs, vE = baseV + sV.dx * xe;
+                        if (!affine)
+                        {
+                            const float invW0 = baseW + gInvW.dx * xs;
+                            const float invW1 = baseW + gInvW.dx * xe;
+                            const float both = invW0 * invW1;
+                            const float r = (both != 0.0f) ? Reciprocal(both) : 0.0f;
+                            const float w0 = invW1 * r;
+                            const float w1 = invW0 * r;
+                            uS *= w0;
+                            vS *= w0;
+                            uE *= w1;
+                            vE *= w1;
+                        }
+                        u = static_cast<int32_t>(uS);
+                        v = static_cast<int32_t>(vS);
+                        du = (chunkLen > 1) ? static_cast<int32_t>((static_cast<int32_t>(uE) - u) * inv) : 0;
+                        dv = (chunkLen > 1) ? static_cast<int32_t>((static_cast<int32_t>(vE) - v) * inv) : 0;
                     }
 
                     // Depth, also stepped with adds.
-                    const float z0 = Eval(gZ, fx0, fy);
-                    const float z1 = Eval(gZ, fx1, fy);
-                    auto toDepth = [](float ndcZ) -> int32_t
-                    {
-                        float d = (ndcZ * 0.5f + 0.5f) * static_cast<float>(kDepthMax);
-                        if (d < 0.0f)
-                        {
-                            d = 0.0f;
-                        }
-                        if (d > static_cast<float>(kDepthMax))
-                        {
-                            d = static_cast<float>(kDepthMax);
-                        }
-                        return static_cast<int32_t>(d * (1 << kDepthFrac));
-                    };
-                    int32_t z = toDepth(z0);
-                    const int32_t zE = toDepth(z1);
+                    const int32_t z = toDepth(baseZ + sZ.dx * xs);
+                    const int32_t zE = toDepth(baseZ + sZ.dx * xe);
                     const int32_t dz = (chunkLen > 1) ? static_cast<int32_t>((zE - z) * inv) : 0;
-
 
                     // Row bases, so the span indexes by x alone: a per-pixel
                     // multiply for the tile offset costs more than the depth
                     // test it feeds.
-                    span.fbRow = m_Buffer + static_cast<size_t>(py) * m_Width * m_BytesPerPixel;
-                    span.depthRow = depth + static_cast<ptrdiff_t>(py - tileOriginY) * depthStride - tileOriginX;
+                    span.fbRow = fbRow;
+                    span.depthRow = depthRow;
                     span.x0 = runX;
                     span.x1 = chunkEnd;
                     span.u = u;
@@ -1704,17 +1755,16 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     span.dz = dz;
 
                     // ---- the inner loop: integer only, one instance per format pair ----
-                    const uint32_t written = fill(span);
-
-                    stats.pixelsTested += static_cast<uint32_t>(chunkEnd - runX + 1);
-                    stats.pixelsWritten += written;
+                    written += fill(span);
+                    tested += static_cast<uint32_t>(chunkLen);
                     runX = chunkEnd + 1;
                 }
             }
 
-            rowEdge0 += edgeStepY0;
-            rowEdge1 += edgeStepY1;
-            rowEdge2 += edgeStepY2;
+            rowA += stepYA;
+            rowB += stepYB;
+            rowC += stepYC;
+            rowY += kSubScale;
         }
     };
     if (walk32)
@@ -1725,6 +1775,8 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     {
         walk(int64_t{});
     }
+    stats.pixelsTested += tested;
+    stats.pixelsWritten += written;
 }
 
 }  // namespace Deki3D
