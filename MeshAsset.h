@@ -32,6 +32,8 @@
 namespace Deki3D
 {
 
+class MeshSource;  // MeshAsset.cpp: where a load reads its bytes from
+
 /// 5: the header ends in `flags`. Version 4 files, which have no flags and
 /// 16-bit indices, still load.
 constexpr uint16_t kMeshFileVersion = 5;
@@ -123,6 +125,13 @@ public:
     /// bad magic, an unknown version, or anything that does not fit.
     bool LoadFromMemory(const uint8_t* data, size_t size);
 
+    /// Reads a compiled mesh file part by part, each straight into its own
+    /// buffer, so loading takes the mesh's size in memory and no more: the
+    /// whole file is never held besides. Through the engine's file system,
+    /// so a mounted path ("S:/" for an SD card) works. Fails as
+    /// LoadFromMemory does, and on a file that cannot be read.
+    bool LoadFromFile(const char* path);
+
     const Mesh3D& View() const { return m_View; }
     bool Valid() const { return m_View.vertexCount > 0 && m_View.indexCount > 0; }
 
@@ -137,6 +146,7 @@ public:
     uint16_t TextureCount() const { return static_cast<uint16_t>(m_Textures.Count()); }
 
 private:
+    bool Load(MeshSource& source);
     void Clear();
     /// Logs why, empties everything, and returns false. A half-parsed mesh
     /// must never be left reachable.

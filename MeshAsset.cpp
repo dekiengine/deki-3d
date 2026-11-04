@@ -1,6 +1,8 @@
 #include "MeshAsset.h"
 
 #include <deki/LogSystem.h>
+#include <deki/providers/FileSystem.h>
+#include <deki/providers/IFileSystem.h>
 
 #include "Mesh3DBackend.h"  // NextRevision
 #include "deki-rendering/PixelFormat.h"
@@ -77,19 +79,33 @@ int ShiftOf(uint16_t value)
     return shift;
 }
 
-/// Reads a blob front to back and refuses to run off the end. Every field of
-/// the file goes through this: devices have little memory protection, so a
-/// truncated asset must fail cleanly instead of reading whatever follows it.
-class Cursor
+}  // namespace
+
+/// Where a load reads the file from, front to back. Every field goes through
+/// Take, which refuses to run off the end: devices have little memory
+/// protection, so a truncated asset must fail cleanly instead of reading
+/// whatever follows it.
+class MeshSource
 {
 public:
-    Cursor(const uint8_t* data, size_t size)
+    virtual ~MeshSource() = default;
+    virtual bool Take(void* out, size_t bytes) = 0;
+};
+
+namespace
+{
+
+/// A blob already in memory.
+class MemorySource : public MeshSource
+{
+public:
+    MemorySource(const uint8_t* data, size_t size)
         : m_Data(data),
           m_Size(size)
     {
     }
 
-    bool Take(void* out, size_t bytes)
+    bool Take(void* out, size_t bytes) override
     {
         if (bytes > m_Size - m_Offset)
         {
@@ -106,6 +122,54 @@ private:
     size_t m_Offset = 0;
 };
 
+/// A file, read a part at a time into wherever the part belongs.
+class FileSource : public MeshSource
+{
+public:
+    explicit FileSource(const char* path)
+        : m_Fs(Deki::FileSystem::GetFileSystemForPath(path))
+    {
+        if (m_Fs)
+        {
+            m_File = m_Fs->OpenFile(path, Deki::IFileSystem::OpenMode::ReadBinary);
+        }
+        if (m_File)
+        {
+            const long size = m_Fs->GetFileSize(m_File);
+            m_Left = size > 0 ? static_cast<size_t>(size) : 0;
+        }
+    }
+
+    ~FileSource() override
+    {
+        if (m_File)
+        {
+            m_Fs->CloseFile(m_File);
+        }
+    }
+
+    bool Open() const { return m_File != nullptr; }
+
+    bool Take(void* out, size_t bytes) override
+    {
+        if (!m_File || bytes > m_Left)
+        {
+            return false;
+        }
+        if (bytes > 0 && m_Fs->ReadFile(m_File, out, bytes) != bytes)
+        {
+            return false;
+        }
+        m_Left -= bytes;
+        return true;
+    }
+
+private:
+    Deki::IFileSystem* m_Fs;
+    Deki::IFileSystem::FileHandle m_File = nullptr;
+    size_t m_Left = 0;
+};
+
 }  // namespace
 
 bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
@@ -115,8 +179,24 @@ bool MeshAsset::LoadFromMemory(const uint8_t* data, size_t size)
     {
         return false;
     }
+    MemorySource source(data, size);
+    return Load(source);
+}
 
-    Cursor cursor(data, size);
+bool MeshAsset::LoadFromFile(const char* path)
+{
+    Clear();
+    FileSource source(path);
+    if (!source.Open())
+    {
+        DEKI_LOG_WARNING("MeshAsset: cannot open %s", path ? path : "(null)");
+        return false;
+    }
+    return Load(source);
+}
+
+bool MeshAsset::Load(MeshSource& cursor)
+{
 
     MeshFileHeader header{};
     if (!cursor.Take(&header, kMeshFileHeaderV4Bytes))

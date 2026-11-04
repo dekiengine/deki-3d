@@ -27,6 +27,11 @@ alongside one that has them.
 - A board build stops when a model needs more external memory than the board
   has, and warns when Detail stops above what it asks or a board is given
   Smooth.
+- A mesh loads from its file part by part, each straight into its own buffer
+  (`MeshAsset::LoadFromFile`), so loading takes the mesh's size in memory. The
+  loader read the whole file in first and then copied it, so a load held twice
+  the mesh (8.6 MB for a 4.3 MB one), and a mesh the build check let through
+  could still not load on the board.
 - The importer reads `map_d` as a texture's cutout and paths written with
   backslashes. `CompileObjToMesh` takes a `MeshCompileOptions` (format, Max
   Size, filter, detail, and a report of what it did) in place of its last two

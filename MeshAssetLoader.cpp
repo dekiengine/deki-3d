@@ -29,16 +29,11 @@ void Deki3DRegisterMeshLoader()
     // through memory.
     auto loader = [](const char* path) -> void*
     {
-        // The whole file, held briefly until it is parsed into the asset's
-        // buffers. External like them: the internal heap of a board without
-        // PSRAM cannot fit it, and the board would reboot.
-        Deki::Buffer<uint8_t> bytes;
-        if (!Deki::AssetManager::ReadWholeFile(path, bytes, Deki::Memory::External))
-        {
-            return nullptr;
-        }
+        // Part by part into the mesh's own buffers, never the whole file
+        // besides: loading takes the mesh's size and no more, which is what
+        // the build's check of a board's memory counts.
         auto* mesh = new MeshAsset();
-        if (mesh->LoadFromMemory(bytes.Data(), bytes.Count()))
+        if (mesh->LoadFromFile(path))
         {
             return mesh;
         }

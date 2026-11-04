@@ -17,6 +17,12 @@
 #include "../Raster3D.h"
 #include "../editor/ObjImporter.h"
 
+#include <deki/providers/FileSystem.h>
+#include <deki/providers/IFileSystem.h>
+#include <deki/providers/HostMemoryProvider.h>
+#include <deki/providers/Memory.h>
+#include <deki/assets/AssetManager.h>
+
 using namespace Deki3D;
 
 namespace
@@ -274,4 +280,138 @@ TEST(BigMesh, NoCapKeepsTheSourceSize)
         EXPECT_EQ(t->width, cap == 0 ? 1024 : 256);
         EXPECT_EQ(t->height, cap == 0 ? 512 : 256);
     }
+}
+
+namespace
+{
+
+// The engine's file system over stdio, enough for a test to load a file.
+class StdioFileSystem : public Deki::IFileSystem
+{
+public:
+    bool Initialize() override { return true; }
+    void Shutdown() override {}
+    FileHandle OpenFile(const char* path, OpenMode mode) override
+    {
+        return mode == OpenMode::ReadBinary ? std::fopen(path, "rb") : nullptr;
+    }
+    void CloseFile(FileHandle handle) override { std::fclose(static_cast<FILE*>(handle)); }
+    size_t ReadFile(FileHandle handle, void* buffer, size_t size) override
+    {
+        ++reads;
+        return std::fread(buffer, 1, size, static_cast<FILE*>(handle));
+    }
+    size_t WriteFile(FileHandle, const void*, size_t) override { return 0; }
+    long SeekFile(FileHandle handle, long offset, SeekOrigin origin) override
+    {
+        const int whence = origin == SeekOrigin::Begin ? SEEK_SET : origin == SeekOrigin::Current ? SEEK_CUR : SEEK_END;
+        return std::fseek(static_cast<FILE*>(handle), offset, whence);
+    }
+    long TellFile(FileHandle handle) override { return std::ftell(static_cast<FILE*>(handle)); }
+    long GetFileSize(FileHandle handle) override
+    {
+        FILE* f = static_cast<FILE*>(handle);
+        const long at = std::ftell(f);
+        std::fseek(f, 0, SEEK_END);
+        const long size = std::ftell(f);
+        std::fseek(f, at, SEEK_SET);
+        return size;
+    }
+    bool FileExists(const char* path) override
+    {
+        FILE* f = std::fopen(path, "rb");
+        if (f)
+        {
+            std::fclose(f);
+        }
+        return f != nullptr;
+    }
+    bool ConvertPath(const char* virtualPath, char* out, size_t size) override
+    {
+        std::snprintf(out, size, "%s", virtualPath);
+        return true;
+    }
+    int reads = 0;
+};
+
+}  // namespace
+
+// A mesh read from a file takes its own size in memory while it loads, not
+// the file's size again besides: the build's check of a board's memory counts
+// just the mesh. Read part by part, and the same mesh as from memory.
+TEST(BigMesh, LoadingFromAFileTakesOnlyTheMeshsMemory)
+{
+    std::vector<uint8_t> blob;
+    std::string error;
+    ASSERT_TRUE(CompileObjToMesh(GridObj(300), "", {}, blob, error)) << error;
+    const std::string path = testing::TempDir() + "/streamed.mesh";
+    {
+        FILE* f = std::fopen(path.c_str(), "wb");
+        ASSERT_NE(f, nullptr);
+        std::fwrite(blob.data(), 1, blob.size(), f);
+        std::fclose(f);
+    }
+    auto* fs = new StdioFileSystem();
+    ASSERT_TRUE(Deki::FileSystem::SetFileSystem(fs));
+
+    // The most External memory held while loading, above what was held
+    // before: from the file, and as the loader did before, the whole file
+    // read in and then parsed.
+    // Counted only while the engine's memory layer runs, as it does on a
+    // board; a plain test binary has none.
+    struct CountedMemory
+    {
+        CountedMemory()
+        {
+            Deki::Memory::SetBackend(new Deki::HostMemoryProvider());  // takes ownership
+            Deki::Memory::Initialize();
+        }
+        ~CountedMemory()
+        {
+            Deki::Memory::Shutdown();
+            Deki::Memory::SetBackend(nullptr);
+        }
+    } counted;
+    auto peakOf = [](const auto& load)
+    {
+        Deki::Memory::ResetPeaks();
+        const uint32_t base = Deki::Memory::GetPeakExternal();
+        load();
+        return Deki::Memory::GetPeakExternal() - base;
+    };
+    MeshAsset fromFile;
+    const uint32_t streamed = peakOf([&] { ASSERT_TRUE(fromFile.LoadFromFile(path.c_str())); });
+    const uint32_t whole = peakOf(
+        [&]
+        {
+            Deki::Buffer<uint8_t> bytes;
+            ASSERT_TRUE(Deki::AssetManager::ReadWholeFile(path, bytes, Deki::Memory::External));
+            MeshAsset copy;
+            ASSERT_TRUE(copy.LoadFromMemory(bytes.Data(), bytes.Count()));
+        });
+    EXPECT_GT(fs->reads, 3) << "read a part at a time";
+    ASSERT_GT(whole, 0u) << "this build counts External memory";
+    EXPECT_LT(streamed, blob.size() * 1.1) << "the file is not held besides the mesh";
+    EXPECT_GT(whole, blob.size() * 1.9) << "the old way held it twice";
+
+    MeshAsset fromMemory;
+    ASSERT_TRUE(fromMemory.LoadFromMemory(blob.data(), blob.size()));
+    EXPECT_EQ(fromFile.VertexCount(), fromMemory.VertexCount());
+    EXPECT_EQ(fromFile.TriangleCount(), fromMemory.TriangleCount());
+    EXPECT_EQ(fromFile.View().indexBytes, fromMemory.View().indexBytes);
+    EXPECT_EQ(std::memcmp(fromFile.View().vertices, fromMemory.View().vertices,
+                          static_cast<size_t>(fromFile.VertexCount()) * fromFile.View().layout.stride),
+              0);
+
+    // A file cut short fails cleanly.
+    {
+        FILE* f = std::fopen(path.c_str(), "wb");
+        ASSERT_NE(f, nullptr);
+        std::fwrite(blob.data(), 1, blob.size() / 2, f);
+        std::fclose(f);
+    }
+    MeshAsset truncated;
+    EXPECT_FALSE(truncated.LoadFromFile(path.c_str()));
+    EXPECT_FALSE(truncated.Valid());
+    EXPECT_FALSE(MeshAsset().LoadFromFile((path + ".missing").c_str()));
 }
