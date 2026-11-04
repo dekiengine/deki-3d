@@ -22,11 +22,14 @@ struct SimplifyTriangle
 /// neighbour, so every kept vertex keeps its own position, normal and
 /// texture coordinates.
 ///
-/// A vertex on an open edge, on a seam (where the texture coordinates or
-/// normals change, so the mesh has two vertices at one place) or between two
-/// materials never moves: moving one side of a seam would open a crack. So a
-/// mesh made of many separate pieces may stop above the target; the result
-/// says how many triangles are left. No collapse flips a triangle over.
+/// A seam (where the texture coordinates or normals change, so the mesh has
+/// two vertices at one place) collapses as one: a vertex's copies move
+/// together, each onto the copy of the target it shares an edge with on its
+/// own side, so the seam stays shut and each side keeps its own texture
+/// coordinates. A place where that pairing is not clear (a seam's corner)
+/// stays, as does one on an open edge or between two materials. So a mesh
+/// made of many separate pieces may stop above the target; the result says
+/// how many triangles are left. No collapse flips a triangle over.
 ///
 /// `positions` is x, y, z per vertex. Triangles that are left keep their
 /// order within each submesh. Vertices no triangle uses any more are left in

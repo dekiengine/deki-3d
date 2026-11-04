@@ -13,6 +13,7 @@
 
 #include "ModelSettings.h"
 #include "ObjImporter.h"
+#include "../Raster3D.h"
 #include "../MeshAsset.h"
 
 #include <deki-editor/AssetPipeline.h>
@@ -100,10 +101,11 @@ std::string Megabytes(uint64_t bytes)
 }
 
 /// Whether a compiled mesh fits where `target` loads it: in its external
-/// memory, which is where a mesh's vertices, indices and textures go. False,
-/// with why, when it cannot. A desktop or other target with an operating
-/// system is not checked; a board that names no external memory is said to
-/// be unchecked.
+/// memory, which is where a mesh's vertices, indices and textures go, and on
+/// a target without OpenGL the software rasteriser's working memory beside it
+/// (a batch of triangles and a depth buffer for the screen). False, with why,
+/// when it cannot. A desktop or other target with an operating system is not
+/// checked; a board that names no external memory is said to be unchecked.
 bool FitsTarget(const std::vector<uint8_t>& blob, const AssetExportTarget& target, const std::string& name,
                 std::string& why, std::vector<std::string>& warnings)
 {
@@ -116,8 +118,14 @@ bool FitsTarget(const std::vector<uint8_t>& blob, const AssetExportTarget& targe
     Deki3D::MeshFileHeader header;
     std::memcpy(&header, blob.data(), sizeof(header));
     const uint64_t indexBytes = (header.flags & Deki3D::MeshFileIndex32) ? 4 : 2;
-    const uint64_t needs = static_cast<uint64_t>(header.vertexCount) * header.vertexStride +
-                           static_cast<uint64_t>(header.indexCount) * indexBytes + header.texturePixelBytes;
+    const uint64_t mesh = static_cast<uint64_t>(header.vertexCount) * header.vertexStride +
+                          static_cast<uint64_t>(header.indexCount) * indexBytes + header.texturePixelBytes;
+    const bool software = platform->Capabilities().count("opengl") == 0;
+    const uint64_t raster = software && platform->screenWidth > 0 && platform->screenHeight > 0
+                                ? Deki3D::Raster3D::WorkingBytes(platform->screenWidth, platform->screenHeight,
+                                                                 Deki3D::RasterConfig{})
+                                : 0;
+    const uint64_t needs = mesh + raster;
     const std::string board = TargetName(target);
     if (platform->externalMemorySize == 0)
     {
@@ -127,7 +135,9 @@ bool FitsTarget(const std::vector<uint8_t>& blob, const AssetExportTarget& targe
     }
     if (needs > platform->externalMemorySize)
     {
-        why = name + " needs " + Megabytes(needs) + " on " + board + ", which has " +
+        why = name + " needs " + Megabytes(needs) + " on " + board +
+              (raster ? " (" + Megabytes(mesh) + " for the mesh, " + Megabytes(raster) + " to draw it)" : "") +
+              ", which has " +
               Megabytes(platform->externalMemorySize) + " of external memory for it. Lower its Max Size or " +
               "Detail for " + board + " (its textures' Max Size in their images, the mesh's Detail in the model), " +
               "or leave it out of the scenes this platform builds.";
@@ -188,8 +198,8 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
     {
         char line[256];
         std::snprintf(line, sizeof(line),
-                      ": Detail %d%% on %s asks for %u of its %u triangles; it keeps %u (%d%%), since its seams, open "
-                      "edges and material borders stay where they are",
+                      ": Detail %d%% on %s asks for %u of its %u triangles; it keeps %u (%d%%), since its open edges, "
+                      "material borders and seam corners stay where they are",
                       static_cast<int>(options.detail * 100.0f + 0.5f), where.c_str(),
                       static_cast<unsigned>(asked + 0.5), report.trianglesIn, report.trianglesOut,
                       static_cast<int>(100.0 * report.trianglesOut / std::max(1u, report.trianglesIn) + 0.5));

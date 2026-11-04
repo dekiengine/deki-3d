@@ -10,6 +10,40 @@ alongside one that has them.
 
 ## Unreleased
 
+### The software rasteriser draws a model of any size, faster
+- A frame of more triangles than `RasterConfig::batchTriangles` (8192) is
+  drawn in batches against one depth buffer for the screen, so any mesh draws
+  in fixed memory; a frame within one batch fills tile by tile as before. The
+  triangles and tile lists are in PSRAM where the board has it
+  (`RegionArray`): as std::vectors they took a board's internal heap and, with
+  Sponza, aborted the T-Deck. With no memory for another batch the frame draws
+  what it has and says so once. The build's memory check counts this working
+  memory (`Raster3D::WorkingBytes`) beside each model on a board without
+  OpenGL.
+- A part of a mesh out of view is skipped (`Submesh3D` bounds, worked out when
+  the mesh loads), and a triangle outside the view or facing away is dropped
+  before it is lit.
+- Each vertex is transformed and lit once per part, not once per triangle
+  using it (a 128-vertex cache).
+- Each row of a triangle is filled from where its edges cross the row, not by
+  testing every pixel of its box; setup and the edge walk are 32-bit for a
+  triangle near the screen. The same pixels as before.
+- `fillThreads` 2 fills on the second core of an ESP32-S3: the fill worker is
+  pinned to the core the engine is not on (it ran on the same one). deki-3d
+  now needs ESP-IDF's `pthread` component.
+- `RasterStats` counts batches, triangles dropped, parts skipped, and the time
+  spent on geometry and on filling.
+- Sponza (Detail 10%, 38k triangles, one directional and one ambient light) on
+  a LilyGO T-Deck: 1.7 frames a second, from a reboot loop; at 0.6 before the
+  last three changes.
+
+### Detail collapses texture seams
+- A seam's copies of a vertex collapse as one, each onto the copy of the
+  target on its own side, so the seam stays shut and each side keeps its
+  texture; only a seam's corner, an open edge and a material border stay
+  where they are. Sponza at 10% keeps 38511 triangles where it kept 82291.
+  `kDekiCacheVersion` 8 compiles every model again.
+
 ### Models at any size, built for each platform
 - A mesh of any size compiles: 16-bit indices up to 65535 vertices, 32-bit
   past that (`Mesh3D::indexBytes`, `Mesh3D::IndexAt`). Both renderers draw

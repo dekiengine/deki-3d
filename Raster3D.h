@@ -16,6 +16,14 @@
 // cannot spare; one 32x32 tile is 2 KB, reused across the frame. On a desktop
 // the tile's depth and colour working set stays inside L1.
 //
+// A frame of more than RasterConfig::batchTriangles is filled in batches, so
+// a mesh of any size draws in fixed memory: when the batch is full its tiles
+// are filled and binning starts again. Later batches must depth-test against
+// earlier ones, so from the first such fill the frame uses one depth buffer
+// for the whole screen, in PSRAM where the board has it. The triangles and
+// tile lists are there too (RegionArray): a std::vector would take a board's
+// small internal heap, and abort it when that is full.
+//
 // Float does the per-vertex work: transform, clipping, projection, and the
 // perspective divide at span endpoints. Fixed point does the per-pixel work:
 // edge functions, depth, and attribute stepping. That suits a span loop on
@@ -24,12 +32,14 @@
 
 #include <deki/Engine.h>  // Deki::ColorFormat
 #include <deki/Vector.h>
+#include <deki/providers/Memory.h>
 
 #include "Mesh3D.h"
 #include "Mesh3DBackend.h"  // RasterConfig, RasterStats
 
 #include <condition_variable>
 #include <cstdint>
+#include <cstring>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -60,6 +70,12 @@ public:
                   const Deki::Mat4& normalMatrix, const Deki::Mat4& model = Deki::Mat4::Identity()) override;
 
     static constexpr int kLightsPerMesh = 4;
+
+    /// The most memory a frame at `width` x `height` takes beyond the meshes
+    /// themselves: a full batch of triangles, their tile lists, the
+    /// whole-screen depth buffer of a frame past one batch, and each fill
+    /// thread's tile depth. What a board's build counts for its 3D.
+    static size_t WorkingBytes(int32_t width, int32_t height, const RasterConfig& config);
 
     /// Fills every tile. Nothing reaches the framebuffer before this.
     void EndFrame() override;
@@ -100,15 +116,120 @@ private:
     };
 
     void EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c, uint16_t materialIndex);
+
+    // The vertices DrawMesh transformed most recently, by index: a vertex is
+    // shared by about six triangles, and neighbouring triangles mostly come
+    // close together, so most corners are found here rather than read from
+    // the mesh (PSRAM on a board) and transformed again. Lit only when a
+    // front-facing triangle needs it. Emptied at each submesh, whose
+    // material decides the lighting.
+    struct CachedVertex
+    {
+        uint32_t index = UINT32_MAX;
+        bool lit = false;
+        ClipVertex clip;
+        Deki::Vector3 position;  // object space, for the lighting
+        Deki::Vector3 normal;
+    };
+    static constexpr int kVertexCacheSize = 128;  // a power of two
+    std::vector<CachedVertex> m_VertexCache;
     void ProjectAndBin(const ClipVertex* poly, int count, uint16_t materialIndex);
     void Bin(const RasterTri& tri);
     /// Fills every `stride`-th tile of the row-major grid starting at `start`,
     /// using `tileDepth` as scratch depth buffer and adding to `stats`. Both
     /// are per thread, which makes concurrent calls safe.
-    void FillTileRange(int start, int stride, uint16_t* tileDepth, RasterStats& stats);
-    void FillTile(int tileX, int tileY, uint16_t* tileDepth, RasterStats& stats);
-    void FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY, uint16_t* tileDepth,
-                            int tileOriginX, int tileOriginY, RasterStats& stats);
+    void FillTileRange(int start, int stride, int thread, RasterStats& stats);
+    void FillTile(int tileX, int tileY, int thread, RasterStats& stats);
+    /// `depth` is the depth of pixel (tileOriginX, tileOriginY), rows
+    /// `depthStride` apart: the tile's scratch buffer, or the frame's.
+    void FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY, uint16_t* depth,
+                            int depthStride, int tileOriginX, int tileOriginY, RasterStats& stats);
+    /// Fills every tile from the triangles binned so far.
+    void FillAll();
+    /// Fills the batch so far and empties it, keeping the frame's depth: false
+    /// when the whole-screen depth buffer cannot be had, and the frame stops
+    /// taking triangles.
+    bool FlushBatch();
+
+    /// A growing array in Memory::External, which on a board without PSRAM
+    /// is internal RAM: Reserve says when it cannot grow, where a std::vector
+    /// would abort the board. For trivially copyable T. Its capacity is kept
+    /// from frame to frame.
+    template <typename T>
+    class RegionArray
+    {
+    public:
+        RegionArray() = default;
+        RegionArray(const RegionArray&) = delete;
+        RegionArray& operator=(const RegionArray&) = delete;
+        RegionArray(RegionArray&& other) noexcept { *this = std::move(other); }
+        RegionArray& operator=(RegionArray&& other) noexcept
+        {
+            if (this != &other)
+            {
+                Release();
+                m_Data = other.m_Data;
+                m_Count = other.m_Count;
+                m_Capacity = other.m_Capacity;
+                other.m_Data = nullptr;
+                other.m_Count = other.m_Capacity = 0;
+            }
+            return *this;
+        }
+        ~RegionArray() { Release(); }
+
+        /// Room for `count` in all, growing to at least twice the capacity.
+        bool Reserve(size_t count)
+        {
+            if (count <= m_Capacity)
+            {
+                return true;
+            }
+            size_t capacity = m_Capacity < 16 ? 16 : m_Capacity * 2;
+            if (capacity < count)
+            {
+                capacity = count;
+            }
+            T* data = Deki::Memory::AllocateArray<T>(capacity, Deki::Memory::External);
+            if (!data)
+            {
+                return false;
+            }
+            const size_t kept = m_Count;
+            if (kept > 0)
+            {
+                std::memcpy(data, m_Data, kept * sizeof(T));
+            }
+            Release();  // which empties it: the count is set again below
+            m_Data = data;
+            m_Count = kept;
+            m_Capacity = capacity;
+            return true;
+        }
+        /// After Reserve made the room.
+        void PushReserved(const T& value) { m_Data[m_Count++] = value; }
+        void Clear() { m_Count = 0; }
+        size_t Size() const { return m_Count; }
+        bool Empty() const { return m_Count == 0; }
+        const T& operator[](size_t i) const { return m_Data[i]; }
+        const T* begin() const { return m_Data; }
+        const T* end() const { return m_Data + m_Count; }
+
+    private:
+        void Release()
+        {
+            if (m_Data)
+            {
+                Deki::Memory::Free(m_Data);
+            }
+            m_Data = nullptr;
+            m_Count = 0;
+            m_Capacity = 0;
+        }
+        T* m_Data = nullptr;
+        size_t m_Count = 0;
+        size_t m_Capacity = 0;
+    };
 
     uint8_t* m_Buffer = nullptr;
     int32_t m_Width = 0;
@@ -127,8 +248,19 @@ private:
     // Materials copied from each DrawMesh call, so a caller's materials need
     // only live for the call.
     std::vector<Material3D> m_Materials;
-    std::vector<RasterTri> m_Tris;
-    std::vector<std::vector<uint32_t>> m_Bins;  // one list of triangle indices per tile
+    RegionArray<RasterTri> m_Tris;
+    std::vector<RegionArray<uint32_t>> m_Bins;  // one list of triangle indices per tile
+
+    // The frame's depth once it is filled in batches: width x height, kept
+    // allocated for the next such frame. m_FrameDepthActive says this frame
+    // uses it.
+    uint16_t* m_FrameDepth = nullptr;
+    size_t m_FrameDepthCells = 0;
+    bool m_FrameDepthActive = false;
+    // Set when another batch could not be had: the rest of the frame's
+    // triangles are counted as dropped, and said once.
+    bool m_FrameFull = false;
+    bool m_DropReported = false;
     // One scratch depth buffer per fill thread, reused for every tile that
     // thread takes: 2 KB at a 32-pixel tile, against 150 KB for full screen.
     std::vector<std::vector<uint16_t>> m_TileDepth;

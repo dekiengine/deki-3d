@@ -1,6 +1,7 @@
 // Tests the triangle reduction a target's Detail asks for: it gets near the
-// count, keeps the shape, flips nothing, and never moves a seam, an open edge
-// or a material border. And the model settings that ask for it.
+// count, keeps the shape, flips nothing, never moves an open edge or a
+// material border, and collapses a seam only as one, so it stays shut and each
+// side keeps its own texture. And the model settings that ask for it.
 
 #include <gtest/gtest.h>
 
@@ -15,6 +16,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -67,7 +69,8 @@ Mesh Grid(int side)
 }
 
 // A sphere of rings x segments, with a seam: the last column of vertices sits
-// on the first, as a texture's wrap would leave it.
+// exactly on the first, as a texture's wrap leaves it (an importer gives both
+// copies the one position).
 Mesh Sphere(int rings, int segments)
 {
     Mesh m;
@@ -76,7 +79,7 @@ Mesh Sphere(int rings, int segments)
         const float phi = 3.14159265f * r / rings;
         for (int s = 0; s <= segments; ++s)
         {
-            const float theta = 2.0f * 3.14159265f * s / segments;
+            const float theta = 2.0f * 3.14159265f * (s % segments) / segments;
             m.Add(std::sin(phi) * std::cos(theta), std::cos(phi), std::sin(phi) * std::sin(theta));
         }
     }
@@ -97,6 +100,66 @@ Mesh Sphere(int rings, int segments)
         }
     }
     return m;
+}
+
+// A side x side grid of places in the z = 0 plane, cut into chart x chart
+// cells of its own texture island each, as a model unwrapped in many pieces
+// is: a place on a border between islands has one vertex per island there.
+// `islandOf` says each vertex's island.
+Mesh ChartedGrid(int side, int chart, std::vector<int>& islandOf)
+{
+    Mesh m;
+    const int islands = (side - 1 + chart - 1) / chart;
+    std::map<std::tuple<int, int, int>, uint32_t> vertexOf;  // x, y, island
+    auto vertex = [&](int x, int y, int island)
+    {
+        auto [it, added] = vertexOf.emplace(std::make_tuple(x, y, island), 0u);
+        if (added)
+        {
+            it->second = m.Add(static_cast<float>(x), static_cast<float>(y), 0.0f);
+            islandOf.push_back(island);
+        }
+        return it->second;
+    };
+    for (int y = 0; y + 1 < side; ++y)
+    {
+        for (int x = 0; x + 1 < side; ++x)
+        {
+            const int island = (y / chart) * islands + x / chart;
+            const uint32_t a = vertex(x, y, island), b = vertex(x + 1, y, island);
+            const uint32_t c = vertex(x + 1, y + 1, island), d = vertex(x, y + 1, island);
+            m.triangles.push_back({ { a, b, c }, 0 });
+            m.triangles.push_back({ { a, c, d }, 0 });
+        }
+    }
+    return m;
+}
+
+// The places (positions) on edges one triangle uses, so a seam, whose sides
+// use different vertices at the same places, is not an open edge: only a
+// crack or the outline is.
+std::set<std::pair<float, float>> OpenPlaces(const Mesh& m)
+{
+    std::map<std::pair<std::pair<float, float>, std::pair<float, float>>, int> uses;
+    auto at = [&](uint32_t v) { return std::make_pair(m.positions[v * 3], m.positions[v * 3 + 1]); };
+    for (const SimplifyTriangle& t : m.triangles)
+    {
+        for (int k = 0; k < 3; ++k)
+        {
+            auto a = at(t.v[k]), b = at(t.v[(k + 1) % 3]);
+            ++uses[{ std::min(a, b), std::max(a, b) }];
+        }
+    }
+    std::set<std::pair<float, float>> out;
+    for (const auto& [edge, n] : uses)
+    {
+        if (n == 1)
+        {
+            out.insert(edge.first);
+            out.insert(edge.second);
+        }
+    }
+    return out;
 }
 
 // Each triangle's normal, unnormalised.
@@ -173,11 +236,11 @@ TEST(MeshSimplify, AFlatGridComesDownAndStaysFlatAndFacingUp)
     }
 }
 
-TEST(MeshSimplify, ASphereKeepsItsShapeAndSeam)
+TEST(MeshSimplify, ASphereKeepsItsShapeAndItsSeamShut)
 {
-    Mesh m = Sphere(24, 32);
+    const int segments = 32;
+    Mesh m = Sphere(24, segments);
     const size_t before = m.triangles.size();
-    const std::set<uint32_t> seamBefore = OpenEdgeVertices(m.triangles);
     // Whether a triangle faces the way its corner points, out from the centre.
     auto outward = [&](const SimplifyTriangle& t)
     {
@@ -191,6 +254,34 @@ TEST(MeshSimplify, ASphereKeepsItsShapeAndSeam)
     {
         ASSERT_EQ(outward(t), facesOut) << "the test sphere is wound one way";
     }
+    auto openPlaces = [&]
+    {
+        std::set<std::tuple<float, float, float>> open;
+        std::map<std::pair<std::tuple<float, float, float>, std::tuple<float, float, float>>, int> uses;
+        auto at = [&](uint32_t v)
+        {
+            return std::make_tuple(m.positions[v * 3] + 0.0f, m.positions[v * 3 + 1] + 0.0f,
+                                   m.positions[v * 3 + 2] + 0.0f);
+        };
+        for (const SimplifyTriangle& t : m.triangles)
+        {
+            for (int k = 0; k < 3; ++k)
+            {
+                auto a = at(t.v[k]), b = at(t.v[(k + 1) % 3]);
+                ++uses[{ std::min(a, b), std::max(a, b) }];
+            }
+        }
+        for (const auto& [edge, n] : uses)
+        {
+            if (n == 1)
+            {
+                open.insert(edge.first);
+                open.insert(edge.second);
+            }
+        }
+        return open;
+    };
+    const auto openBefore = openPlaces();
     SimplifyMesh(m.positions, m.triangles, static_cast<uint32_t>(before / 4));
 
     EXPECT_LT(m.triangles.size(), before / 2);
@@ -198,8 +289,46 @@ TEST(MeshSimplify, ASphereKeepsItsShapeAndSeam)
     {
         EXPECT_EQ(outward(t), facesOut) << "a triangle turned over";
     }
-    // The seam's open edges are still exactly the seam's.
-    EXPECT_EQ(OpenEdgeVertices(m.triangles), seamBefore) << "the seam moved, which would open a crack";
+    // The seam may have come down with the rest, but it is shut: no place is
+    // open that was not before (the bottom pole's copies, whose positions
+    // differ in the last bit), and no triangle takes the wrap's far copy with
+    // a corner from the near side, which would stretch the texture across it.
+    EXPECT_EQ(openPlaces(), openBefore) << "the seam cracked";
+    const int row = segments + 1;
+    for (const SimplifyTriangle& t : m.triangles)
+    {
+        bool farCopy = false, nearSide = false;
+        for (uint32_t v : t.v)
+        {
+            const int column = static_cast<int>(v) % row;
+            farCopy = farCopy || column == segments;
+            nearSide = nearSide || (column > 0 && column < segments / 4);
+        }
+        EXPECT_FALSE(farCopy && nearSide) << "a triangle spans the texture's wrap";
+    }
+}
+
+// A model in many texture islands, the way Sponza is: with each seam held
+// still it could hardly come down at all. Collapsing a seam as one, it comes
+// near the count asked, with no crack and every triangle in one island.
+TEST(MeshSimplify, ManyTextureIslandsStillComeDown)
+{
+    std::vector<int> islandOf;
+    Mesh m = ChartedGrid(41, 4, islandOf);
+    const size_t before = m.triangles.size();
+    const std::set<std::pair<float, float>> outline = OpenPlaces(m);
+    SimplifyMesh(m.positions, m.triangles, static_cast<uint32_t>(before / 10));
+
+    EXPECT_LT(m.triangles.size(), before / 4) << "from " << before;
+    EXPECT_EQ(OpenPlaces(m), outline) << "only the outline is open: no seam cracked";
+    for (const SimplifyTriangle& t : m.triangles)
+    {
+        EXPECT_TRUE(islandOf[t.v[0]] == islandOf[t.v[1]] && islandOf[t.v[1]] == islandOf[t.v[2]])
+            << "a triangle takes corners from two islands";
+        double n[3];
+        Normal(m, t, n);
+        EXPECT_GT(n[2], 0.0) << "a triangle turned over";
+    }
 }
 
 TEST(MeshSimplify, NothingToDoLeavesTheMeshAlone)

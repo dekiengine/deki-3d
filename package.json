@@ -20,5 +20,10 @@
         "Mesh3DSettings"
       ]
     }
-  ]
+  ],
+  "dependencies": {
+    "espidf": [
+      "pthread"
+    ]
+  }
 }

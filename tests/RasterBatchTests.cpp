@@ -1,0 +1,168 @@
+// Tests that the software rasteriser draws a frame of more triangles than one
+// batch exactly as it draws it in one, depth included across batches, and
+// that it skips a part of a mesh out of view without changing the picture.
+
+#include <gtest/gtest.h>
+
+#include <cstdint>
+#include <vector>
+
+#include "../Raster3D.h"
+#include "deki-rendering/PixelFormat.h"
+
+using namespace Deki3D;
+
+namespace
+{
+
+constexpr int kSize = 64;
+constexpr int kCells = 8;  // quads per layer side
+constexpr Deki::ColorFormat kFormat = Deki::ColorFormat::RGB565;
+
+// Layers of small quads at different depths, each layer its own colour, in
+// an order that is neither front to back nor back to front, so a later batch
+// holds both nearer and farther quads than an earlier one. `offsetX` moves
+// them along x, so a part can be put outside the view.
+struct Layers
+{
+    std::vector<VertexPNTC> vertices;
+    std::vector<uint16_t> indices;
+
+    void Add(float offsetX)
+    {
+        const float depths[4] = { 0.2f, -0.6f, 0.6f, -0.2f };
+        const uint32_t colours[4] = { 0xFF2040E0u, 0xFF20E040u, 0xFFE04020u, 0xFFE0E020u };
+        for (int layer = 0; layer < 4; ++layer)
+        {
+            // Each layer shifted by a quarter cell, so they overlap partly.
+            const float shift = 0.06f * static_cast<float>(layer);
+            for (int cy = 0; cy < kCells; ++cy)
+            {
+                for (int cx = 0; cx < kCells; ++cx)
+                {
+                    const float x0 = -1.0f + 2.0f * cx / kCells + shift + offsetX;
+                    const float y0 = -1.0f + 2.0f * cy / kCells + shift;
+                    const float size = 2.0f / kCells * 0.9f;
+                    const uint16_t base = static_cast<uint16_t>(vertices.size());
+                    const float z = depths[layer];
+                    const Deki::Vector3 n(0, 0, 1);
+                    vertices.push_back({ Deki::Vector3(x0, y0, z), n, 0.0f, 0.0f, colours[layer] });
+                    vertices.push_back({ Deki::Vector3(x0 + size, y0, z), n, 0.0f, 0.0f, colours[layer] });
+                    vertices.push_back({ Deki::Vector3(x0 + size, y0 + size, z), n, 0.0f, 0.0f, colours[layer] });
+                    vertices.push_back({ Deki::Vector3(x0, y0 + size, z), n, 0.0f, 0.0f, colours[layer] });
+                    for (uint16_t i : { 0, 1, 2, 0, 2, 3 })
+                    {
+                        indices.push_back(static_cast<uint16_t>(base + i));
+                    }
+                }
+            }
+        }
+    }
+};
+
+struct Drawn
+{
+    std::vector<uint8_t> pixels;
+    RasterStats stats;
+};
+
+Drawn Draw(const Layers& layers, const std::vector<Submesh3D>& submeshes, int batchTriangles, int threads = 1)
+{
+    Mesh3D mesh;
+    mesh.vertices = layers.vertices.data();
+    mesh.vertexCount = static_cast<uint32_t>(layers.vertices.size());
+    mesh.layout = LayoutPNTC();
+    mesh.indices = layers.indices.data();
+    mesh.indexCount = static_cast<uint32_t>(layers.indices.size());
+    mesh.submeshes = submeshes.data();
+    mesh.submeshCount = static_cast<uint16_t>(submeshes.size());
+    mesh.boundsMin = Deki::Vector3(-1, -1, -1);
+    mesh.boundsMax = Deki::Vector3(6, 1.5f, 1);
+
+    Material3D material;
+    material.shading = ShadingModel::Unlit;
+    material.doubleSided = true;
+
+    Drawn drawn;
+    drawn.pixels.assign(Deki::FrameBufferBytes(kFormat, kSize, kSize), 0);
+    RasterConfig config;
+    config.tileSize = 16;
+    config.batchTriangles = batchTriangles;
+    config.threadCount = threads;
+    Raster3D raster;
+    raster.BeginFrame(drawn.pixels.data(), kSize, kSize, kFormat, config);
+    raster.DrawMesh(mesh, &material, 1, Deki::Mat4::Ortho(-1, 1, -1, 1, -1, 1), Deki::Mat4::Identity());
+    raster.EndFrame();
+    drawn.stats = raster.Stats();
+    return drawn;
+}
+
+Submesh3D Whole(const Layers& layers)
+{
+    Submesh3D sub;
+    sub.indexCount = static_cast<uint32_t>(layers.indices.size());
+    return sub;
+}
+
+}  // namespace
+
+TEST(RasterBatches, ManyBatchesDrawWhatOneDoes)
+{
+    Layers layers;
+    layers.Add(0.0f);
+    const std::vector<Submesh3D> subs = { Whole(layers) };
+
+    const Drawn one = Draw(layers, subs, 1 << 20);
+    EXPECT_EQ(one.stats.batches, 1u);
+
+    for (int threads : { 1, 2 })
+    {
+        SCOPED_TRACE(threads);
+        const Drawn many = Draw(layers, subs, 7, threads);
+        EXPECT_GT(many.stats.batches, 10u) << "drawn in batches of 7";
+        EXPECT_EQ(many.stats.trianglesDropped, 0u);
+        EXPECT_EQ(many.stats.trianglesClipped, one.stats.trianglesClipped);
+        EXPECT_EQ(many.pixels, one.pixels) << "the same picture, depth tested across batches";
+    }
+}
+
+TEST(RasterBatches, APartOutOfViewIsSkipped)
+{
+    Layers layers;
+    layers.Add(0.0f);
+    const uint32_t inView = static_cast<uint32_t>(layers.indices.size());
+    layers.Add(4.0f);  // the second part, wholly right of the view
+    const uint32_t all = static_cast<uint32_t>(layers.indices.size());
+
+    Submesh3D first;
+    first.indexCount = inView;
+    Submesh3D second;
+    second.firstIndex = inView;
+    second.indexCount = all - inView;
+    const std::vector<Submesh3D> unbounded = { first, second };
+
+    std::vector<Submesh3D> bounded = unbounded;
+    bounded[0].hasBounds = true;
+    bounded[0].boundsMin = Deki::Vector3(-1, -1, -0.6f);
+    bounded[0].boundsMax = Deki::Vector3(1.2f, 1.2f, 0.6f);
+    bounded[1].hasBounds = true;
+    bounded[1].boundsMin = Deki::Vector3(3, -1, -0.6f);
+    bounded[1].boundsMax = Deki::Vector3(5.2f, 1.2f, 0.6f);
+
+    const Drawn all_parts = Draw(layers, unbounded, 1 << 20);
+    const Drawn culled = Draw(layers, bounded, 1 << 20);
+    EXPECT_EQ(all_parts.stats.submeshesCulled, 0u) << "without bounds nothing is skipped";
+    EXPECT_EQ(culled.stats.submeshesCulled, 1u);
+    EXPECT_EQ(culled.stats.trianglesIn, all_parts.stats.trianglesIn) << "a skipped part still counts as handed in";
+    EXPECT_EQ(culled.pixels, all_parts.pixels);
+}
+
+TEST(RasterBatches, WorkingMemoryCountsABatchAndTheFramesDepth)
+{
+    RasterConfig config;
+    config.batchTriangles = 1000;
+    const size_t small = Raster3D::WorkingBytes(320, 240, config);
+    EXPECT_GT(small, static_cast<size_t>(320 * 240 * 2)) << "the whole-screen depth";
+    config.batchTriangles = 2000;
+    EXPECT_GT(Raster3D::WorkingBytes(320, 240, config), small + 1000 * 100) << "and each triangle of the batch";
+}

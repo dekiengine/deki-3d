@@ -7,6 +7,7 @@
 #include "Mesh3DBackend.h"  // NextRevision
 #include "deki-rendering/PixelFormat.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 
@@ -341,12 +342,39 @@ bool MeshAsset::Load(MeshSource& cursor)
             return Fail("an index points past the vertex buffer");
         }
     }
+    // Each submesh's bounds, for the software rasteriser to skip a part out
+    // of view: worked out here rather than stored, so a mesh file of any
+    // version has them. One pass over the indices.
+    const VertexLayout layout = LayoutFor(header.attributes, header.vertexStride);
     for (size_t i = 0; i < m_Submeshes.Count(); ++i)
     {
-        const Submesh3D& sub = m_Submeshes.Data()[i];
+        Submesh3D& sub = m_Submeshes.Data()[i];
         if (static_cast<uint64_t>(sub.firstIndex) + sub.indexCount > header.indexCount)
         {
             return Fail("a submesh runs past the index buffer");
+        }
+        sub.hasBounds = false;
+        if (layout.positionOffset < 0 || sub.indexCount == 0)
+        {
+            continue;
+        }
+        for (uint32_t k = sub.firstIndex; k < sub.firstIndex + sub.indexCount; ++k)
+        {
+            const uint8_t* vertex =
+                static_cast<const uint8_t*>(m_Vertices.Data()) + static_cast<size_t>(m_View.IndexAt(k)) * layout.stride;
+            float position[3];
+            std::memcpy(position, vertex + layout.positionOffset, sizeof(position));
+            const Deki::Vector3 at(position[0], position[1], position[2]);
+            if (!sub.hasBounds)
+            {
+                sub.boundsMin = sub.boundsMax = at;
+                sub.hasBounds = true;
+                continue;
+            }
+            sub.boundsMin = Deki::Vector3(std::min(sub.boundsMin.x, at.x), std::min(sub.boundsMin.y, at.y),
+                                          std::min(sub.boundsMin.z, at.z));
+            sub.boundsMax = Deki::Vector3(std::max(sub.boundsMax.x, at.x), std::max(sub.boundsMax.y, at.y),
+                                          std::max(sub.boundsMax.z, at.z));
         }
     }
 

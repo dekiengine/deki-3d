@@ -75,7 +75,8 @@ project can build for, which may differ from it:
 
 - **Detail**: the share of the triangles kept (All, 75% down to 1%). The
   mesh is reduced by collapsing the edges that change its shape least; its
-  seams, open edges and material borders stay where they are, so a model of
+  open edges and material borders stay where they are, and a texture seam
+  comes down as one, each side keeping its own texture, so a model of
   many pieces may keep more than asked, and the build says how many.
 
 It is kept in the model's `.data` (`settings.model`).
@@ -95,6 +96,20 @@ A board build checks that each model fits: a mesh needs its vertices,
 indices and textures in the board's external memory, and one that needs more
 than the board has stops the build, naming the model, what it needs and what
 the board has. A board that declares no memory is said to be unchecked.
+
+### Drawing in software
+
+A board without OpenGL draws meshes with the software rasteriser. It collects
+the frame's triangles, bins them into 32x32 tiles and fills tile by tile; past
+`RasterConfig::batchTriangles` it fills what it has and starts again against a
+depth buffer for the whole screen, so a mesh of any size draws in fixed
+memory, in PSRAM where the board has it. Parts of a mesh out of view are
+skipped, triangles facing away are dropped before they are lit, and each
+vertex is transformed once per part. Set the scene's 3D Settings
+`fillThreads` to 2 on a dual-core board to fill on both cores.
+
+Sponza at Detail 10% (38k triangles) draws at about 1.7 frames a second on a
+LilyGO T-Deck; `RasterStats` says where the time goes.
 
 ## Seeing it in the editor
 

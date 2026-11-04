@@ -2,10 +2,19 @@
 #include "Math3D.h"
 #include "deki-rendering/PixelFormat.h"
 
+#include <deki/LogSystem.h>
+
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <thread>
+
+#if defined(ESP_PLATFORM)
+#include "esp_pthread.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
 
 namespace Deki3D
 {
@@ -94,6 +103,21 @@ inline Gradient MakeGradient(float f0, float f1, float f2, float x0, float y0, f
     return g;
 }
 
+// floor and ceil by a cast, which truncates toward zero, and a correction:
+// the same results as std::floor and std::ceil for anything an int holds, and
+// a few instructions, where those are calls on some cores (Xtensa's).
+inline int FloorToInt(float f)
+{
+    const int i = static_cast<int>(f);
+    return i - (f < static_cast<float>(i) ? 1 : 0);
+}
+
+inline int CeilToInt(float f)
+{
+    const int i = static_cast<int>(f);
+    return i + (f > static_cast<float>(i) ? 1 : 0);
+}
+
 inline float Eval(const Gradient& g, float dxFromV0, float dyFromV0)
 {
     return g.at0 + g.dx * dxFromV0 + g.dy * dyFromV0;
@@ -105,17 +129,15 @@ inline float Eval(const Gradient& g, float dxFromV0, float dyFromV0)
 /// one of the six planes. Conservative: a box straddling two planes without
 /// touching the frustum is kept, but nothing visible is ever culled. Eight
 /// transforms, against the thousands the mesh would cost.
-bool BoundsOutsideFrustum(const Mesh3D& mesh, const Deki::Mat4& mvp)
+bool BoxOutsideFrustum(const Deki::Vector3& lo, const Deki::Vector3& hi, const Deki::Mat4& mvp)
 {
-    // A mesh without bounds has min == max == 0; culling on that would hide
-    // it whenever the origin left the view.
-    if (mesh.boundsMin.x > mesh.boundsMax.x || mesh.boundsMin.y > mesh.boundsMax.y ||
-        mesh.boundsMin.z > mesh.boundsMax.z)
+    // No bounds is min == max == 0; culling on that would hide the mesh
+    // whenever the origin left the view.
+    if (lo.x > hi.x || lo.y > hi.y || lo.z > hi.z)
     {
         return false;
     }
-    if (mesh.boundsMin.x == mesh.boundsMax.x && mesh.boundsMin.y == mesh.boundsMax.y &&
-        mesh.boundsMin.z == mesh.boundsMax.z)
+    if (lo.x == hi.x && lo.y == hi.y && lo.z == hi.z)
     {
         return false;
     }
@@ -123,9 +145,7 @@ bool BoundsOutsideFrustum(const Mesh3D& mesh, const Deki::Mat4& mvp)
     int outside[6] = { 0, 0, 0, 0, 0, 0 };
     for (int corner = 0; corner < 8; ++corner)
     {
-        const Deki::Vector3 point((corner & 1) ? mesh.boundsMax.x : mesh.boundsMin.x,
-                                  (corner & 2) ? mesh.boundsMax.y : mesh.boundsMin.y,
-                                  (corner & 4) ? mesh.boundsMax.z : mesh.boundsMin.z);
+        const Deki::Vector3 point((corner & 1) ? hi.x : lo.x, (corner & 2) ? hi.y : lo.y, (corner & 4) ? hi.z : lo.z);
         float w = 1.0f;
         const Deki::Vector3 clip = Deki3D::TransformPoint(mvp, point, w);
         if (clip.x < -w)
@@ -442,20 +462,27 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::
     // Keep the capacity the last frame grew into. Reassigning would free and
     // reallocate one vector per tile every frame, which costs more than the
     // rasterising on light scenes.
-    m_Tris.clear();
+    m_Tris.Clear();
     m_Materials.clear();
     const size_t tileCount = static_cast<size_t>(m_TilesX) * m_TilesY;
     if (m_Bins.size() != tileCount)
     {
-        m_Bins.assign(tileCount, {});
+        m_Bins.clear();
+        m_Bins.resize(tileCount);
     }
     else
     {
-        for (std::vector<uint32_t>& bin : m_Bins)
+        for (RegionArray<uint32_t>& bin : m_Bins)
         {
-            bin.clear();
+            bin.Clear();
         }
     }
+    if (m_Config.batchTriangles < 1)
+    {
+        m_Config.batchTriangles = 1;
+    }
+    m_FrameDepthActive = false;
+    m_FrameFull = false;
 
     // One scratch depth buffer per fill thread, sized once and kept. The
     // calling thread is one of them, so `threads - 1` workers are needed.
@@ -471,6 +498,10 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::
         {
             buffer.resize(depthCells);
         }
+    }
+    if (m_VertexCache.size() != static_cast<size_t>(kVertexCacheSize))
+    {
+        m_VertexCache.resize(kVertexCacheSize);
     }
 
     if (static_cast<int>(m_Workers.size()) != threads - 1)
@@ -494,11 +525,28 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
     }
 
     // Eight transforms to decide whether thousands are needed at all.
-    if (BoundsOutsideFrustum(mesh, mvp))
+    if (BoxOutsideFrustum(mesh.boundsMin, mesh.boundsMax, mvp))
     {
         ++m_Stats.meshesCulled;
         return;
     }
+
+    // Its time, less any batch filled on the way, is the geometry's.
+    const auto started = std::chrono::steady_clock::now();
+    const uint32_t fillBefore = m_Stats.fillMicros;
+    struct Timer
+    {
+        RasterStats& stats;
+        std::chrono::steady_clock::time_point started;
+        uint32_t fillBefore;
+        ~Timer()
+        {
+            const auto spent =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started)
+                    .count();
+            stats.geometryMicros += static_cast<uint32_t>(spent) - (stats.fillMicros - fillBefore);
+        }
+    } timer{ m_Stats, started, fillBefore };
 
     const VertexLayout& layout = mesh.layout;
     PickLights(mesh, model);
@@ -507,6 +555,15 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
     for (uint16_t s = 0; s < mesh.submeshCount; ++s)
     {
         const Submesh3D& sub = mesh.submeshes[s];
+        // A part out of view, as a whole mesh is: a model of many parts
+        // (a building, a level) seen from inside has most of them behind or
+        // beside the camera.
+        if (sub.hasBounds && BoxOutsideFrustum(sub.boundsMin, sub.boundsMax, mvp))
+        {
+            ++m_Stats.submeshesCulled;
+            m_Stats.trianglesIn += sub.indexCount / 3;
+            continue;
+        }
         // Copy the material now: the span loop reads it in EndFrame, when the
         // caller's material may be gone.
         if (m_Materials.size() >= 0xFFFFu)
@@ -519,67 +576,113 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
         // By value: m_Materials can reallocate on the next submesh.
         const ShadingModel shading = m_Materials.back().shading;
 
+        const bool cullBack = m_Config.backfaceCull && !m_Materials.back().doubleSided;
+        const bool vertexLit = shading == ShadingModel::VertexLit && layout.HasNormals();
+        for (CachedVertex& cached : m_VertexCache)
+        {
+            cached.index = UINT32_MAX;
+        }
+
         const uint32_t end = sub.firstIndex + sub.indexCount;
         for (uint32_t i = sub.firstIndex; i + 2 < end; i += 3)
         {
             ++m_Stats.trianglesIn;
 
-            ClipVertex cv[3];
-            Deki::Vector3 objPos[3];
-            Deki::Vector3 objNormal[3];
-
+            CachedVertex* corner[3];
             for (int k = 0; k < 3; ++k)
             {
-                const void* vtx = mesh.VertexAt(mesh.IndexAt(i + k));
-                objPos[k] = ReadVec3(vtx, layout.positionOffset);
-
-                float w = 1.0f;
-                const Deki::Vector3 clip = Deki3D::TransformPoint(mvp, objPos[k], w);
-                cv[k].x = clip.x;
-                cv[k].y = clip.y;
-                cv[k].z = clip.z;
-                cv[k].w = w;
-
-                if (layout.HasUVs())
+                const uint32_t index = mesh.IndexAt(i + k);
+                CachedVertex& cached = m_VertexCache[index & (kVertexCacheSize - 1)];
+                if (cached.index != index)
                 {
-                    ReadUV(vtx, layout.uvOffset, cv[k].u, cv[k].v);
+                    const void* vtx = mesh.VertexAt(index);
+                    cached.index = index;
+                    cached.lit = false;
+                    cached.position = ReadVec3(vtx, layout.positionOffset);
+                    ClipVertex& cv = cached.clip;
+                    float w = 1.0f;
+                    const Deki::Vector3 clip = Deki3D::TransformPoint(mvp, cached.position, w);
+                    cv.x = clip.x;
+                    cv.y = clip.y;
+                    cv.z = clip.z;
+                    cv.w = w;
+                    if (layout.HasUVs())
+                    {
+                        ReadUV(vtx, layout.uvOffset, cv.u, cv.v);
+                    }
+                    else
+                    {
+                        cv.u = cv.v = 0.0f;
+                    }
+                    cv.color = layout.HasColors() ? ReadColor(vtx, layout.colorOffset) : 0xFFFFFFFFu;
+                    cv.lightR = cv.lightG = cv.lightB = 1.0f;
+                    if (layout.HasNormals())
+                    {
+                        cached.normal = ReadVec3(vtx, layout.normalOffset);
+                    }
                 }
-                else
-                {
-                    cv[k].u = cv[k].v = 0.0f;
-                }
+                corner[k] = &cached;
+            }
+            const ClipVertex& c0 = corner[0]->clip;
+            const ClipVertex& c1 = corner[1]->clip;
+            const ClipVertex& c2 = corner[2]->clip;
 
-                cv[k].color = layout.HasColors() ? ReadColor(vtx, layout.colorOffset) : 0xFFFFFFFFu;
-                cv[k].lightR = cv[k].lightG = cv[k].lightB = 1.0f;
-
-                if (layout.HasNormals())
+            // Wholly outside one side of the view: nothing to light or bin.
+            if ((c0.x < -c0.w && c1.x < -c1.w && c2.x < -c2.w) || (c0.x > c0.w && c1.x > c1.w && c2.x > c2.w) ||
+                (c0.y < -c0.w && c1.y < -c1.w && c2.y < -c2.w) || (c0.y > c0.w && c1.y > c1.w && c2.y > c2.w) ||
+                (c0.z > c0.w && c1.z > c1.w && c2.z > c2.w) || (c0.z < -c0.w && c1.z < -c1.w && c2.z < -c2.w))
+            {
+                continue;
+            }
+            // Facing away, decided from the projected corners when all three
+            // are in front of the eye, as ProjectAndBin decides it, but before
+            // the lighting is paid for. One crossing the near plane is left to
+            // ProjectAndBin, after the clip.
+            if (cullBack && c0.w > 0.0f && c1.w > 0.0f && c2.w > 0.0f)
+            {
+                const float x0 = c0.x / c0.w, y0 = c0.y / c0.w;
+                const float x1 = c1.x / c1.w, y1 = c1.y / c1.w;
+                const float x2 = c2.x / c2.w, y2 = c2.y / c2.w;
+                // The screen's area sign is flipped from this one: Y points
+                // down there. Front faces have negative screen area.
+                const float area2 = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+                if (area2 <= 0.0f)
                 {
-                    objNormal[k] = ReadVec3(vtx, layout.normalOffset);
+                    continue;
                 }
             }
 
             // Lighting is computed here, at vertex rate, so the span loop
             // needs no normals or dot products.
-            if (shading == ShadingModel::VertexLit && layout.HasNormals())
+            if (vertexLit)
             {
-                for (int k = 0; k < 3; ++k)
+                for (CachedVertex* v : corner)
                 {
-                    Deki::Vector3 n = Deki3D::TransformDirection(normalMatrix, objNormal[k]);
+                    if (v->lit)
+                    {
+                        continue;
+                    }
+                    Deki::Vector3 n = Deki3D::TransformDirection(normalMatrix, v->normal);
                     if (n.LengthSquared() > 0.0f)
                     {
                         n.Normalize();
                     }
                     float w = 1.0f;
-                    const Deki::Vector3 at = Deki3D::TransformPoint(model, objPos[k], w);
+                    const Deki::Vector3 at = Deki3D::TransformPoint(model, v->position, w);
                     const Deki::Vector3 light = LightAt(ambient, m_MeshLights, m_MeshLightCount, at, n);
-                    cv[k].lightR = light.x;
-                    cv[k].lightG = light.y;
-                    cv[k].lightB = light.z;
+                    v->clip.lightR = light.x;
+                    v->clip.lightG = light.y;
+                    v->clip.lightB = light.z;
+                    v->lit = true;
                 }
+                EmitTriangle(c0, c1, c2, materialIndex);
             }
             else if (shading == ShadingModel::Flat)
             {
-                Deki::Vector3 faceNormal = (objPos[1] - objPos[0]).Cross(objPos[2] - objPos[0]);
+                const Deki::Vector3& p0 = corner[0]->position;
+                const Deki::Vector3& p1 = corner[1]->position;
+                const Deki::Vector3& p2 = corner[2]->position;
+                Deki::Vector3 faceNormal = (p1 - p0).Cross(p2 - p0);
                 faceNormal = Deki3D::TransformDirection(normalMatrix, faceNormal);
                 if (faceNormal.LengthSquared() > 0.0f)
                 {
@@ -587,18 +690,22 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
                 }
                 // At the face's middle, with its normal.
                 float w = 1.0f;
-                const Deki::Vector3 middle = (objPos[0] + objPos[1] + objPos[2]) * (1.0f / 3.0f);
+                const Deki::Vector3 middle = (p0 + p1 + p2) * (1.0f / 3.0f);
                 const Deki::Vector3 at = Deki3D::TransformPoint(model, middle, w);
                 const Deki::Vector3 light = LightAt(ambient, m_MeshLights, m_MeshLightCount, at, faceNormal);
+                ClipVertex cv[3] = { c0, c1, c2 };
                 for (ClipVertex& v : cv)
                 {
                     v.lightR = light.x;
                     v.lightG = light.y;
                     v.lightB = light.z;
                 }
+                EmitTriangle(cv[0], cv[1], cv[2], materialIndex);
             }
-
-            EmitTriangle(cv[0], cv[1], cv[2], materialIndex);
+            else
+            {
+                EmitTriangle(c0, c1, c2, materialIndex);
+            }
         }
     }
 }
@@ -778,20 +885,104 @@ void Raster3D::Bin(const RasterTri& tri)
         return;
     }
 
-    const uint32_t index = static_cast<uint32_t>(m_Tris.size());
-    m_Tris.push_back(tri);
-
     const int tile = m_Config.tileSize;
     const int t0x = minX / tile, t1x = maxX / tile;
     const int t0y = minY / tile, t1y = maxY / tile;
+
+    // Room for the triangle and an entry in each tile it touches, or the
+    // batch so far is filled first: a full batch, or memory that will not
+    // stretch to one.
+    auto room = [&]
+    {
+        if (m_Tris.Size() >= static_cast<size_t>(m_Config.batchTriangles) || !m_Tris.Reserve(m_Tris.Size() + 1))
+        {
+            return false;
+        }
+        for (int ty = t0y; ty <= t1y; ++ty)
+        {
+            for (int tx = t0x; tx <= t1x; ++tx)
+            {
+                RegionArray<uint32_t>& bin = m_Bins[static_cast<size_t>(ty) * m_TilesX + tx];
+                if (!bin.Reserve(bin.Size() + 1))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+    if (m_FrameFull || (!room() && (!FlushBatch() || !room())))
+    {
+        ++m_Stats.trianglesDropped;
+        return;
+    }
+
+    const uint32_t index = static_cast<uint32_t>(m_Tris.Size());
+    m_Tris.PushReserved(tri);
     for (int ty = t0y; ty <= t1y; ++ty)
     {
         for (int tx = t0x; tx <= t1x; ++tx)
         {
-            m_Bins[static_cast<size_t>(ty) * m_TilesX + tx].push_back(index);
+            m_Bins[static_cast<size_t>(ty) * m_TilesX + tx].PushReserved(index);
             ++m_Stats.trianglesBinned;
         }
     }
+}
+
+bool Raster3D::FlushBatch()
+{
+    if (m_Tris.Empty())
+    {
+        return true;  // nothing to make room from: the memory is not there
+    }
+    if (!m_FrameDepthActive)
+    {
+        const size_t cells = static_cast<size_t>(m_Width) * m_Height;
+        if (m_FrameDepthCells != cells)
+        {
+            if (m_FrameDepth)
+            {
+                Deki::Memory::Free(m_FrameDepth);
+            }
+            m_FrameDepth = Deki::Memory::AllocateArray<uint16_t>(cells, Deki::Memory::External);
+            m_FrameDepthCells = m_FrameDepth ? cells : 0;
+        }
+        if (!m_FrameDepth)
+        {
+            m_FrameFull = true;
+            if (!m_DropReported)
+            {
+                m_DropReported = true;
+                DEKI_LOG_WARNING("Raster3D: a frame has more triangles than one batch (%d), and there is no memory "
+                                 "for the %zu-byte depth buffer that drawing it in batches needs: it draws its first "
+                                 "batch and no more",
+                                 m_Config.batchTriangles, cells * sizeof(uint16_t));
+            }
+            return false;
+        }
+        std::fill(m_FrameDepth, m_FrameDepth + cells, static_cast<uint16_t>(kDepthMax));
+        m_FrameDepthActive = true;
+    }
+    FillAll();
+    m_Tris.Clear();
+    for (RegionArray<uint32_t>& bin : m_Bins)
+    {
+        bin.Clear();
+    }
+    return true;
+}
+
+size_t Raster3D::WorkingBytes(int32_t width, int32_t height, const RasterConfig& config)
+{
+    const size_t batch = static_cast<size_t>(std::max(config.batchTriangles, 1));
+    const int tile = std::max(config.tileSize, 8);
+    const size_t tiles = static_cast<size_t>((width + tile - 1) / tile) * ((height + tile - 1) / tile);
+    const int threads = std::max(config.threadCount, 1);
+    // A triangle's tile entries: most touch one or two tiles; four each is
+    // the bound for one no larger than a tile, and larger ones are few.
+    return batch * sizeof(RasterTri) + batch * 4 * sizeof(uint32_t) + tiles * sizeof(RegionArray<uint32_t>) +
+           static_cast<size_t>(width) * height * sizeof(uint16_t) +
+           static_cast<size_t>(threads) * tile * tile * sizeof(uint16_t);
 }
 
 // ---------------------------------------------------------------------------
@@ -815,6 +1006,16 @@ void Raster3D::StartWorkers(int count)
     m_Workers.reserve(static_cast<size_t>(count));
     for (int i = 0; i < count; ++i)
     {
+#if defined(ESP_PLATFORM) && !defined(CONFIG_FREERTOS_UNICORE)
+        // On the core the engine is not on, as Lighting2D's worker is: a
+        // std::thread there starts wherever the scheduler puts it, which was
+        // the engine's own core, so the fill gained nothing from a second.
+        esp_pthread_cfg_t cfg = esp_pthread_get_default_config();
+        cfg.pin_to_core = (xPortGetCoreID() + 1 + i) % portNUM_PROCESSORS;
+        cfg.prio = uxTaskPriorityGet(nullptr);
+        cfg.thread_name = "deki_fill";
+        esp_pthread_set_cfg(&cfg);
+#endif
         m_Workers.emplace_back([this, i] { WorkerLoop(i); });
     }
 }
@@ -857,7 +1058,7 @@ void Raster3D::WorkerLoop(int index)
         // Outside the lock. Worker `index` takes every stride-th tile and
         // touches nothing another worker touches. The stride is fixed before
         // any worker starts; m_Workers.size() may still be growing.
-        FillTileRange(index, m_FillStride, m_TileDepth[index].data(), m_WorkerStats[index]);
+        FillTileRange(index, m_FillStride, index, m_WorkerStats[index]);
 
         {
             std::lock_guard<std::mutex> lock(m_WorkMutex);
@@ -875,13 +1076,30 @@ void Raster3D::EndFrame()
     {
         return;
     }
+    FillAll();
+}
 
+void Raster3D::FillAll()
+{
+    ++m_Stats.batches;
+    const auto started = std::chrono::steady_clock::now();
+    struct Timer
+    {
+        RasterStats& stats;
+        std::chrono::steady_clock::time_point started;
+        ~Timer()
+        {
+            stats.fillMicros += static_cast<uint32_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started)
+                    .count());
+        }
+    } timer{ m_Stats, started };
     const int tileCount = m_TilesX * m_TilesY;
     const int threads = static_cast<int>(m_TileDepth.size());
 
     if (threads <= 1 || tileCount <= 1 || m_Workers.empty())
     {
-        FillTileRange(0, 1, m_TileDepth[0].data(), m_Stats);
+        FillTileRange(0, 1, 0, m_Stats);
         return;
     }
 
@@ -905,7 +1123,7 @@ void Raster3D::EndFrame()
     m_WorkReady.notify_all();
 
     // The calling thread takes the last share instead of idling.
-    FillTileRange(workerCount, m_FillStride, m_TileDepth[workerCount].data(), m_Stats);
+    FillTileRange(workerCount, m_FillStride, workerCount, m_Stats);
 
     {
         std::unique_lock<std::mutex> lock(m_WorkMutex);
@@ -922,21 +1140,25 @@ void Raster3D::EndFrame()
 Raster3D::~Raster3D()
 {
     StopWorkers();
+    if (m_FrameDepth)
+    {
+        Deki::Memory::Free(m_FrameDepth);
+    }
 }
 
-void Raster3D::FillTileRange(int start, int stride, uint16_t* tileDepth, RasterStats& stats)
+void Raster3D::FillTileRange(int start, int stride, int thread, RasterStats& stats)
 {
     const int tileCount = m_TilesX * m_TilesY;
     for (int index = start; index < tileCount; index += stride)
     {
-        FillTile(index % m_TilesX, index / m_TilesX, tileDepth, stats);
+        FillTile(index % m_TilesX, index / m_TilesX, thread, stats);
     }
 }
 
-void Raster3D::FillTile(int tileX, int tileY, uint16_t* tileDepth, RasterStats& stats)
+void Raster3D::FillTile(int tileX, int tileY, int thread, RasterStats& stats)
 {
-    const std::vector<uint32_t>& bin = m_Bins[static_cast<size_t>(tileY) * m_TilesX + tileX];
-    if (bin.empty())
+    const RegionArray<uint32_t>& bin = m_Bins[static_cast<size_t>(tileY) * m_TilesX + tileX];
+    if (bin.Empty())
     {
         return;
     }
@@ -947,17 +1169,28 @@ void Raster3D::FillTile(int tileX, int tileY, uint16_t* tileDepth, RasterStats& 
     const int maxX = std::min(originX + tile, static_cast<int>(m_Width)) - 1;
     const int maxY = std::min(originY + tile, static_cast<int>(m_Height)) - 1;
 
-    // Reset this thread's scratch buffer and reuse it for every tile it takes.
-    std::fill(tileDepth, tileDepth + static_cast<size_t>(tile) * tile, static_cast<uint16_t>(kDepthMax));
+    // In batches, the frame's depth, which earlier batches wrote. Otherwise
+    // this thread's scratch buffer, reset and reused for every tile it takes.
+    uint16_t* depth = m_TileDepth[static_cast<size_t>(thread)].data();
+    int depthStride = tile;
+    if (m_FrameDepthActive)
+    {
+        depth = m_FrameDepth + static_cast<size_t>(originY) * m_Width + originX;
+        depthStride = m_Width;
+    }
+    else
+    {
+        std::fill(depth, depth + static_cast<size_t>(tile) * tile, static_cast<uint16_t>(kDepthMax));
+    }
 
     for (uint32_t index : bin)
     {
-        FillTriangleInTile(m_Tris[index], originX, originY, maxX, maxY, tileDepth, originX, originY, stats);
+        FillTriangleInTile(m_Tris[index], originX, originY, maxX, maxY, depth, depthStride, originX, originY, stats);
     }
 }
 
-void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY, uint16_t* tileDepth,
-                                  int tileOriginX, int tileOriginY, RasterStats& stats)
+void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY, uint16_t* depth,
+                                  int depthStride, int tileOriginX, int tileOriginY, RasterStats& stats)
 {
     const ScreenVertex& v0 = tri.v[0];
     const ScreenVertex& v1 = tri.v[1];
@@ -968,18 +1201,18 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     const float hiX = std::max(v0.x, std::max(v1.x, v2.x));
     const float loY = std::min(v0.y, std::min(v1.y, v2.y));
     const float hiY = std::max(v0.y, std::max(v1.y, v2.y));
-    int bMinX = std::max(minX, static_cast<int>(std::floor(loX)));
-    int bMaxX = std::min(maxX, static_cast<int>(std::ceil(hiX)));
-    int bMinY = std::max(minY, static_cast<int>(std::floor(loY)));
-    int bMaxY = std::min(maxY, static_cast<int>(std::ceil(hiY)));
+    int bMinX = std::max(minX, FloorToInt(loX));
+    int bMaxX = std::min(maxX, CeilToInt(hiX));
+    int bMinY = std::max(minY, FloorToInt(loY));
+    int bMaxY = std::min(maxY, CeilToInt(hiY));
     if (bMinX > bMaxX || bMinY > bMaxY)
     {
         return;
     }
 
-    // floor+cast rather than lrint: lrint honours the current rounding mode,
-    // so it stays a libm call, while floor is one instruction.
-    auto fixed = [](float f) { return static_cast<int32_t>(std::floor(f * kSubScale + 0.5f)); };
+    // A floor rather than lrint: lrint honours the current rounding mode, so
+    // it stays a libm call.
+    auto fixed = [](float f) { return static_cast<int32_t>(FloorToInt(f * kSubScale + 0.5f)); };
     const int32_t x0 = fixed(v0.x), y0 = fixed(v0.y);
     const int32_t x1 = fixed(v1.x), y1 = fixed(v1.y);
     const int32_t x2 = fixed(v2.x), y2 = fixed(v2.y);
@@ -993,8 +1226,22 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     const int32_t px = bMinX * kSubScale + kSubScale / 2;
     const int32_t py = bMinY * kSubScale + kSubScale / 2;
 
-    auto edge = [](int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t px, int32_t py) -> int64_t
-    { return static_cast<int64_t>(bx - ax) * (py - ay) - static_cast<int64_t>(by - ay) * (px - ax); };
+    // A triangle within 512 pixels of the origin, as one on screen is, has
+    // edge values well inside 32 bits (corner differences under 2^14 in
+    // 28.4, products under 2^28), so its setup and walk need no 64-bit
+    // arithmetic, which a 32-bit core does in several instructions each. One
+    // reaching further off-screen takes the 64-bit setup and the check below.
+    constexpr int32_t kNear = 1 << 13;
+    auto near = [](int32_t v) { return v > -kNear && v < kNear; };
+    const bool small = near(x0) && near(y0) && near(x1) && near(y1) && near(x2) && near(y2);
+    auto edge = [small](int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t px, int32_t py) -> int64_t
+    {
+        if (small)
+        {
+            return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+        }
+        return static_cast<int64_t>(bx - ax) * (py - ay) - static_cast<int64_t>(by - ay) * (px - ax);
+    };
 
     int64_t rowE0 = edge(x1, y1, x2, y2, px, py);  // weight of v0
     int64_t rowE1 = edge(x2, y2, x0, y0, px, py);  // weight of v1
@@ -1050,27 +1297,100 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
     const uint16_t flatColor = To565(flatRgba);
 
     const bool lit = mat.shading != ShadingModel::Unlit;
+    // The light of the triangle's first vertex, per channel: the same for every span.
+    auto toShade = [](float l) { return static_cast<uint32_t>(std::min(64.0f, std::max(0.0f, l * 32.0f))); };
+    const uint32_t shadeR = lit ? toShade(v0.lightR) : 32u;
+    const uint32_t shadeG = lit ? toShade(v0.lightG) : 32u;
+    const uint32_t shadeB = lit ? toShade(v0.lightB) : 32u;
     const int subdiv = m_Config.perspectiveCorrect ? m_Config.spanSubdivision : (bMaxX - bMinX + 1);
-    const int tileStride = m_Config.tileSize;
 
-    for (int py = bMinY; py <= bMaxY; ++py)
+    // The edge walk adds three edge values per pixel. A 32-bit core takes
+    // several instructions for a 64-bit add, so it walks in 32 bits wherever
+    // the values over this tile's part of the triangle fit, which is any
+    // triangle near the screen's size; only one reaching far off-screen needs
+    // 64. The values are linear, so the corners of the walk bound them (the
+    // walk steps once past its last pixel and row).
+    const int64_t spanX = bMaxX - bMinX + 1;
+    const int64_t spanY = bMaxY - bMinY + 1;
+    auto fits32 = [&](int64_t start, int64_t stepX, int64_t stepY)
     {
-        int64_t e0 = rowE0, e1 = rowE1, e2 = rowE2;
-
-        // Find each run of covered pixels on this scanline, then fill it as
-        // spans.
-        int spanStart = -1;
-        for (int px = bMinX; px <= bMaxX; ++px)
+        for (int64_t cx : { int64_t(0), spanX })
         {
-            const bool inside = (e0 >= 0) && (e1 >= 0) && (e2 >= 0);
-            if (inside && spanStart < 0)
+            for (int64_t cy : { int64_t(0), spanY })
             {
-                spanStart = px;
+                const int64_t value = start + cx * stepX + cy * stepY;
+                if (value <= INT32_MIN || value > INT32_MAX)
+                {
+                    return false;
+                }
             }
-            if ((!inside || px == bMaxX) && spanStart >= 0)
-            {
-                const int spanEnd = inside ? px : px - 1;
+        }
+        return stepX > INT32_MIN && stepX <= INT32_MAX && stepY > INT32_MIN && stepY <= INT32_MAX;
+    };
+    const bool walk32 =
+        small || (fits32(rowE0, stepX0, stepY0) && fits32(rowE1, stepX1, stepY1) && fits32(rowE2, stepX2, stepY2));
 
+    auto walk = [&](auto zero)
+    {
+        using Edge = decltype(zero);
+        Edge rowEdge0 = static_cast<Edge>(rowE0), rowEdge1 = static_cast<Edge>(rowE1),
+             rowEdge2 = static_cast<Edge>(rowE2);
+        const Edge edgeStepX0 = static_cast<Edge>(stepX0), edgeStepX1 = static_cast<Edge>(stepX1),
+                   edgeStepX2 = static_cast<Edge>(stepX2);
+        const Edge edgeStepY0 = static_cast<Edge>(stepY0), edgeStepY1 = static_cast<Edge>(stepY1),
+                   edgeStepY2 = static_cast<Edge>(stepY2);
+        for (int py = bMinY; py <= bMaxY; ++py)
+        {
+            // This row's covered run, from the three edges rather than by
+            // testing each pixel of the box: each edge is linear in x, so
+            // where it is >= 0 starts or ends at one division, and a triangle
+            // is convex, so the run is the one stretch where all three are.
+            // Exactly the pixels the test finds; a model of thin triangles has
+            // boxes that are mostly empty.
+            int spanStart = bMinX;
+            int spanEnd = bMaxX;
+            const Edge last = static_cast<Edge>(bMaxX - bMinX);
+            auto bound = [&](Edge start, Edge step)
+            {
+                if (step > 0)
+                {
+                    // Rises with x: from the first pixel where it reaches 0.
+                    if (start < 0)
+                    {
+                        Edge k = (-start) / step;
+                        if ((-start) % step != 0)
+                        {
+                            ++k;
+                        }
+                        spanStart = k > last ? bMaxX + 1 : std::max(spanStart, bMinX + static_cast<int>(k));
+                    }
+                }
+                else if (step < 0)
+                {
+                    // Falls with x: up to the last pixel still at or above 0.
+                    if (start < 0)
+                    {
+                        spanEnd = bMinX - 1;
+                    }
+                    else
+                    {
+                        const Edge k = start / (-step);
+                        if (k < last)
+                        {
+                            spanEnd = std::min(spanEnd, bMinX + static_cast<int>(k));
+                        }
+                    }
+                }
+                else if (start < 0)
+                {
+                    spanEnd = bMinX - 1;  // level with the row and outside it
+                }
+            };
+            bound(rowEdge0, edgeStepX0);
+            bound(rowEdge1, edgeStepX1);
+            bound(rowEdge2, edgeStepX2);
+            if (spanStart <= spanEnd)
+            {
                 // --- one covered run, walked in subdivided spans ---
                 const float fy = static_cast<float>(py) + 0.5f - v0.y;
                 int runX = spanStart;
@@ -1136,19 +1456,13 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     const int32_t zE = toDepth(z1);
                     const int32_t dz = (chunkLen > 1) ? static_cast<int32_t>((zE - z) * inv) : 0;
 
-                    // The light of the triangle's first vertex, per channel.
-                    auto toShade = [](float l)
-                    { return static_cast<uint32_t>(std::min(64.0f, std::max(0.0f, l * 32.0f))); };
-                    const uint32_t shadeR = lit ? toShade(v0.lightR) : 32u;
-                    const uint32_t shadeG = lit ? toShade(v0.lightG) : 32u;
-                    const uint32_t shadeB = lit ? toShade(v0.lightB) : 32u;
 
                     // Row bases, so the span indexes by x alone: a per-pixel
                     // multiply for the tile offset costs more than the depth
                     // test it feeds.
                     SpanArgs span;
                     span.fbRow = m_Buffer + static_cast<size_t>(py) * m_Width * m_BytesPerPixel;
-                    span.depthRow = tileDepth + static_cast<size_t>(py - tileOriginY) * tileStride - tileOriginX;
+                    span.depthRow = depth + static_cast<ptrdiff_t>(py - tileOriginY) * depthStride - tileOriginX;
                     span.x0 = runX;
                     span.x1 = chunkEnd;
                     span.u = u;
@@ -1181,19 +1495,20 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     stats.pixelsWritten += written;
                     runX = chunkEnd + 1;
                 }
-
-                // The run ended here; keep scanning for another.
-                spanStart = -1;
             }
 
-            e0 += stepX0;
-            e1 += stepX1;
-            e2 += stepX2;
+            rowEdge0 += edgeStepY0;
+            rowEdge1 += edgeStepY1;
+            rowEdge2 += edgeStepY2;
         }
-
-        rowE0 += stepY0;
-        rowE1 += stepY1;
-        rowE2 += stepY2;
+    };
+    if (walk32)
+    {
+        walk(int32_t{});
+    }
+    else
+    {
+        walk(int64_t{});
     }
 }
 

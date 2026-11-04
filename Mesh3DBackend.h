@@ -86,6 +86,14 @@ struct RasterConfig
     /// they append to shared buffers. Software only.
     int threadCount = 1;
 
+    /// How many triangles the software rasteriser collects before it fills
+    /// them: a frame with more is drawn in batches of this many, against one
+    /// depth buffer for the whole screen, so any mesh draws in fixed memory.
+    /// Each costs about 130 bytes, in PSRAM where the board has it. A frame
+    /// within one batch fills tile by tile with no whole-screen depth buffer.
+    /// Software only.
+    int batchTriangles = 8192;
+
     /// A GPU backend may build the frame on the GPU when the display presents
     /// through one (deki-rendering's GLPresenter): the meshes then draw straight into
     /// the frame between layers of 2D, and the buffer is left transparent
@@ -117,11 +125,19 @@ struct RasterConfig
 struct RasterStats
 {
     uint32_t meshesCulled = 0;      // skipped whole, their bounds being off-screen
+    uint32_t submeshesCulled = 0;   // parts of a mesh skipped the same way
     uint32_t trianglesIn = 0;       // handed to DrawMesh
     uint32_t trianglesClipped = 0;  // survived near-clip and culling
     uint32_t trianglesBinned = 0;   // counted once per tile they touch
     uint32_t pixelsTested = 0;      // reached the depth test
     uint32_t pixelsWritten = 0;     // passed it and were shaded
+    uint32_t batches = 0;           // fills of the frame: 1, or more for a frame past batchTriangles
+    uint32_t trianglesDropped = 0;  // not drawn: the memory for another batch was not there
+    // Where the frame's time went, in microseconds: transforming, lighting,
+    // clipping and binning, and filling pixels (a batch filled mid-mesh is
+    // fill). Software only.
+    uint32_t geometryMicros = 0;
+    uint32_t fillMicros = 0;
 
     void Reset() { *this = RasterStats{}; }
 };

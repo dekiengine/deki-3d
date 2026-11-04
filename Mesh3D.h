@@ -141,6 +141,12 @@ struct Submesh3D
     uint32_t firstIndex = 0;
     uint32_t indexCount = 0;
     uint16_t materialIndex = 0;
+    // Object-space bounds of its triangles, for the software rasteriser to
+    // skip a part out of view. Worked out when the mesh loads; a submesh
+    // built by hand without them is never skipped.
+    bool hasBounds = false;
+    Deki::Vector3 boundsMin;
+    Deki::Vector3 boundsMax;
 };
 
 /// The runtime form of a .mesh asset. The asset loader owns the buffers; this
