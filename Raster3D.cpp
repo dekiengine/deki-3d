@@ -1541,8 +1541,9 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     const float fx0 = static_cast<float>(runX) + 0.5f - v0.x;
                     const float fx1 = static_cast<float>(chunkEnd) + 0.5f - v0.x;
 
-                    // The only divides in the whole loop: two per span, and
-                    // none at all on the affine path.
+                    // The only divide in the whole loop: one per span, for
+                    // the w at both its ends, and none on the affine path. A
+                    // divide is a library call on a microcontroller's FPU.
                     float uStart, vStart, uEnd, vEnd;
                     if (affine)
                     {
@@ -1555,8 +1556,10 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     {
                         const float invW0 = Eval(gInvW, fx0, fy);
                         const float invW1 = Eval(gInvW, fx1, fy);
-                        const float w0 = (invW0 != 0.0f) ? 1.0f / invW0 : 0.0f;
-                        const float w1 = (invW1 != 0.0f) ? 1.0f / invW1 : 0.0f;
+                        const float both = invW0 * invW1;
+                        const float r = (both != 0.0f) ? 1.0f / both : 0.0f;
+                        const float w0 = invW1 * r;
+                        const float w1 = invW0 * r;
                         uStart = Eval(gU, fx0, fy) * w0;
                         vStart = Eval(gV, fx0, fy) * w0;
                         uEnd = Eval(gU, fx1, fy) * w1;
