@@ -116,6 +116,8 @@ private:
     };
 
     void EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c, uint16_t materialIndex);
+    /// `c` in screen pixels, with its attributes.
+    ScreenVertex Project(const ClipVertex& c) const;
 
     // The vertices DrawMesh transformed most recently, by index: a vertex is
     // shared by about six triangles, and neighbouring triangles mostly come
@@ -127,13 +129,25 @@ private:
     {
         uint32_t index = UINT32_MAX;
         bool lit = false;
+        // In front of the near plane, so a triangle of three such corners
+        // needs no clip and takes `screen`, its projection, as it is.
+        bool inFront = false;
         ClipVertex clip;
+        ScreenVertex screen;     // its colour and light are the clip's, set when it is emitted
         Deki::Vector3 position;  // object space, for the lighting
         Deki::Vector3 normal;
     };
     static constexpr int kVertexCacheSize = 128;  // a power of two
     std::vector<CachedVertex> m_VertexCache;
     void ProjectAndBin(const ClipVertex* poly, int count, uint16_t materialIndex);
+    /// A triangle of three cached corners, with the clip vertices that carry
+    /// their light: projected from the cache when no corner is behind the
+    /// near plane, and clipped first otherwise.
+    void EmitCorners(const CachedVertex* const corner[3], const ClipVertex& a, const ClipVertex& b, const ClipVertex& c,
+                     uint16_t materialIndex);
+    /// Fans a projected polygon into triangles and bins the ones that face
+    /// the camera, or are double-sided.
+    void BinFan(ScreenVertex* sv, int count, uint16_t materialIndex);
     void Bin(const RasterTri& tri);
     /// Fills every `stride`-th tile of the row-major grid starting at `start`,
     /// using `tileDepth` as scratch depth buffer and adding to `stats`. Both

@@ -705,6 +705,8 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
                     {
                         cached.normal = ReadVec3(vtx, layout.normalOffset);
                     }
+                    cached.inFront = cv.z + cv.w >= 0.0f;  // as EmitTriangle's clip decides it
+                    cached.screen = Project(cv);
                 }
                 corner[k] = &cached;
             }
@@ -720,18 +722,15 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
                 continue;
             }
             // Facing away, decided from the projected corners when all three
-            // are in front of the eye, as ProjectAndBin decides it, but before
-            // the lighting is paid for. One crossing the near plane is left to
-            // ProjectAndBin, after the clip.
+            // are in front of the eye, as BinFan decides it, but before the
+            // lighting is paid for. One crossing the near plane is left to
+            // BinFan, after the clip.
             if (cullBack && c0.w > 0.0f && c1.w > 0.0f && c2.w > 0.0f)
             {
-                const float x0 = c0.x / c0.w, y0 = c0.y / c0.w;
-                const float x1 = c1.x / c1.w, y1 = c1.y / c1.w;
-                const float x2 = c2.x / c2.w, y2 = c2.y / c2.w;
-                // The screen's area sign is flipped from this one: Y points
-                // down there. Front faces have negative screen area.
-                const float area2 = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
-                if (area2 <= 0.0f)
+                const ScreenVertex& s0 = corner[0]->screen;
+                const ScreenVertex& s1 = corner[1]->screen;
+                const ScreenVertex& s2 = corner[2]->screen;
+                if ((s1.x - s0.x) * (s2.y - s0.y) - (s2.x - s0.x) * (s1.y - s0.y) >= 0.0f)
                 {
                     continue;
                 }
@@ -760,7 +759,7 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
                     v->clip.lightB = light.z;
                     v->lit = true;
                 }
-                EmitTriangle(c0, c1, c2, materialIndex);
+                EmitCorners(corner, c0, c1, c2, materialIndex);
             }
             else if (shading == ShadingModel::Flat)
             {
@@ -785,11 +784,11 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
                     v.lightG = light.y;
                     v.lightB = light.z;
                 }
-                EmitTriangle(cv[0], cv[1], cv[2], materialIndex);
+                EmitCorners(corner, cv[0], cv[1], cv[2], materialIndex);
             }
             else
             {
-                EmitTriangle(c0, c1, c2, materialIndex);
+                EmitCorners(corner, c0, c1, c2, materialIndex);
             }
         }
     }
@@ -831,6 +830,28 @@ void Raster3D::PickLights(const Mesh3D& mesh, const Deki::Mat4& model)
     {
         m_MeshLights[m_MeshLightCount++] = m_Config.lights[order[i]];
     }
+}
+
+void Raster3D::EmitCorners(const CachedVertex* const corner[3], const ClipVertex& a, const ClipVertex& b,
+                           const ClipVertex& c, uint16_t materialIndex)
+{
+    if (!corner[0]->inFront || !corner[1]->inFront || !corner[2]->inFront)
+    {
+        EmitTriangle(a, b, c, materialIndex);
+        return;
+    }
+    // What the clip would pass through unchanged, projected once per vertex.
+    const ClipVertex* clip[3] = { &a, &b, &c };
+    ScreenVertex sv[3];
+    for (int k = 0; k < 3; ++k)
+    {
+        sv[k] = corner[k]->screen;
+        sv[k].color = clip[k]->color;
+        sv[k].lightR = clip[k]->lightR;
+        sv[k].lightG = clip[k]->lightG;
+        sv[k].lightB = clip[k]->lightB;
+    }
+    BinFan(sv, 3, materialIndex);
 }
 
 void Raster3D::EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c, uint16_t materialIndex)
@@ -884,34 +905,43 @@ void Raster3D::EmitTriangle(const ClipVertex& a, const ClipVertex& b, const Clip
     }
 }
 
+Raster3D::ScreenVertex Raster3D::Project(const ClipVertex& c) const
+{
+    const float halfW = static_cast<float>(m_Width) * 0.5f;
+    const float halfH = static_cast<float>(m_Height) * 0.5f;
+    ScreenVertex sv;
+    const float invW = (c.w != 0.0f) ? 1.0f / c.w : 0.0f;
+    sv.invW = invW;
+    sv.x = (c.x * invW + 1.0f) * halfW;
+    sv.y = (1.0f - c.y * invW) * halfH;  // clip space is Y up, the framebuffer is Y down
+    sv.z = c.z * invW;
+    sv.uOverW = c.u * invW;
+    sv.vOverW = c.v * invW;
+    sv.color = c.color;
+    sv.lightR = c.lightR;
+    sv.lightG = c.lightG;
+    sv.lightB = c.lightB;
+
+    if (m_Config.vertexSnap)
+    {
+        sv.x = std::floor(sv.x + 0.5f);
+        sv.y = std::floor(sv.y + 0.5f);
+    }
+    return sv;
+}
+
 void Raster3D::ProjectAndBin(const ClipVertex* poly, int count, uint16_t materialIndex)
 {
     ScreenVertex sv[4];
-    const float halfW = static_cast<float>(m_Width) * 0.5f;
-    const float halfH = static_cast<float>(m_Height) * 0.5f;
-
     for (int i = 0; i < count; ++i)
     {
-        const ClipVertex& c = poly[i];
-        const float invW = (c.w != 0.0f) ? 1.0f / c.w : 0.0f;
-        sv[i].invW = invW;
-        sv[i].x = (c.x * invW + 1.0f) * halfW;
-        sv[i].y = (1.0f - c.y * invW) * halfH;  // clip space is Y up, the framebuffer is Y down
-        sv[i].z = c.z * invW;
-        sv[i].uOverW = c.u * invW;
-        sv[i].vOverW = c.v * invW;
-        sv[i].color = c.color;
-        sv[i].lightR = c.lightR;
-        sv[i].lightG = c.lightG;
-        sv[i].lightB = c.lightB;
-
-        if (m_Config.vertexSnap)
-        {
-            sv[i].x = std::floor(sv[i].x + 0.5f);
-            sv[i].y = std::floor(sv[i].y + 0.5f);
-        }
+        sv[i] = Project(poly[i]);
     }
+    BinFan(sv, count, materialIndex);
+}
 
+void Raster3D::BinFan(ScreenVertex* sv, int count, uint16_t materialIndex)
+{
     // Fan the clipped polygon back into triangles.
     for (int i = 1; i + 1 < count; ++i)
     {
@@ -961,10 +991,10 @@ void Raster3D::Bin(const RasterTri& tri)
         maxYf = std::max(maxYf, tri.v[i].y);
     }
 
-    int minX = std::max(0, static_cast<int>(std::floor(minXf)));
-    int minY = std::max(0, static_cast<int>(std::floor(minYf)));
-    int maxX = std::min(static_cast<int>(m_Width) - 1, static_cast<int>(std::ceil(maxXf)));
-    int maxY = std::min(static_cast<int>(m_Height) - 1, static_cast<int>(std::ceil(maxYf)));
+    int minX = std::max(0, FloorToInt(minXf));
+    int minY = std::max(0, FloorToInt(minYf));
+    int maxX = std::min(static_cast<int>(m_Width) - 1, CeilToInt(maxXf));
+    int maxY = std::min(static_cast<int>(m_Height) - 1, CeilToInt(maxYf));
     if (minX > maxX || minY > maxY)
     {
         return;
