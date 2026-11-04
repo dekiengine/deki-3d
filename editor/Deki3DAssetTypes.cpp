@@ -198,8 +198,8 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
     {
         char line[256];
         std::snprintf(line, sizeof(line),
-                      ": Detail %d%% on %s asks for %u of its %u triangles; it keeps %u (%d%%), since its open edges, "
-                      "material borders and seam corners stay where they are",
+                      ": Detail %d%% on %s asks for %u of its %u triangles; it keeps %u (%d%%), since its seams, open "
+                      "edges and material borders stay where they are",
                       static_cast<int>(options.detail * 100.0f + 0.5f), where.c_str(),
                       static_cast<unsigned>(asked + 0.5), report.trianglesIn, report.trianglesOut,
                       static_cast<int>(100.0 * report.trianglesOut / std::max(1u, report.trianglesIn) + 0.5));

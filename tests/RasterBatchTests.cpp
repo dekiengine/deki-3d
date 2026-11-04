@@ -5,8 +5,14 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
 #include <vector>
 
+#include "../Math3D.h"
+#include "../MeshAsset.h"
+#include "../editor/ObjImporter.h"
 #include "../Raster3D.h"
 #include "deki-rendering/PixelFormat.h"
 
@@ -165,4 +171,97 @@ TEST(RasterBatches, WorkingMemoryCountsABatchAndTheFramesDepth)
     EXPECT_GT(small, static_cast<size_t>(320 * 240 * 2)) << "the whole-screen depth";
     config.batchTriangles = 2000;
     EXPECT_GT(Raster3D::WorkingBytes(320, 240, config), small + 1000 * 100) << "and each triangle of the batch";
+}
+
+// By hand: draws a compiled mesh file (DEKI_TEST_MESH, as a board build ships
+// it) with the software rasteriser at 320x240 in RGB565, as a T-Deck does,
+// from the camera DEKI_TEST_EYE gives ("x y z yaw pitch", degrees), once on
+// one fill thread and once on two, into DEKI_TEST_OUT/one.ppm and two.ppm.
+// Run with --gtest_also_run_disabled_tests.
+TEST(RasterBatches, DISABLED_DrawACompiledMesh)
+{
+    // Or an .obj (DEKI_TEST_OBJ), compiled here at DEKI_TEST_DETAIL without
+    // its textures, to see what Detail does to the shape.
+    const char* path = std::getenv("DEKI_TEST_MESH");
+    const char* obj = std::getenv("DEKI_TEST_OBJ");
+    const char* out = std::getenv("DEKI_TEST_OUT");
+    if ((!path && !obj) || !out)
+    {
+        GTEST_SKIP() << "set DEKI_TEST_MESH or DEKI_TEST_OBJ, and DEKI_TEST_OUT";
+    }
+    std::vector<uint8_t> blob;
+    {
+        FILE* f = std::fopen(path ? path : obj, "rb");
+        ASSERT_NE(f, nullptr);
+        uint8_t chunk[65536];
+        for (size_t n; (n = std::fread(chunk, 1, sizeof(chunk), f)) > 0;)
+        {
+            blob.insert(blob.end(), chunk, chunk + n);
+        }
+        std::fclose(f);
+    }
+    if (!path)
+    {
+        MeshCompileOptions options;
+        if (const char* d = std::getenv("DEKI_TEST_DETAIL"))
+        {
+            options.detail = static_cast<float>(std::atof(d));
+        }
+        const std::string text(blob.begin(), blob.end());
+        std::string error;
+        blob.clear();
+        ASSERT_TRUE(CompileObjToMesh(text, "", {}, blob, error, options)) << error;
+    }
+    MeshAsset asset;
+    ASSERT_TRUE(asset.LoadFromMemory(blob.data(), blob.size()));
+    const Mesh3D& mesh = asset.View();
+    std::printf("mesh: %u vertices, %u triangles, %u-byte indices, %u submeshes\n", mesh.vertexCount,
+                mesh.indexCount / 3, mesh.indexBytes, mesh.submeshCount);
+
+    float ex = 1150, ey = 180, ez = -40, eyaw = 90, epitch = 4.6f;
+    if (const char* e = std::getenv("DEKI_TEST_EYE"))
+    {
+        std::sscanf(e, "%f %f %f %f %f", &ex, &ey, &ez, &eyaw, &epitch);
+    }
+    const float d2r = 3.14159265f / 180.0f;
+    const int w = 320, h = 240;
+    const Deki::Mat4 basis = Mul(RotateY(eyaw * d2r), RotateX(epitch * d2r));
+    const Deki::Vector3 eye(ex, ey, ez);
+    const Deki::Vector3 forward = TransformDirection(basis, Deki::Vector3(0, 0, -1));
+    const Deki::Vector3 up = TransformDirection(basis, Deki::Vector3(0, 1, 0));
+    const Deki::Mat4 viewProjection =
+        Mul(Perspective(65.0f * d2r, static_cast<float>(w) / h, 5.0f, 6000.0f), LookAt(eye, eye + forward, up));
+
+    std::vector<Material3D> materials(asset.Materials(), asset.Materials() + asset.MaterialCount());
+    for (Material3D& m : materials)
+    {
+        m.shading = ShadingModel::VertexLit;
+    }
+    for (int threads : { 1, 2 })
+    {
+        RasterConfig config;
+        config.threadCount = threads;
+        std::vector<uint8_t> fb(Deki::FrameBufferBytes(kFormat, w, h), 0);
+        Raster3D raster;
+        raster.BeginFrame(fb.data(), w, h, kFormat, config);
+        raster.DrawMesh(mesh, materials.data(), static_cast<uint16_t>(materials.size()), viewProjection,
+                        Deki::Mat4::Identity(), Deki::Mat4::Identity());
+        raster.EndFrame();
+        const RasterStats& st = raster.Stats();
+        std::printf("%d thread(s): %u in, %u drawn, %u parts skipped, %u batches, %u dropped\n", threads,
+                    st.trianglesIn, st.trianglesClipped, st.submeshesCulled, st.batches, st.trianglesDropped);
+        const std::string name = std::string(out) + (threads == 1 ? "/one.ppm" : "/two.ppm");
+        FILE* ppm = std::fopen(name.c_str(), "wb");
+        ASSERT_NE(ppm, nullptr);
+        std::fprintf(ppm, "P6 %d %d 255\n", w, h);
+        for (int i = 0; i < w * h; ++i)
+        {
+            uint8_t r, g, b, a;
+            DekiPixel::ReadDstPixel<kFormat>(fb.data(), static_cast<size_t>(i), r, g, b, a);
+            std::fputc(r, ppm);
+            std::fputc(g, ppm);
+            std::fputc(b, ppm);
+        }
+        std::fclose(ppm);
+    }
 }

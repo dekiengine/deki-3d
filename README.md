@@ -75,8 +75,7 @@ project can build for, which may differ from it:
 
 - **Detail**: the share of the triangles kept (All, 75% down to 1%). The
   mesh is reduced by collapsing the edges that change its shape least; its
-  open edges and material borders stay where they are, and a texture seam
-  comes down as one, each side keeping its own texture, so a model of
+  seams, open edges and material borders stay where they are, so a model of
   many pieces may keep more than asked, and the build says how many.
 
 It is kept in the model's `.data` (`settings.model`).
@@ -108,7 +107,7 @@ skipped, triangles facing away are dropped before they are lit, and each
 vertex is transformed once per part. Set the scene's 3D Settings
 `fillThreads` to 2 on a dual-core board to fill on both cores.
 
-Sponza at Detail 10% (38k triangles) draws at about 1.7 frames a second on a
+Sponza at Detail 10% (82k triangles) draws at about 1 frame a second on a
 LilyGO T-Deck; `RasterStats` says where the time goes.
 
 ## Seeing it in the editor

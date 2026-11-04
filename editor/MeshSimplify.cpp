@@ -4,11 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <queue>
-#include <string>
 #include <unordered_map>
-#include <utility>
 
 namespace Deki3D
 {
@@ -99,70 +96,43 @@ void SimplifyMesh(const std::vector<float>& positions, std::vector<SimplifyTrian
     }
     auto P = [&](uint32_t v) { return Vec3d{ positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2] }; };
 
-    // The vertices at each place: one, or the copies a seam makes. Exact
-    // positions, as an importer writes the copies; -0 is 0.
-    std::vector<uint32_t> placeOf(vertexCount);
-    std::vector<std::vector<uint32_t>> atPlace;
-    {
-        std::unordered_map<std::string, uint32_t> byPosition;
-        byPosition.reserve(vertexCount);
-        for (uint32_t v = 0; v < vertexCount; ++v)
-        {
-            float xyz[3] = { positions[v * 3] + 0.0f, positions[v * 3 + 1] + 0.0f, positions[v * 3 + 2] + 0.0f };
-            const std::string key(reinterpret_cast<const char*>(xyz), sizeof(xyz));
-            auto [it, added] = byPosition.emplace(key, static_cast<uint32_t>(atPlace.size()));
-            if (added)
-            {
-                atPlace.emplace_back();
-            }
-            placeOf[v] = it->second;
-            atPlace[it->second].push_back(v);
-        }
-    }
-
-    // Which vertices may move. A place on an edge only one triangle uses (an
-    // open edge: counted by place, so a seam, whose two sides use different
-    // vertices, is not one) stays, as does one whose triangles are in two
-    // materials. Every copy at such a place stays.
+    // Which vertices may move. A vertex on an edge only one triangle uses (an
+    // open edge, or a seam, since the triangles across a seam use the other
+    // vertex at that place) stays, as does one whose triangles are in two
+    // materials.
     std::vector<uint8_t> locked(vertexCount, 0);
     {
-        std::vector<uint8_t> lockedPlace(atPlace.size(), 0);
         std::unordered_map<uint64_t, uint32_t> edgeUse;
         edgeUse.reserve(triangles.size() * 3);
         for (const SimplifyTriangle& t : triangles)
         {
             for (int k = 0; k < 3; ++k)
             {
-                ++edgeUse[EdgeKey(placeOf[t.v[k]], placeOf[t.v[(k + 1) % 3]])];
+                ++edgeUse[EdgeKey(t.v[k], t.v[(k + 1) % 3])];
             }
         }
         for (const auto& [key, uses] : edgeUse)
         {
             if (uses == 1)
             {
-                lockedPlace[key >> 32] = 1;
-                lockedPlace[key & 0xFFFFFFFFu] = 1;
+                locked[key >> 32] = 1;
+                locked[key & 0xFFFFFFFFu] = 1;
             }
         }
-        std::vector<uint32_t> firstSubmesh(atPlace.size(), UINT32_MAX);
+        std::vector<uint32_t> firstSubmesh(vertexCount, UINT32_MAX);
         for (const SimplifyTriangle& t : triangles)
         {
             for (uint32_t v : t.v)
             {
-                uint32_t& first = firstSubmesh[placeOf[v]];
-                if (first == UINT32_MAX)
+                if (firstSubmesh[v] == UINT32_MAX)
                 {
-                    first = t.submesh;
+                    firstSubmesh[v] = t.submesh;
                 }
-                else if (first != t.submesh)
+                else if (firstSubmesh[v] != t.submesh)
                 {
-                    lockedPlace[placeOf[v]] = 1;
+                    locked[v] = 1;
                 }
             }
-        }
-        for (uint32_t v = 0; v < vertexCount; ++v)
-        {
-            locked[v] = lockedPlace[placeOf[v]];
         }
     }
 
@@ -197,23 +167,12 @@ void SimplifyMesh(const std::vector<float>& positions, std::vector<SimplifyTrian
     std::vector<uint8_t> dead(triangles.size(), 0);
     std::vector<uint32_t> stamp(vertexCount, 0);
     std::priority_queue<Collapse, std::vector<Collapse>, std::greater<Collapse>> queue;
-    // A place's error is that of all its copies: across a seam where the
-    // normals change (a crease), each side alone would see half the surface.
-    auto placeQuadric = [&](uint32_t v)
-    {
-        Quadric q;
-        for (uint32_t copy : atPlace[placeOf[v]])
-        {
-            q.Add(quadrics[copy]);
-        }
-        return q;
-    };
     auto offer = [&](uint32_t from, uint32_t to)
     {
-        if (!locked[from] && placeOf[from] != placeOf[to])
+        if (!locked[from] && from != to)
         {
-            Quadric q = placeQuadric(from);
-            q.Add(placeQuadric(to));
+            Quadric q = quadrics[from];
+            q.Add(quadrics[to]);
             queue.push({ q.Error(P(to)), from, to, stamp[from], stamp[to] });
         }
     };
@@ -331,7 +290,6 @@ void SimplifyMesh(const std::vector<float>& positions, std::vector<SimplifyTrian
         return shared > 0;
     };
 
-    std::vector<std::pair<uint32_t, uint32_t>> pairs;  // from, to
     size_t alive = triangles.size();
     while (alive > targetTriangles && !queue.empty())
     {
@@ -341,87 +299,51 @@ void SimplifyMesh(const std::vector<float>& positions, std::vector<SimplifyTrian
         {
             continue;
         }
-        // Each copy at `from`'s place moves onto the copy at `to`'s that it
-        // shares an edge with, on its own side of the seam: exactly one, or
-        // the pairing is not clear and nothing moves. Every move must keep
-        // its triangles' shape. Without a seam this is the one pair.
-        pairs.clear();
-        bool clear = true;
-        for (uint32_t copy : atPlace[placeOf[c.from]])
-        {
-            if (around[copy].empty())
-            {
-                continue;  // no triangle left uses it
-            }
-            uint32_t partner = UINT32_MAX;
-            for (uint32_t candidate : atPlace[placeOf[c.to]])
-            {
-                if (isEdge(copy, candidate))
-                {
-                    clear = clear && partner == UINT32_MAX;
-                    partner = candidate;
-                }
-            }
-            if (!clear || partner == UINT32_MAX || !keepsShape(copy, partner))
-            {
-                clear = false;
-                break;
-            }
-            pairs.emplace_back(copy, partner);
-        }
-        if (!clear || pairs.empty())
+        if (!isEdge(c.from, c.to) || !keepsShape(c.from, c.to))
         {
             continue;
         }
 
-        for (const auto& [from, to] : pairs)
+        // The triangles on the edge go; the rest of `from`'s move to `to`.
+        for (uint32_t ti : around[c.from])
         {
-            // The triangles on the edge go; the rest of `from`'s move to `to`.
-            for (uint32_t ti : around[from])
+            if (dead[ti])
             {
-                if (dead[ti])
-                {
-                    continue;
-                }
-                SimplifyTriangle& t = triangles[ti];
-                if (t.v[0] == to || t.v[1] == to || t.v[2] == to)
-                {
-                    dead[ti] = 1;
-                    --alive;
-                    continue;
-                }
-                for (uint32_t& v : t.v)
-                {
-                    if (v == from)
-                    {
-                        v = to;
-                    }
-                }
-                around[to].push_back(ti);
+                continue;
             }
-            around[from].clear();
-            quadrics[to].Add(quadrics[from]);
-            ++stamp[from];
-            ++stamp[to];
-        }
-
-        // Only the edges at the copies moved onto cost something new (their
-        // quadrics grew), and their new stamps have made old offers stale.
-        for (const auto& pair : pairs)
-        {
-            const uint32_t to = pair.second;
-            std::vector<uint32_t>& list = around[to];
-            list.erase(std::remove_if(list.begin(), list.end(), [&](uint32_t ti) { return dead[ti] != 0; }),
-                       list.end());
-            for (uint32_t ti : list)
+            SimplifyTriangle& t = triangles[ti];
+            if (t.v[0] == c.to || t.v[1] == c.to || t.v[2] == c.to)
             {
-                for (uint32_t w : triangles[ti].v)
+                dead[ti] = 1;
+                --alive;
+                continue;
+            }
+            for (uint32_t& v : t.v)
+            {
+                if (v == c.from)
                 {
-                    if (w != to)
-                    {
-                        offer(w, to);
-                        offer(to, w);
-                    }
+                    v = c.to;
+                }
+            }
+            around[c.to].push_back(ti);
+        }
+        around[c.from].clear();
+        quadrics[c.to].Add(quadrics[c.from]);
+        ++stamp[c.from];
+        ++stamp[c.to];
+
+        // Only the edges at `to` cost something new (its quadric grew), and
+        // its new stamp has made their old offers stale.
+        std::vector<uint32_t>& list = around[c.to];
+        list.erase(std::remove_if(list.begin(), list.end(), [&](uint32_t ti) { return dead[ti] != 0; }), list.end());
+        for (uint32_t ti : list)
+        {
+            for (uint32_t w : triangles[ti].v)
+            {
+                if (w != c.to)
+                {
+                    offer(w, c.to);
+                    offer(c.to, w);
                 }
             }
         }

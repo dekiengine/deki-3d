@@ -33,16 +33,11 @@ alongside one that has them.
   now needs ESP-IDF's `pthread` component.
 - `RasterStats` counts batches, triangles dropped, parts skipped, and the time
   spent on geometry and on filling.
-- Sponza (Detail 10%, 38k triangles, one directional and one ambient light) on
-  a LilyGO T-Deck: 1.7 frames a second, from a reboot loop; at 0.6 before the
-  last three changes.
-
-### Detail collapses texture seams
-- A seam's copies of a vertex collapse as one, each onto the copy of the
-  target on its own side, so the seam stays shut and each side keeps its
-  texture; only a seam's corner, an open edge and a material border stay
-  where they are. Sponza at 10% keeps 38511 triangles where it kept 82291.
-  `kDekiCacheVersion` 8 compiles every model again.
+- Sponza (Detail 10%, which keeps 82k triangles, one directional and one
+  ambient light) on a LilyGO T-Deck: 1 frame a second, from a reboot loop.
+- `DISABLED_DrawACompiledMesh` (by hand) draws a compiled mesh file, or an
+  .obj at a Detail, as a T-Deck does (320x240 RGB565, one and two threads), to
+  compare a board's picture with the desktop's.
 
 ### Models at any size, built for each platform
 - A mesh of any size compiles: 16-bit indices up to 65535 vertices, 32-bit
