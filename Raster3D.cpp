@@ -231,22 +231,14 @@ inline void Shade8(uint8_t& r, uint8_t& g, uint8_t& b, uint32_t sr, uint32_t sg,
     b = static_cast<uint8_t>(std::min<uint32_t>((b * sb) >> 5, 255));
 }
 
-/// Fills one span and returns how many pixels it wrote.
-///
-/// An RGB565 framebuffer with a flat, palette or RGB565 texture uses 565
-/// arithmetic and magenta holes; this path must stay pixel-identical, since
-/// the RGB565 device output depends on it. The arithmetic is on 565 values;
-/// texels and the framebuffer hold them in memory's byte order
-/// (DekiPixel::ToMemory565), so they are converted on the way in and out,
-/// which costs nothing unless the board is big-endian. Everything else reads texels into
-/// 8-bit channels and writes them in the framebuffer's format through the 2D
-/// blitter's pixel helpers. With alphaTest, a texel whose alpha is below half
-/// is a hole.
+/// Fills one span and returns how many pixels it wrote: any framebuffer
+/// format and texture, through 8-bit channels and the 2D blitter's pixel
+/// helpers. An RGB565 framebuffer with a flat, palette or RGB565 texture
+/// takes FillSpan565 instead. With alphaTest, a texel whose alpha is below
+/// half is a hole.
 template <TexKind K, Deki::ColorFormat F>
 uint32_t FillSpan(const SpanArgs& a)
 {
-    constexpr bool kClassic565 =
-        (F == Deki::ColorFormat::RGB565) && (K == TexKind::Flat || K == TexKind::Palette || K == TexKind::RGB565);
     int32_t u = a.u, v = a.v, z = a.z;
     uint32_t written = 0;
     for (int x = a.x0; x <= a.x1; ++x)
@@ -263,94 +255,59 @@ uint32_t FillSpan(const SpanArgs& a)
                 texel = (tv << a.wShift) + tu;
             }
 
-            if constexpr (kClassic565)
+            uint8_t r = a.flatR, g = a.flatG, b = a.flatB, al = 255;
+            if constexpr (K == TexKind::Palette)
             {
-                uint16_t color = a.flat565;
-                if constexpr (K == TexKind::Palette)
-                {
-                    const uint8_t idx = a.tex->pixels[texel];
-                    if (a.alphaTest && idx == 0)
-                    {
-                        write = false;
-                    }
-                    else
-                    {
-                        color = a.tex->palette[idx];
-                    }
-                }
-                else if constexpr (K == TexKind::RGB565)
-                {
-                    color = DekiPixel::FromMemory565(reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel]);
-                    if (a.alphaTest && color == 0xF81F)  // magenta is the hole
-                    {
-                        write = false;
-                    }
-                }
-                if (write)
-                {
-                    if (a.lit)
-                    {
-                        color = a.grey ? Shade565(color, a.shadeR) : Shade565RGB(color, a.shadeR, a.shadeG, a.shadeB);
-                    }
-                    reinterpret_cast<uint16_t*>(a.fbRow)[x] = DekiPixel::ToMemory565(color);
-                }
-            }
-            else
-            {
-                uint8_t r = a.flatR, g = a.flatG, b = a.flatB, al = 255;
-                if constexpr (K == TexKind::Palette)
-                {
-                    const uint8_t idx = a.tex->pixels[texel];
-                    if (a.alphaTest && idx == 0)
-                    {
-                        write = false;
-                    }
-                    else
-                    {
-                        DekiPixel::UnpackRGB565(a.tex->palette[idx], r, g, b);
-                    }
-                }
-                else if constexpr (K == TexKind::RGB565)
-                {
-                    const uint16_t c = DekiPixel::FromMemory565(reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel]);
-                    if (a.alphaTest && c == 0xF81F)
-                    {
-                        write = false;
-                    }
-                    else
-                    {
-                        DekiPixel::UnpackRGB565(c, r, g, b);
-                    }
-                }
-                else if constexpr (K == TexKind::RGB565A8)
-                {
-                    DekiPixel::ReadSrcPixel<DekiPixel::SrcKind::RGB565A8>(a.tex->pixels + texel * 3, true, r, g, b, al);
-                }
-                else if constexpr (K == TexKind::RGB888)
-                {
-                    DekiPixel::ReadSrcPixel<DekiPixel::SrcKind::RGB888>(a.tex->pixels + texel * 3, false, r, g, b, al);
-                }
-                else if constexpr (K == TexKind::RGBA8888)
-                {
-                    DekiPixel::ReadSrcPixel<DekiPixel::SrcKind::RGBA8888>(a.tex->pixels + texel * 4, true, r, g, b, al);
-                }
-                else if constexpr (K == TexKind::ALPHA8)
-                {
-                    // Coverage only: the colour is the material's.
-                    al = a.tex->pixels[texel];
-                }
-                if (a.alphaTest && al < 128)
+                const uint8_t idx = a.tex->pixels[texel];
+                if (a.alphaTest && idx == 0)
                 {
                     write = false;
                 }
-                if (write)
+                else
                 {
-                    if (a.lit)
-                    {
-                        Shade8(r, g, b, a.shadeR, a.shadeG, a.shadeB);
-                    }
-                    DekiPixel::WriteDstPixel<F>(a.fbRow, static_cast<size_t>(x), r, g, b, 255);
+                    DekiPixel::UnpackRGB565(a.tex->palette[idx], r, g, b);
                 }
+            }
+            else if constexpr (K == TexKind::RGB565)
+            {
+                const uint16_t c = DekiPixel::FromMemory565(reinterpret_cast<const uint16_t*>(a.tex->pixels)[texel]);
+                if (a.alphaTest && c == 0xF81F)
+                {
+                    write = false;
+                }
+                else
+                {
+                    DekiPixel::UnpackRGB565(c, r, g, b);
+                }
+            }
+            else if constexpr (K == TexKind::RGB565A8)
+            {
+                DekiPixel::ReadSrcPixel<DekiPixel::SrcKind::RGB565A8>(a.tex->pixels + texel * 3, true, r, g, b, al);
+            }
+            else if constexpr (K == TexKind::RGB888)
+            {
+                DekiPixel::ReadSrcPixel<DekiPixel::SrcKind::RGB888>(a.tex->pixels + texel * 3, false, r, g, b, al);
+            }
+            else if constexpr (K == TexKind::RGBA8888)
+            {
+                DekiPixel::ReadSrcPixel<DekiPixel::SrcKind::RGBA8888>(a.tex->pixels + texel * 4, true, r, g, b, al);
+            }
+            else if constexpr (K == TexKind::ALPHA8)
+            {
+                // Coverage only: the colour is the material's.
+                al = a.tex->pixels[texel];
+            }
+            if (a.alphaTest && al < 128)
+            {
+                write = false;
+            }
+            if (write)
+            {
+                if (a.lit)
+                {
+                    Shade8(r, g, b, a.shadeR, a.shadeG, a.shadeB);
+                }
+                DekiPixel::WriteDstPixel<F>(a.fbRow, static_cast<size_t>(x), r, g, b, 255);
             }
 
             if (write)
@@ -372,9 +329,113 @@ uint32_t FillSpan(const SpanArgs& a)
     return written;
 }
 
+/// An RGB565 framebuffer with a flat, palette or RGB565 texture: 565
+/// arithmetic and magenta holes. This path must stay pixel-identical, since
+/// the RGB565 device output depends on it. The arithmetic is on 565 values;
+/// texels and the framebuffer hold them in memory's byte order
+/// (DekiPixel::ToMemory565), so they are converted on the way in and out,
+/// which costs nothing unless the board is big-endian.
+///
+/// The span's settings are read once into locals, so the loop keeps them in
+/// registers: through the framebuffer and depth stores the compiler cannot
+/// tell they do not change, and it read them again for every pixel. The
+/// shading (`Shade`: none, grey, per channel) and the cutout are chosen once
+/// per span, not tested per pixel.
+template <TexKind K, int Shade, bool Cutout>
+uint32_t FillSpan565(const SpanArgs& a)
+{
+    uint16_t* const fb = reinterpret_cast<uint16_t*>(a.fbRow);
+    uint16_t* const depthRow = a.depthRow;
+    const bool depthTest = a.depthTest;
+    const bool depthWrite = a.depthWrite;
+    const uint8_t* const pixels = K != TexKind::Flat ? a.tex->pixels : nullptr;
+    const uint16_t* const palette = K == TexKind::Palette ? a.tex->palette : nullptr;
+    const uint16_t flat = a.flat565;
+    const int uMask = a.uMask, vMask = a.vMask, wShift = a.wShift;
+    const int32_t du = a.du, dv = a.dv, dz = a.dz;
+    const uint32_t shadeR = a.shadeR, shadeG = a.shadeG, shadeB = a.shadeB;
+    const int x1 = a.x1;
+    int32_t u = a.u, v = a.v, z = a.z;
+    uint32_t written = 0;
+    for (int x = a.x0; x <= x1; ++x)
+    {
+        const int32_t depth = z >> kDepthFrac;
+        if (!depthTest || depth < static_cast<int32_t>(depthRow[x]))
+        {
+            uint16_t color = flat;
+            bool write = true;
+            if constexpr (K != TexKind::Flat)
+            {
+                const int texel = (((v >> kUvFrac) & vMask) << wShift) + ((u >> kUvFrac) & uMask);
+                if constexpr (K == TexKind::Palette)
+                {
+                    const uint8_t idx = pixels[texel];
+                    if (Cutout && idx == 0)
+                    {
+                        write = false;
+                    }
+                    else
+                    {
+                        color = palette[idx];
+                    }
+                }
+                else
+                {
+                    color = DekiPixel::FromMemory565(reinterpret_cast<const uint16_t*>(pixels)[texel]);
+                    if (Cutout && color == 0xF81F)  // magenta is the hole
+                    {
+                        write = false;
+                    }
+                }
+            }
+            if (write)
+            {
+                if constexpr (Shade == 1)
+                {
+                    color = Shade565(color, shadeR);
+                }
+                else if constexpr (Shade == 2)
+                {
+                    color = Shade565RGB(color, shadeR, shadeG, shadeB);
+                }
+                fb[x] = DekiPixel::ToMemory565(color);
+                if (depthWrite)
+                {
+                    depthRow[x] = static_cast<uint16_t>(depth);
+                }
+                ++written;
+            }
+        }
+        if constexpr (K != TexKind::Flat)
+        {
+            u += du;
+            v += dv;
+        }
+        z += dz;
+    }
+    return written;
+}
+
+template <TexKind K, bool Cutout>
+uint32_t FillSpan565Shaded(const SpanArgs& a)
+{
+    if (!a.lit)
+    {
+        return FillSpan565<K, 0, Cutout>(a);
+    }
+    return a.grey ? FillSpan565<K, 1, Cutout>(a) : FillSpan565<K, 2, Cutout>(a);
+}
+
 template <TexKind K>
 uint32_t FillSpanFor(Deki::ColorFormat format, const SpanArgs& a)
 {
+    if constexpr (K == TexKind::Flat || K == TexKind::Palette || K == TexKind::RGB565)
+    {
+        if (format == Deki::ColorFormat::RGB565)
+        {
+            return a.alphaTest ? FillSpan565Shaded<K, true>(a) : FillSpan565Shaded<K, false>(a);
+        }
+    }
     switch (format)
     {
         case Deki::ColorFormat::RGB565: return FillSpan<K, Deki::ColorFormat::RGB565>(a);

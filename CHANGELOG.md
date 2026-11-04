@@ -28,6 +28,10 @@ alongside one that has them.
 - Each row of a triangle is filled from where its edges cross the row, not by
   testing every pixel of its box; setup and the edge walk are 32-bit for a
   triangle near the screen. The same pixels as before.
+- An RGB565 framebuffer with a flat, palette or RGB565 texture has a loop of
+  its own (`FillSpan565`): the span's settings in registers, and its shading
+  and cutout chosen once per span rather than tested per pixel. The same
+  pixels; on a T-Deck a full screen of textured 3D fills about 8 ms sooner.
 - `fillThreads` 2 fills on the second core of an ESP32-S3: the fill worker is
   pinned to the core the engine is not on (it ran on the same one). deki-3d
   now needs ESP-IDF's `pthread` component.
