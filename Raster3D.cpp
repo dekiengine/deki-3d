@@ -339,15 +339,18 @@ uint32_t FillSpan(const SpanArgs& a)
 /// The span's settings are read once into locals, so the loop keeps them in
 /// registers: through the framebuffer and depth stores the compiler cannot
 /// tell they do not change, and it read them again for every pixel. The
-/// shading (`Shade`: none, grey, per channel) and the cutout are chosen once
-/// per span, not tested per pixel.
-template <TexKind K, int Shade, bool Cutout>
+/// shading (`Shade`: none, grey, per channel), the cutout, and the depth test
+/// and write both on (`Depth`, as they are but for an effect) are chosen
+/// once per triangle, not tested per pixel. It counts the pixels it skips,
+/// which are few, rather than those it writes: the count is off the path of
+/// a pixel written, where the loop has no register to spare for it.
+template <TexKind K, int Shade, bool Cutout, bool Depth>
 uint32_t FillSpan565(const SpanArgs& a)
 {
     uint16_t* const fb = reinterpret_cast<uint16_t*>(a.fbRow);
     uint16_t* const depthRow = a.depthRow;
-    const bool depthTest = a.depthTest;
-    const bool depthWrite = a.depthWrite;
+    const bool depthTest = Depth || a.depthTest;
+    const bool depthWrite = Depth || a.depthWrite;
     const uint8_t* const pixels = K != TexKind::Flat ? a.tex->pixels : nullptr;
     const uint16_t* const palette = K == TexKind::Palette ? a.tex->palette : nullptr;
     const uint16_t flat = a.flat565;
@@ -356,11 +359,15 @@ uint32_t FillSpan565(const SpanArgs& a)
     const uint32_t shadeR = a.shadeR, shadeG = a.shadeG, shadeB = a.shadeB;
     const int x1 = a.x1;
     int32_t u = a.u, v = a.v, z = a.z;
-    uint32_t written = 0;
+    uint32_t skipped = 0;
     for (int x = a.x0; x <= x1; ++x)
     {
         const int32_t depth = z >> kDepthFrac;
-        if (!depthTest || depth < static_cast<int32_t>(depthRow[x]))
+        if (depthTest && depth >= static_cast<int32_t>(depthRow[x]))
+        {
+            ++skipped;
+        }
+        else
         {
             uint16_t color = flat;
             bool write = true;
@@ -403,7 +410,10 @@ uint32_t FillSpan565(const SpanArgs& a)
                 {
                     depthRow[x] = static_cast<uint16_t>(depth);
                 }
-                ++written;
+            }
+            else
+            {
+                ++skipped;
             }
         }
         if constexpr (K != TexKind::Flat)
@@ -413,7 +423,7 @@ uint32_t FillSpan565(const SpanArgs& a)
         }
         z += dz;
     }
-    return written;
+    return a.x1 >= a.x0 ? static_cast<uint32_t>(a.x1 - a.x0 + 1) - skipped : 0;
 }
 
 /// The loop that fills a span, chosen once per triangle: its texture kind,
@@ -424,11 +434,16 @@ using SpanFn = uint32_t (*)(const SpanArgs&);
 template <TexKind K, bool Cutout>
 SpanFn Span565For(const SpanArgs& a)
 {
+    const bool depth = a.depthTest && a.depthWrite;
     if (!a.lit)
     {
-        return &FillSpan565<K, 0, Cutout>;
+        return depth ? &FillSpan565<K, 0, Cutout, true> : &FillSpan565<K, 0, Cutout, false>;
     }
-    return a.grey ? &FillSpan565<K, 1, Cutout> : &FillSpan565<K, 2, Cutout>;
+    if (a.grey)
+    {
+        return depth ? &FillSpan565<K, 1, Cutout, true> : &FillSpan565<K, 1, Cutout, false>;
+    }
+    return depth ? &FillSpan565<K, 2, Cutout, true> : &FillSpan565<K, 2, Cutout, false>;
 }
 
 template <TexKind K>
