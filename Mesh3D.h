@@ -11,6 +11,7 @@
 // different VertexLayout over the same buffer, not a different runtime type.
 
 #include <deki/Vector.h>
+#include <deki/assets/TextureFilter.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -108,10 +109,9 @@ struct Texture3D
     // Holes, for a material with alphaTest: palette index 0, RGB565 magenta,
     // or alpha below half for the formats that carry alpha.
     bool hasAlpha = false;
-    // Filtered on the GPU: blended between texels, and from smaller copies
-    // (mipmaps) where it shrinks. Off, or on the software rasteriser, each
-    // pixel takes its nearest texel.
-    bool smooth = false;
+    // How the GPU samples it (Deki::TextureFilter, its image's setting). The
+    // software rasteriser draws Point.
+    Deki::TextureFilter filter = Deki::TextureFilter::Point;
     // Changes whenever the data behind the pointers does (NextRevision()), so
     // a GPU backend can keep its upload. 0: not tracked, uploaded each use.
     uint32_t revision = 0;

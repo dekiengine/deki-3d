@@ -101,7 +101,7 @@ struct MeshFileTexture
 
 enum MeshTextureFlags : uint8_t
 {
-    MeshTextureSmooth = 1 << 0,  // Texture3D::smooth
+    MeshTextureFilterMask = 0x3,  // bits 0-1: the Deki::TextureFilter (Texture3D::filter)
 };
 
 enum MeshAttribute : uint16_t

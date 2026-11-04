@@ -669,9 +669,12 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
                 {
                     int srcW = 0, srcH = 0;
                     std::vector<uint8_t> rgba;
-                    if (decodeImage(ResolveRelative(baseDirectory, map), srcW, srcH, rgba) && srcW > 0 && srcH > 0 &&
+                    const std::string imagePath = ResolveRelative(baseDirectory, map);
+                    if (decodeImage(imagePath, srcW, srcH, rgba) && srcW > 0 && srcH > 0 &&
                         rgba.size() >= static_cast<size_t>(srcW) * srcH * 4)
                     {
+                        const MeshTextureChoice choice = options.textureFor ? options.textureFor(imagePath)
+                                                                            : MeshTextureChoice{};
                         const std::string& maskPath = found->second.opacityMap;
                         int maskW = 0, maskH = 0;
                         std::vector<uint8_t> mask;
@@ -684,17 +687,16 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
 
                         MeshFileTexture texture{};
                         // 0: no cap, only the power of two the source fits in.
-                        const int cap = options.maxTextureSize > 0 ? options.maxTextureSize : 1 << 15;
+                        const int cap = choice.maxSize > 0 ? choice.maxSize : 1 << 15;
                         texture.width = FitPowerOfTwo(srcW, cap);
                         texture.height = FitPowerOfTwo(srcH, cap);
                         texture.byteOffset = static_cast<uint32_t>(texturePixels.size());
-                        texture.flags = options.smoothTextures ? MeshTextureSmooth : 0;
+                        texture.flags = static_cast<uint8_t>(choice.filter) & MeshTextureFilterMask;
 
                         std::vector<uint8_t> scaled;
                         ResampleRgba(rgba, srcW, srcH, texture.width, texture.height, scaled);
                         const bool transparent = HasTransparentTexel(scaled);
-                        const TexelFormat format =
-                            options.chooseFormat ? options.chooseFormat(transparent) : TexelFormat::RGB565;
+                        const TexelFormat format = choice.format ? choice.format(transparent) : TexelFormat::RGB565;
                         texture.format = static_cast<uint8_t>(format);
 
                         // Transparent texels cut out, where the format keeps them.
@@ -809,6 +811,53 @@ bool CompileObjToMesh(const std::string& objText, const std::string& baseDirecto
     }
 
     return true;
+}
+
+std::vector<std::string> ObjSourceFiles(const std::string& objText, const std::string& baseDirectory)
+{
+    std::vector<std::string> files;
+    std::string materialLibrary;
+    std::istringstream in(objText);
+    std::string line;
+    while (std::getline(in, line))
+    {
+        std::istringstream ls(line);
+        std::string keyword;
+        ls >> keyword;
+        if (keyword == "mtllib")
+        {
+            ls >> materialLibrary;
+            break;
+        }
+    }
+    if (materialLibrary.empty())
+    {
+        return files;
+    }
+    const std::string mtlPath = ResolveRelative(baseDirectory, materialLibrary);
+    files.push_back(mtlPath);
+    std::ifstream mtlFile(mtlPath, std::ios::binary);
+    if (!mtlFile)
+    {
+        return files;
+    }
+    std::ostringstream mtlText;
+    mtlText << mtlFile.rdbuf();
+    for (const auto& [name, entry] : ParseMaterialLibrary(mtlText.str()))
+    {
+        for (const std::string& map : { entry.diffuseMap, entry.opacityMap })
+        {
+            if (!map.empty())
+            {
+                const std::string image = ResolveRelative(baseDirectory, map);
+                if (std::find(files.begin(), files.end(), image) == files.end())
+                {
+                    files.push_back(image);
+                }
+            }
+        }
+    }
+    return files;
 }
 
 }  // namespace Deki3D

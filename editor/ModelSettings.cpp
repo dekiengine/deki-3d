@@ -50,18 +50,10 @@ ModelSettings ReadModelSettings(const std::string& absolutePath)
     {
         return out;
     }
-    if (settings.contains("texture"))
-    {
-        out.texture = DekiEditor::ReadTextureSettings(settings["texture"]);
-    }
     const nlohmann::json model = settings.value("model", nlohmann::json::object());
     if (!model.is_object())
     {
         return out;
-    }
-    if (model.contains("filter") && model["filter"].is_string())
-    {
-        out.filter = model["filter"].get<std::string>();
     }
     out.detail = ReadDetail(model, 1.0f);
     const nlohmann::json targets = model.value("targets", nlohmann::json::object());
@@ -72,10 +64,6 @@ ModelSettings ReadModelSettings(const std::string& absolutePath)
             continue;
         }
         ModelTargetSettings t;
-        if (it.value().contains("filter") && it.value()["filter"].is_string())
-        {
-            t.filter = it.value()["filter"].get<std::string>();
-        }
         t.detail = ReadDetail(it.value(), -1.0f);
         if (!t.Empty())
         {
@@ -94,47 +82,12 @@ bool WriteModelSettings(const std::string& absolutePath, const ModelSettings& se
     }
     nlohmann::json& s = data["settings"];
 
-    // The texture part, in the shape images use.
-    nlohmann::json tex = s.value("texture", nlohmann::json::object());
-    if (!tex.is_object())
-    {
-        tex = nlohmann::json::object();
-    }
-    if (settings.texture.format.empty() || settings.texture.format == "Automatic")
-    {
-        tex.erase("format");
-    }
-    else
-    {
-        tex["format"] = settings.texture.format;
-    }
-    if (settings.texture.maxSize > 0)
-    {
-        tex["maxSize"] = settings.texture.maxSize;
-    }
-    else
-    {
-        tex.erase("maxSize");
-    }
-    tex.erase("targets");
-    for (const auto& [id, t] : settings.texture.targets)
-    {
-        DekiEditor::WriteTextureTarget(tex, id, t);
-    }
-    if (tex.empty())
-    {
-        s.erase("texture");
-    }
-    else
-    {
-        s["texture"] = tex;
-    }
+    // Its textures' settings are their images' now; a model saved with its
+    // own (format, Max Size, filter) drops them, rather than keep settings
+    // nothing reads.
+    s.erase("texture");
 
     nlohmann::json model = nlohmann::json::object();
-    if (!settings.filter.empty() && settings.filter != "Point")
-    {
-        model["filter"] = settings.filter;
-    }
     if (settings.detail < 1.0f)
     {
         model["detail"] = settings.detail;
@@ -146,10 +99,6 @@ bool WriteModelSettings(const std::string& absolutePath, const ModelSettings& se
             continue;
         }
         nlohmann::json entry = nlohmann::json::object();
-        if (!t.filter.empty())
-        {
-            entry["filter"] = t.filter;
-        }
         if (t.detail >= 0.0f)
         {
             entry["detail"] = t.detail;

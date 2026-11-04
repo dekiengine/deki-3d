@@ -73,42 +73,23 @@ std::string TargetName(const AssetExportTarget& target)
     return platform && !platform->displayName.empty() ? platform->displayName : target.platformId;
 }
 
-/// Whether `target` draws meshes on a GPU: a platform with OpenGL, or the
-/// editor's own desktop when no platform is chosen.
-bool TargetHasGpu(const AssetExportTarget& target)
+/// How one of a model's textures is stored on `target`: as its image says,
+/// the image's Format, Max Size and filter there (the image's inspector),
+/// the same settings a sprite of it follows.
+Deki3D::MeshTextureChoice TextureChoiceFor(const std::string& imagePath, const AssetExportTarget& target)
 {
-    if (target.platformId.empty())
+    const TextureSettings image = ReadImageTextureSettings(imagePath);
+    Deki3D::MeshTextureChoice choice;
+    choice.maxSize = image.MaxSizeFor(target.platformId);
+    choice.filter = ResolveTextureFilter(image, target.platformId);
+    choice.format = [image, target](bool hasAlpha)
     {
-        return true;
-    }
-    const PlatformConfig* platform = PlatformRegistry::Instance().GetPlatform(target.platformId);
-    return platform && platform->Capabilities().count("opengl") != 0;
-}
-
-/// The Max Size a model's textures are stored at on `target`: the target's
-/// own, else the model's, else none on a GPU and kDefaultMeshTextureSize on a
-/// board. 0 is no cap.
-int MeshTextureCap(const TextureSettings& settings, const AssetExportTarget& target)
-{
-    auto it = settings.targets.find(target.platformId);
-    if (it != settings.targets.end() && it->second.maxSize >= 0)
-    {
-        return it->second.maxSize;
-    }
-    if (settings.maxSize > 0)
-    {
-        return settings.maxSize;
-    }
-    return TargetHasGpu(target) ? 0 : Deki3D::kDefaultMeshTextureSize;
-}
-
-/// The format a model's texture is stored in for `target`.
-Deki3D::TexelFormat ChooseTexelFormat(const TextureSettings& settings, const AssetExportTarget& target, bool hasAlpha)
-{
-    // TexelFormat is numbered as TextureFormat.
-    const TextureFormat f =
-        ResolveTextureFormat(settings.format, settings.TargetFormat(target.platformId), target.colorFormat, hasAlpha);
-    return static_cast<Deki3D::TexelFormat>(static_cast<uint8_t>(f));
+        // TexelFormat is numbered as TextureFormat.
+        const TextureFormat f =
+            ResolveTextureFormat(image.format, image.TargetFormat(target.platformId), target.colorFormat, hasAlpha);
+        return static_cast<Deki3D::TexelFormat>(static_cast<uint8_t>(f));
+    };
+    return choice;
 }
 
 std::string Megabytes(uint64_t bytes)
@@ -148,7 +129,8 @@ bool FitsTarget(const std::vector<uint8_t>& blob, const AssetExportTarget& targe
     {
         why = name + " needs " + Megabytes(needs) + " on " + board + ", which has " +
               Megabytes(platform->externalMemorySize) + " of external memory for it. Lower its Max Size or " +
-              "Detail for " + board + " in the model's Targets, or leave it out of the scenes this platform builds.";
+              "Detail for " + board + " (its textures' Max Size in their images, the mesh's Detail in the model), " +
+              "or leave it out of the scenes this platform builds.";
         return false;
     }
     return true;
@@ -188,9 +170,7 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
     const Deki3D::ModelSettings settings = Deki3D::ReadModelSettings(absolutePath);
     Deki3D::MeshCompileReport report;
     Deki3D::MeshCompileOptions options;
-    options.chooseFormat = [&](bool hasAlpha) { return ChooseTexelFormat(settings.texture, target, hasAlpha); };
-    options.maxTextureSize = MeshTextureCap(settings.texture, target);
-    options.smoothTextures = settings.SmoothFor(target.platformId);
+    options.textureFor = [&](const std::string& imagePath) { return TextureChoiceFor(imagePath, target); };
     options.detail = settings.DetailFor(target.platformId);
     options.report = &report;
 
@@ -202,10 +182,6 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
         return false;
     }
     const std::string where = TargetName(target);
-    if (options.smoothTextures && !TargetHasGpu(target))
-    {
-        warnings.push_back(name + ": Smooth filtering needs a GPU; " + where + " draws its textures unfiltered");
-    }
     // A reduction that stops well above what Detail asks says so.
     const double asked = static_cast<double>(report.trianglesIn) * options.detail;
     if (options.detail < 1.0f && report.trianglesOut > asked * 1.1 + 1.0)
@@ -320,6 +296,26 @@ struct Deki3DAssetRegistrar
             [](AssetPipeline* pipeline)
             {
                 pipeline->RegisterSyncHandler(".obj", HandleObjSync);
+                // Its material library and texture images: a change to one,
+                // or to an image's settings, rebuilds the model.
+                pipeline->RegisterSourceFilesReporter(".obj",
+                                                      [](const std::string& absolutePath)
+                                                      {
+                                                          // Up to the mtllib line only, near the top:
+                                                          // a stamp is made often, and models are big.
+                                                          std::ifstream in(absolutePath, std::ios::binary);
+                                                          std::string text, line;
+                                                          while (std::getline(in, line))
+                                                          {
+                                                              text += line + "\n";
+                                                              if (line.rfind("mtllib", 0) == 0)
+                                                              {
+                                                                  break;
+                                                              }
+                                                          }
+                                                          return Deki3D::ObjSourceFiles(
+                                                              text, fs::path(absolutePath).parent_path().string());
+                                                      });
                 pipeline->RegisterExportEncoder(".obj",
                                                 [](const AssetExportContext& ctx)
                                                 {

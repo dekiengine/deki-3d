@@ -395,7 +395,10 @@ bool MeshAsset::Load(MeshSource& cursor)
             view.format = format;
             view.hasAlpha = format == TexelFormat::RGB565 || format == TexelFormat::RGB565A8 ||
                             format == TexelFormat::RGBA8888 || format == TexelFormat::ALPHA8;
-            view.smooth = (t.flags & MeshTextureSmooth) != 0;
+            const uint8_t filter = t.flags & MeshTextureFilterMask;
+            view.filter = filter <= static_cast<uint8_t>(Deki::TextureFilter::Trilinear)
+                              ? static_cast<Deki::TextureFilter>(filter)
+                              : Deki::TextureFilter::Point;
             view.width = t.width;
             view.height = t.height;
             view.widthShift = static_cast<uint8_t>(wShift);

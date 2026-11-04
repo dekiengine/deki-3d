@@ -291,10 +291,15 @@ TEST(MeshFile, ImporterStoresTheChosenFormat)
         std::vector<uint8_t> blob;
         std::string error;
         MeshCompileOptions options;
-        options.chooseFormat = [&](bool hasAlpha)
+        options.textureFor = [&](const std::string&)
         {
-            EXPECT_TRUE(hasAlpha);
-            return format;
+            MeshTextureChoice choice;
+            choice.format = [&](bool hasAlpha)
+            {
+                EXPECT_TRUE(hasAlpha);
+                return format;
+            };
+            return choice;
         };
         ASSERT_TRUE(CompileObjToMesh(obj, dir, decode, blob, error, options)) << error;
         MeshAsset mesh;

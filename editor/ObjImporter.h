@@ -30,9 +30,9 @@ namespace Deki3D
 /// Textures: `mtllib` is read, and each material's `map_Kd` becomes its
 /// texture, decoded once per distinct image through the caller's
 /// `decodeImage`; a `map_d` beside it becomes that texture's alpha. Each is
-/// scaled to powers of two (the sampler masks rather than divides) and
-/// capped, then stored in the blob in the format `chooseFormat` picks (RGB565
-/// when it is empty). A texture with transparent pixels turns its material's
+/// stored as `textureFor` says for its image (MeshTextureChoice: the image's
+/// own settings for the target): scaled to powers of two (the sampler masks
+/// rather than divides) within its Max Size, in its format, with its filter. A texture with transparent pixels turns its material's
 /// alpha test on when its format keeps alpha. An empty `decodeImage` skips
 /// textures, which lets the tests run without the editor's image loading.
 ///
@@ -44,13 +44,19 @@ namespace Deki3D
 using ImageDecoder =
     std::function<bool(const std::string& absolutePath, int& outWidth, int& outHeight, std::vector<uint8_t>& outRgba)>;
 
-/// A mesh texture's size cap on a target without a GPU, when its model sets no
-/// Max Size there. At RGB565 a 256 x 256 texture is 128 KB, already more than
-/// a small board wants resident. A GPU target has no default cap.
-constexpr int kDefaultMeshTextureSize = 256;
-
 /// The format to store a texture in, given whether it has transparent pixels.
 using TextureFormatChooser = std::function<TexelFormat(bool hasAlpha)>;
+
+/// How one texture is stored for a target: its image's own settings there.
+struct MeshTextureChoice
+{
+    /// The format. Empty: RGB565.
+    TextureFormatChooser format;
+    /// The largest side it is stored at (its Max Size): the stored sides are
+    /// the largest powers of two within it. 0: no cap.
+    int maxSize = 0;
+    Deki::TextureFilter filter = Deki::TextureFilter::Point;
+};
 
 /// What a compile did, for the editor to say.
 struct MeshCompileReport
@@ -64,13 +70,10 @@ struct MeshCompileReport
 /// settings for that target.
 struct MeshCompileOptions
 {
-    /// The format each texture is stored in. Empty: RGB565.
-    TextureFormatChooser chooseFormat;
-    /// The largest side a texture is stored at (its Max Size): the stored
-    /// sides are the largest powers of two within it. 0: no cap.
-    int maxTextureSize = kDefaultMeshTextureSize;
-    /// Textures filter smoothly on the GPU (Texture3D::smooth).
-    bool smoothTextures = false;
+    /// How each texture image is stored, given its absolute path: the
+    /// image's own Format, Max Size and filter for the target. Empty: RGB565,
+    /// no cap, Point.
+    std::function<MeshTextureChoice(const std::string& imagePath)> textureFor;
     /// The share of the model's triangles to keep, 1 for all. Below 1 the
     /// mesh is reduced (SimplifyMesh), which may stop above it.
     float detail = 1.0f;
@@ -80,6 +83,11 @@ struct MeshCompileOptions
 
 bool CompileObjToMesh(const std::string& objText, const std::string& baseDirectory, const ImageDecoder& decodeImage,
                       std::vector<uint8_t>& outBlob, std::string& error, const MeshCompileOptions& options = {});
+
+/// The other files a model is compiled from, absolute: its material library
+/// and every image it names (map_Kd, map_d). A change to one of them, or to
+/// its settings, changes the compiled mesh.
+std::vector<std::string> ObjSourceFiles(const std::string& objText, const std::string& baseDirectory);
 
 }  // namespace Deki3D
 

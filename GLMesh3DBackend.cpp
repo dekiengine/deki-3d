@@ -279,20 +279,21 @@ public:
             }
             m_GL.TexImage2D(gl::TEXTURE_2D, 0, static_cast<GLint>(gl::RGBA8), tex.width, tex.height, 0, gl::RGBA,
                             gl::UNSIGNED_BYTE, rgba.data());
-            if (tex.smooth)
+            // The image's filter (TextureFilter.h). Trilinear reads mipmaps:
+            // a big texture seen from afar would otherwise shimmer.
+            GLenum minFilter = gl::NEAREST, magFilter = gl::NEAREST;  // Point, as the software sampler draws
+            if (tex.filter == Deki::TextureFilter::Bilinear)
             {
-                // Blended, from mipmaps where it shrinks: a big texture seen
-                // from afar would otherwise shimmer.
+                minFilter = magFilter = gl::LINEAR;
+            }
+            else if (tex.filter == Deki::TextureFilter::Trilinear)
+            {
                 m_GL.GenerateMipmap(gl::TEXTURE_2D);
-                m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, static_cast<GLint>(gl::LINEAR_MIPMAP_LINEAR));
-                m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, static_cast<GLint>(gl::LINEAR));
+                minFilter = gl::LINEAR_MIPMAP_LINEAR;
+                magFilter = gl::LINEAR;
             }
-            else
-            {
-                // Nearest, as the software sampler draws.
-                m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, static_cast<GLint>(gl::NEAREST));
-                m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, static_cast<GLint>(gl::NEAREST));
-            }
+            m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, static_cast<GLint>(minFilter));
+            m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, static_cast<GLint>(magFilter));
             // Wrapping, as the software sampler masks.
             m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, static_cast<GLint>(gl::REPEAT));
             m_GL.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, static_cast<GLint>(gl::REPEAT));

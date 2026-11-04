@@ -1,7 +1,7 @@
 // Tests that a mesh of any size compiles, loads and draws: 16-bit indices
 // while they reach every vertex, 32-bit past 65535 vertices, and the version
 // 4 files from before still load. And the parts of a model a GPU target keeps
-// that a board drops: smooth textures, a map_d cutout.
+// that a board drops: filtered textures, a map_d cutout.
 
 #include <gtest/gtest.h>
 
@@ -209,7 +209,12 @@ TEST(BigMesh, MapDCutsOutAndWindowsPathsResolve)
         return true;
     };
     MeshCompileOptions options;
-    options.chooseFormat = [](bool hasAlpha) { return hasAlpha ? TexelFormat::RGBA8888 : TexelFormat::RGB888; };
+    options.textureFor = [](const std::string&)
+    {
+        MeshTextureChoice choice;
+        choice.format = [](bool hasAlpha) { return hasAlpha ? TexelFormat::RGBA8888 : TexelFormat::RGB888; };
+        return choice;
+    };
     std::vector<uint8_t> blob;
     std::string error;
     ASSERT_TRUE(CompileObjToMesh(obj, dir, decode, blob, error, options)) << error;
@@ -229,7 +234,8 @@ TEST(BigMesh, MapDCutsOutAndWindowsPathsResolve)
     EXPECT_EQ(m.texture->pixels[7], 255);
 }
 
-TEST(BigMesh, SmoothTexturesAreMarked)
+// Each texture carries its image's filter, asked for by the image's path.
+TEST(BigMesh, TexturesCarryTheirImagesFilter)
 {
     const std::string dir = testing::TempDir();
     WriteFile(dir + "/s.mtl", "newmtl a\nmap_Kd t.png\n");
@@ -240,17 +246,27 @@ TEST(BigMesh, SmoothTexturesAreMarked)
         rgba.assign(64, 200);
         return true;
     };
-    for (bool smooth : { false, true })
+    for (Deki::TextureFilter filter :
+         { Deki::TextureFilter::Point, Deki::TextureFilter::Bilinear, Deki::TextureFilter::Trilinear })
     {
         MeshCompileOptions options;
-        options.smoothTextures = smooth;
+        std::vector<std::string> asked;
+        options.textureFor = [&](const std::string& imagePath)
+        {
+            asked.push_back(imagePath);
+            MeshTextureChoice choice;
+            choice.filter = filter;
+            return choice;
+        };
         std::vector<uint8_t> blob;
         std::string error;
         ASSERT_TRUE(CompileObjToMesh(obj, dir, decode, blob, error, options)) << error;
         MeshAsset mesh;
         ASSERT_TRUE(mesh.LoadFromMemory(blob.data(), blob.size()));
         ASSERT_NE(mesh.Materials()[0].texture, nullptr);
-        EXPECT_EQ(mesh.Materials()[0].texture->smooth, smooth);
+        EXPECT_EQ(mesh.Materials()[0].texture->filter, filter);
+        ASSERT_EQ(asked.size(), 1u);
+        EXPECT_NE(asked[0].find("t.png"), std::string::npos) << asked[0];
     }
 }
 
@@ -269,7 +285,12 @@ TEST(BigMesh, NoCapKeepsTheSourceSize)
     for (int cap : { 0, 256 })
     {
         MeshCompileOptions options;
-        options.maxTextureSize = cap;
+        options.textureFor = [cap](const std::string&)
+        {
+            MeshTextureChoice choice;
+            choice.maxSize = cap;
+            return choice;
+        };
         std::vector<uint8_t> blob;
         std::string error;
         ASSERT_TRUE(CompileObjToMesh(obj, dir, decode, blob, error, options)) << error;
@@ -414,4 +435,18 @@ TEST(BigMesh, LoadingFromAFileTakesOnlyTheMeshsMemory)
     EXPECT_FALSE(truncated.LoadFromFile(path.c_str()));
     EXPECT_FALSE(truncated.Valid());
     EXPECT_FALSE(MeshAsset().LoadFromFile((path + ".missing").c_str()));
+}
+
+// What a model is compiled from besides itself: its material library and the
+// images its materials name, so a change to one rebuilds it.
+TEST(BigMesh, SourceFilesAreTheLibraryAndItsImages)
+{
+    const std::string dir = testing::TempDir();
+    WriteFile(dir + "/src.mtl", "newmtl a\nmap_Kd tex\\a.png\nmap_d mask.png\nnewmtl b\nmap_Kd tex/a.png\n");
+    const std::vector<std::string> files = ObjSourceFiles("mtllib src.mtl\nv 0 0 0\n", dir);
+    ASSERT_EQ(files.size(), 3u);
+    EXPECT_NE(files[0].find("src.mtl"), std::string::npos) << files[0];
+    EXPECT_NE(files[1].find("a.png"), std::string::npos) << files[1];
+    EXPECT_NE(files[2].find("mask.png"), std::string::npos) << files[2];
+    EXPECT_TRUE(ObjSourceFiles("v 0 0 0\n", dir).empty()) << "no library, nothing besides";
 }

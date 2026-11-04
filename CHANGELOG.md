@@ -15,30 +15,39 @@ alongside one that has them.
   past that (`Mesh3D::indexBytes`, `Mesh3D::IndexAt`). Both renderers draw
   either. Mesh files are version 5 (the header ends in `flags`); version 4
   files still load.
-- Each platform's build keeps what it can use. A model's textures have no
-  default cap where the platform has a GPU, and 256 on a board, as before.
-  New per-platform settings: Filter (Smooth: linear and mipmapped on the GPU,
-  `Texture3D::smooth`) and Detail, the share of triangles kept
-  (`editor/MeshSimplify.h`: edge collapse by quadric error, never moving a
-  seam, an open edge or a material border, never turning a triangle over).
+- Each platform's build keeps what it can use. A model's own setting is
+  Detail, per platform: the share of triangles kept (`editor/MeshSimplify.h`:
+  edge collapse by quadric error, never moving a seam, an open edge or a
+  material border, never turning a triangle over).
+- A model's textures follow their images' own settings for the platform:
+  Format, Max Size and Filter (Point, Bilinear, Trilinear;
+  `Texture3D::filter`, from the engine's `TextureFilter`), set in the image's
+  inspector, several at once. There is no cap of the model's own: a board's
+  build says when a model does not fit. On the GPU Bilinear is linear, and
+  Trilinear linear between mipmaps; the software rasteriser draws Point.
+  `MeshCompileOptions::textureFor` gives each texture's settings by its
+  image's path.
+- What a model is compiled from (`ObjSourceFiles`: its material library and
+  images) is part of its cache stamp, so a change to one rebuilds it.
 - The Model inspector (`.obj`): what the editor's build holds, and the
-  Targets cards for Format, Max Size, Filter and Detail, Default and per
-  platform. Settings in `editor/ModelSettings.h`.
+  Targets cards for Detail, Default and per platform. Settings in
+  `editor/ModelSettings.h`; a model's `.data` from before, with texture
+  settings of its own, loses them when saved.
 - A board build stops when a model needs more external memory than the board
-  has, and warns when Detail stops above what it asks or a board is given
-  Smooth.
+  has, naming its images' Max Size and its Detail, and warns when Detail
+  stops above what it asks.
 - A mesh loads from its file part by part, each straight into its own buffer
   (`MeshAsset::LoadFromFile`), so loading takes the mesh's size in memory. The
   loader read the whole file in first and then copied it, so a load held twice
   the mesh (8.6 MB for a 4.3 MB one), and a mesh the build check let through
   could still not load on the board.
 - The importer reads `map_d` as a texture's cutout and paths written with
-  backslashes. `CompileObjToMesh` takes a `MeshCompileOptions` (format, Max
-  Size, filter, detail, and a report of what it did) in place of its last two
-  arguments.
+  backslashes. `CompileObjToMesh` takes a `MeshCompileOptions` (each
+  texture's settings, detail, and a report of what it did) in place of its
+  last two arguments.
 - Breaking: `Mesh3D::indices` is a `const void*` read through `IndexAt`.
 - Tests: `BigMeshTests.cpp`, `MeshSimplifyTests.cpp`, the GPU drawing past
-  65535 vertices, smooth textures, and an off-centre shadow, which the
+  65535 vertices, bilinear and trilinear textures, and an off-centre shadow, which the
   centred cube test could not catch a mirrored lookup with. By hand:
   `DISABLED_CompileAModel` and `DISABLED_AModelUnderTheSun` take a real model
   (`DEKI_TEST_OBJ`).

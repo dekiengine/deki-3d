@@ -287,11 +287,16 @@ TEST(MeshSimplify, DISABLED_CompileAModel)
     {
         MeshCompileReport report;
         MeshCompileOptions options;
-        options.maxTextureSize = c.maxTextureSize;
         options.detail = c.detail;
         options.report = &report;
-        options.chooseFormat = [&](bool hasAlpha)
-        { return hasAlpha && c.format == TexelFormat::RGB565 ? TexelFormat::RGB565A8 : c.format; };
+        options.textureFor = [&](const std::string&)
+        {
+            MeshTextureChoice choice;
+            choice.maxSize = c.maxTextureSize;
+            choice.format = [&](bool hasAlpha)
+            { return hasAlpha && c.format == TexelFormat::RGB565 ? TexelFormat::RGB565A8 : c.format; };
+            return choice;
+        };
         std::vector<uint8_t> blob;
         std::string error;
         const auto start = std::chrono::steady_clock::now();
@@ -306,7 +311,8 @@ TEST(MeshSimplify, DISABLED_CompileAModel)
 }
 
 // A model's settings go into its .data and come back, per target, and leave
-// the rest of the file as it was.
+// the rest of the file as it was, except the texture settings a model once
+// had of its own: those are its images' now.
 TEST(ModelSettings, WriteAndReadBack)
 {
     const std::string model = testing::TempDir() + "/settings_model.obj";
@@ -315,26 +321,18 @@ TEST(ModelSettings, WriteAndReadBack)
         data << R"({"guid": "abc", "settings": {"texture": {"chroma_key": {"enabled": true}}}})";
     }
     ModelSettings s;
-    s.texture.maxSize = 512;
-    s.texture.targets["lilygo_t_deck"].maxSize = 128;
-    s.filter = "Smooth";
     s.detail = 0.5f;
-    s.targets["lilygo_t_deck"].filter = "Point";
     s.targets["lilygo_t_deck"].detail = 0.1f;
     ASSERT_TRUE(WriteModelSettings(model, s));
 
     const ModelSettings back = ReadModelSettings(model);
-    EXPECT_EQ(back.texture.MaxSizeFor("native_simulator"), 512);
-    EXPECT_EQ(back.texture.MaxSizeFor("lilygo_t_deck"), 128);
-    EXPECT_TRUE(back.SmoothFor("native_simulator"));
-    EXPECT_FALSE(back.SmoothFor("lilygo_t_deck"));
     EXPECT_FLOAT_EQ(back.DetailFor("native_simulator"), 0.5f);
     EXPECT_FLOAT_EQ(back.DetailFor("lilygo_t_deck"), 0.1f);
 
     std::ifstream in(model + ".data");
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     EXPECT_NE(text.find("\"guid\": \"abc\""), std::string::npos) << "the asset's own keys stay";
-    EXPECT_NE(text.find("chroma_key"), std::string::npos) << "texture settings it does not know stay";
+    EXPECT_EQ(text.find("chroma_key"), std::string::npos) << "a model has no texture settings of its own";
 
     // Back to the defaults: the model's part of the file goes.
     ASSERT_TRUE(WriteModelSettings(model, ModelSettings{}));

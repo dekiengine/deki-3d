@@ -454,9 +454,9 @@ TEST(GLBackend, VerticesPast65535DrawAsTheSmallMesh)
     }
 }
 
-// A smooth texture blends between texels where it is magnified; a point one
-// keeps each texel's own colour.
-TEST(GLBackend, SmoothTexturesBlendOnTheGpu)
+// A bilinear or trilinear texture blends between texels where it is
+// magnified; a point one keeps each texel's own colour.
+TEST(GLBackend, FilteredTexturesBlendOnTheGpu)
 {
     REQUIRE_GPU(gpu);
     std::vector<uint8_t> texels(8 * 8 * 2);
@@ -481,9 +481,9 @@ TEST(GLBackend, SmoothTexturesBlendOnTheGpu)
     const View view = SlantedView();
     RasterConfig config;
 
-    auto greys = [&](bool smooth)
+    auto greys = [&](Deki::TextureFilter filter)
     {
-        tex.smooth = smooth;
+        tex.filter = filter;
         Material3D material;
         material.texture = &tex;
         const auto fb = Draw(*gpu.backend, cube.mesh, material, view, Deki::ColorFormat::ARGB8888, config);
@@ -497,10 +497,12 @@ TEST(GLBackend, SmoothTexturesBlendOnTheGpu)
         }
         return between;
     };
-    const int point = greys(false);
-    const int smooth = greys(true);
+    const int point = greys(Deki::TextureFilter::Point);
+    const int bilinear = greys(Deki::TextureFilter::Bilinear);
+    const int trilinear = greys(Deki::TextureFilter::Trilinear);
     EXPECT_LT(point, kSize * kSize / 50) << "point sampling draws black and white";
-    EXPECT_GT(smooth, kSize * kSize / 10) << "smooth sampling draws the greys between";
+    EXPECT_GT(bilinear, kSize * kSize / 10) << "bilinear sampling draws the greys between";
+    EXPECT_GT(trilinear, kSize * kSize / 10) << "trilinear sampling draws the greys between";
 }
 
 TEST(GLBackend, LeavesTheBackgroundAlone)

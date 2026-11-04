@@ -70,22 +70,26 @@ both renderers draw either.
 
 The model keeps everything; each platform's build of it keeps what that
 platform can use. The Model inspector shows what the editor's build holds,
-then the Targets cards: Default for every platform, and one per platform the
-project has, which may differ from it:
+then the Targets cards, Default for every platform and one per platform the
+project can build for, which may differ from it:
 
-- **Format**: the textures' format. Automatic follows the platform's screen.
-- **Max Size**: the textures' largest side. Automatic is no limit where the
-  platform has a GPU and 256 on a board.
-- **Filter**: Point, or Smooth: blended between texels, from mipmaps where it
-  shrinks, on the GPU. A board draws Point, and its build says so.
 - **Detail**: the share of the triangles kept (All, 75% down to 1%). The
   mesh is reduced by collapsing the edges that change its shape least; its
   seams, open edges and material borders stay where they are, so a model of
   many pieces may keep more than asked, and the build says how many.
 
-They are kept in the model's `.data` (`settings.texture` and
-`settings.model`). The editor's own build follows the active platform, so the
-viewport shows what that platform gets.
+It is kept in the model's `.data` (`settings.model`).
+
+A model's textures are images of the project, and each is stored and drawn
+as its image's own settings say, per platform, in the image's inspector:
+**Format**, **Max Size** (the stored sides are the largest powers of two
+within it) and **Filter** (Point, Bilinear or Trilinear; a platform without a
+GPU draws Point). Select several images in the Asset Browser to set them
+together. A change to an image, or to its settings, rebuilds the models that
+use it.
+
+The editor's own build follows the active platform, so the viewport shows
+what that platform gets.
 
 A board build checks that each model fits: a mesh needs its vertices,
 indices and textures in the board's external memory, and one that needs more
