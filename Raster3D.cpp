@@ -78,12 +78,15 @@ inline uint16_t Shade565RGB(uint16_t c, uint32_t sr, uint32_t sg, uint32_t sb)
     return static_cast<uint16_t>((r << 11) | (g << 5) | b);
 }
 
-/// Scales an RGB565 pixel by shade in 0..32, with two multiplies, not three.
+/// Scales an RGB565 pixel by shade in 0..32 with one multiply: green moved up
+/// to bits 21..26 leaves every channel the shade's 5 bits to grow into below
+/// the next, so each comes out as its own multiply would make it (checked for
+/// every colour and shade), with one mask the span loop can keep.
 inline uint16_t Shade565(uint16_t c, uint32_t shade)
 {
-    const uint32_t rb = ((static_cast<uint32_t>(c) & 0xF81Fu) * shade >> 5) & 0xF81Fu;
-    const uint32_t g = ((static_cast<uint32_t>(c) & 0x07E0u) * shade >> 5) & 0x07E0u;
-    return static_cast<uint16_t>(rb | g);
+    uint32_t x = (static_cast<uint32_t>(c) | (static_cast<uint32_t>(c) << 16)) & 0x07E0F81Fu;
+    x = (x * shade >> 5) & 0x07E0F81Fu;
+    return static_cast<uint16_t>(x | (x >> 16));
 }
 
 /// Plane gradients of a screen-linear attribute across a triangle. invW, z,
