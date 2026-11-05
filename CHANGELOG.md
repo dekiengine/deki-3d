@@ -88,6 +88,19 @@ alongside one that has them.
 - `DISABLED_DrawACompiledMesh` (by hand) draws a compiled mesh file, or an
   .obj at a Detail, as a T-Deck does (320x240 RGB565, one and two threads), to
   compare a board's picture with the desktop's.
+- The tile size is the platform's unless the scene fixes one: the new
+  `Mesh3DSettings.tiles` is Platform (the default) or Fixed, and Fixed uses
+  `tileSize` everywhere. A platform names its own with
+  `DEKI_3D_TILE_SIZE=<n>` in its platform file's `defines`; one that names
+  none gets 32, which a microcontroller's internal RAM holds. The Miyoo Mini
+  (deki-miyoo-boards) names 64, which beat 32 there (a 6k-triangle scene from
+  52.8 to 56.6 frames a second in RGB565, 58.0 to 59.7 in ARGB8888), and the
+  desktop simulator (deki-desktop-integration) 128; the editor previews at
+  128. The inspector shows each target's, and the build's memory check counts
+  a target's own. A scene saved before, which had one size for every
+  platform, takes the platform's if it kept the old default of 32 and stays
+  Fixed at any other size (a scene migration). The picture is the same at
+  any size.
 
 ### Models at any size, built for each platform
 - A mesh of any size compiles: 16-bit indices up to 65535 vertices, 32-bit

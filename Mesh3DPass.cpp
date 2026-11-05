@@ -244,7 +244,7 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     const Mesh3DSettings& cam3d = settings ? *settings : kDeclared;
 
     m_Config = RasterConfig{};
-    m_Config.tileSize = cam3d.tileSize;
+    m_Config.tileSize = cam3d.TileSize();
     m_Config.perspectiveCorrect = cam3d.perspectiveCorrect;
     m_Config.vertexSnap = cam3d.vertexSnap;
 

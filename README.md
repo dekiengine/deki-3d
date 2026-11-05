@@ -99,7 +99,8 @@ the board has. A board that declares no memory is said to be unchecked.
 ### Drawing in software
 
 A board without OpenGL draws meshes with the software rasteriser. It collects
-the frame's triangles, bins them into 32x32 tiles and fills tile by tile; past
+the frame's triangles, bins them into tiles (32x32 on a microcontroller,
+below) and fills tile by tile; past
 `RasterConfig::batchTriangles` it fills what it has and starts again against a
 depth buffer for the whole screen, so a mesh of any size draws in fixed
 memory, in PSRAM where the board has it. Parts of a mesh out of view are
@@ -129,6 +130,22 @@ in their original order. The output is identical whatever the count; only the
 speed changes. The editor always previews with one thread,
 because it loads packages as unloadable DLLs and joining a thread while one
 unloads deadlocks the Windows loader.
+
+## Tiles
+
+The software rasteriser's tile size is the platform's unless the scene fixes
+one (`Mesh3DSettings.tiles`, Platform or Fixed). A platform sets its own with
+a define in its platform file, `"defines": ["DEKI_3D_TILE_SIZE=64"]`, and one
+that names none gets 32, whose depth buffer (2 KB a thread) a microcontroller
+keeps in its internal RAM. The Miyoo Mini's file names 64, which beat 32 there
+(a 6k-triangle scene from 52.8 to 56.6 frames a second in RGB565, 58.0 to
+59.7 in ARGB8888), and the desktop simulator's 128; the editor previews at
+128. The inspector shows what each of the project's targets uses. The picture
+is the same at any size; only the speed changes.
+
+A scene saved before had one size for every platform, saved as 32 unless
+changed: with 32 it now takes the platform's, as a new scene does, and with
+any other size it keeps it, Fixed.
 
 ## The retro switches
 

@@ -13,6 +13,7 @@
 
 #include "ModelSettings.h"
 #include "ObjImporter.h"
+#include "PlatformTileSize.h"
 #include "../Raster3D.h"
 #include "../MeshAsset.h"
 
@@ -121,9 +122,11 @@ bool FitsTarget(const std::vector<uint8_t>& blob, const AssetExportTarget& targe
     const uint64_t mesh = static_cast<uint64_t>(header.vertexCount) * header.vertexStride +
                           static_cast<uint64_t>(header.indexCount) * indexBytes + header.texturePixelBytes;
     const bool software = platform->Capabilities().count("opengl") == 0;
+    // Drawn as a scene that leaves the tiles to the platform draws.
+    Deki3D::RasterConfig drawn;
+    drawn.tileSize = Deki3D::PlatformTileSize(*platform);
     const uint64_t raster = software && platform->screenWidth > 0 && platform->screenHeight > 0
-                                ? Deki3D::Raster3D::WorkingBytes(platform->screenWidth, platform->screenHeight,
-                                                                 Deki3D::RasterConfig{})
+                                ? Deki3D::Raster3D::WorkingBytes(platform->screenWidth, platform->screenHeight, drawn)
                                 : 0;
     const uint64_t needs = mesh + raster;
     const std::string board = TargetName(target);

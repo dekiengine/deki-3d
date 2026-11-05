@@ -18,6 +18,30 @@ enum class Mesh3DRenderer : uint8_t
     Gpu = 2,       // the GPU; software, with a warning, where there is none
 };
 
+/// Where the software rasteriser's tile size comes from.
+enum class Mesh3DTiles : uint8_t
+{
+    Platform = 0,  // the platform's own, kPlatformTileSize
+    Fixed = 1,     // Mesh3DSettings::tileSize, on every platform
+};
+
+// The tile edge of a scene that leaves it to the platform: the platform's
+// DEKI_3D_TILE_SIZE, a define in its platform file ("defines":
+// ["DEKI_3D_TILE_SIZE=64"]), or 32 where it names none. The depth buffer is
+// one tile per fill thread, and 32 (2 KB) keeps it in a microcontroller's
+// internal RAM; a Miyoo Mini draws faster with 64, and its platform file says
+// so. The editor, which is no platform's build, previews with a desktop's
+// 128.
+inline constexpr int32_t kUnnamedPlatformTileSize = 32;
+#if defined(DEKI_3D_TILE_SIZE)
+inline constexpr int32_t kPlatformTileSize = DEKI_3D_TILE_SIZE;
+#elif defined(DEKI_EDITOR)
+inline constexpr int32_t kPlatformTileSize = 128;
+#else
+inline constexpr int32_t kPlatformTileSize = kUnnamedPlatformTileSize;
+#endif
+static_assert(kPlatformTileSize >= 8 && kPlatformTileSize <= 512, "DEKI_3D_TILE_SIZE must be 8 to 512 pixels");
+
 /// How the 3D pass draws: the renderer, tile size, the retro switches and the
 /// fill threads. The projection belongs to the scene's camera
 /// (DekiRendering::CameraComponent with Projection = Perspective), and the
@@ -42,9 +66,17 @@ public:
     DEKI_EXPORT
     bool composeOnGpu = true;
 
-    DEKI_TOOLTIP("Tile edge in pixels. Software only. The depth buffer is one tile, so 32 costs 2 KB and suits a "
-                 "microcontroller, while a desktop can afford 128 or more.")
+    DEKI_TOOLTIP("Software only: where the tile size comes from. Platform uses each platform's own (its "
+                 "DEKI_3D_TILE_SIZE define, or 32): 32 on a microcontroller, whose depth buffer must fit its internal "
+                 "RAM, 64 on a Miyoo Mini, 128 in the editor. Fixed uses Tile Size everywhere. The picture is the "
+                 "same at any size; only the speed changes.")
+    DEKI_EXPORT
+    Mesh3DTiles tiles = Mesh3DTiles::Platform;
+
+    DEKI_TOOLTIP("Tile edge in pixels, on every platform. Software only. The depth buffer is one tile, so 32 costs "
+                 "2 KB and suits a microcontroller, while a desktop can afford 128 or more.")
     DEKI_RANGE(8, 512)
+    DEKI_VISIBLE_WHEN(tiles, Fixed)
     DEKI_EXPORT
     int32_t tileSize = 32;
 
@@ -65,6 +97,9 @@ public:
     DEKI_RANGE(1, 16)
     DEKI_EXPORT
     int32_t fillThreads = 1;
+
+    /// The tile edge this build draws with.
+    int32_t TileSize() const { return tiles == Mesh3DTiles::Fixed ? tileSize : kPlatformTileSize; }
 };
 
 }  // namespace Deki3D
