@@ -279,6 +279,93 @@ TEST(RasterBatches, DISABLED_DrawACompiledMesh)
     }
 }
 
+// The geometry shared out between threads draws what one thread draws: the
+// same triangles into the same tiles in the same order. A lit floor in
+// perspective that runs from under the eye to the distance, so triangles are
+// culled, near-clipped into two and lit, in batches that hold all of it, some
+// of it in pieces the threads share, or too little for that.
+TEST(RasterBatches, GeometryOnSeveralThreadsDrawsWhatOneDoes)
+{
+    constexpr int kGrid = 40;
+    std::vector<VertexPNTC> vertices;
+    std::vector<uint16_t> indices;
+    for (int z = 0; z <= kGrid; ++z)
+    {
+        for (int x = 0; x <= kGrid; ++x)
+        {
+            const float fx = -10.0f + 20.0f * x / kGrid;
+            const float fz = 2.0f - 40.0f * z / kGrid;  // from behind the eye to far ahead
+            const uint32_t colour = 0xFF000000u | (((x * 37) & 0xFF) << 16) | (((z * 53) & 0xFF) << 8) | 0x80u;
+            vertices.push_back({ Deki::Vector3(fx, 0.0f, fz), Deki::Vector3(0, 1, 0), 0.0f, 0.0f, colour });
+        }
+    }
+    for (int z = 0; z < kGrid; ++z)
+    {
+        for (int x = 0; x < kGrid; ++x)
+        {
+            const uint16_t a = static_cast<uint16_t>(z * (kGrid + 1) + x);
+            const uint16_t b = static_cast<uint16_t>(a + 1);
+            const uint16_t c = static_cast<uint16_t>(a + kGrid + 2);
+            const uint16_t d = static_cast<uint16_t>(a + kGrid + 1);
+            for (uint16_t i : { a, b, c, a, c, d })
+            {
+                indices.push_back(i);
+            }
+        }
+    }
+    Submesh3D sub;
+    sub.indexCount = static_cast<uint32_t>(indices.size());
+    Mesh3D mesh;
+    mesh.vertices = vertices.data();
+    mesh.vertexCount = static_cast<uint32_t>(vertices.size());
+    mesh.layout = LayoutPNTC();
+    mesh.indices = indices.data();
+    mesh.indexCount = static_cast<uint32_t>(indices.size());
+    mesh.submeshes = &sub;
+    mesh.submeshCount = 1;
+    mesh.boundsMin = Deki::Vector3(-10, 0, -38);
+    mesh.boundsMax = Deki::Vector3(10, 0, 2);
+
+    Material3D material;
+    material.shading = ShadingModel::VertexLit;
+    const Deki::Vector3 eye(0.3f, 1.0f, 0.0f);
+    const Deki::Mat4 viewProjection =
+        Mul(Perspective(1.2f, 1.0f, 0.1f, 100.0f), LookAt(eye, Deki::Vector3(0.0f, 0.2f, -5.0f), Deki::Vector3(0, 1, 0)));
+
+    auto draw = [&](int batch, int threads)
+    {
+        Drawn drawn;
+        drawn.pixels.assign(Deki::FrameBufferBytes(kFormat, kSize, kSize), 0);
+        RasterConfig config;
+        config.tileSize = 16;
+        config.batchTriangles = batch;
+        config.threadCount = threads;
+        Raster3D raster;
+        raster.BeginFrame(drawn.pixels.data(), kSize, kSize, kFormat, config);
+        raster.DrawMesh(mesh, &material, 1, viewProjection, Deki::Mat4::Identity());
+        raster.EndFrame();
+        drawn.stats = raster.Stats();
+        return drawn;
+    };
+
+    for (int batch : { 1 << 20, 1500, 700, 7 })
+    {
+        const Drawn one = draw(batch, 1);
+        EXPECT_GT(one.stats.trianglesClipped, 1000u) << "most of the floor is in view";
+        for (int threads : { 2, 3, 4 })
+        {
+            SCOPED_TRACE(::testing::Message() << batch << " triangles a batch, " << threads << " threads");
+            const Drawn many = draw(batch, threads);
+            EXPECT_EQ(many.pixels, one.pixels);
+            EXPECT_EQ(many.stats.trianglesIn, one.stats.trianglesIn);
+            EXPECT_EQ(many.stats.trianglesClipped, one.stats.trianglesClipped);
+            EXPECT_EQ(many.stats.trianglesBinned, one.stats.trianglesBinned);
+            EXPECT_EQ(many.stats.batches, one.stats.batches) << "the batches fill where they do on one thread";
+            EXPECT_EQ(many.stats.trianglesDropped, 0u);
+        }
+    }
+}
+
 // Given the frame's clear (SetBackground), the rasteriser draws it wherever
 // it draws nothing, tiles without a triangle included: the frame comes out as
 // cleared first and drawn over, in one batch or many, on one thread or two.

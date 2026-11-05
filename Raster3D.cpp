@@ -587,7 +587,7 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::
     // Keep the capacity the last frame grew into. Reassigning would free and
     // reallocate one vector per tile every frame, which costs more than the
     // rasterising on light scenes.
-    m_Tris.Clear();
+    m_BatchCount = 0;
     m_Materials.clear();
     const size_t tileCount = static_cast<size_t>(m_TilesX) * m_TilesY;
     if (m_Bins.size() != tileCount)
@@ -611,6 +611,17 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::
 
     // One scratch depth buffer per fill thread, sized once and kept. The
     // calling thread is one of them, so `threads - 1` workers are needed.
+    if (m_Config.threadCount > RasterConfig::kMaxThreads)
+    {
+        static bool s_Warned = false;
+        if (!s_Warned)
+        {
+            s_Warned = true;
+            DEKI_LOG_WARNING("Raster3D: %d threads asked for; drawing on %d, the most it shares the work between",
+                             m_Config.threadCount, RasterConfig::kMaxThreads);
+        }
+        m_Config.threadCount = RasterConfig::kMaxThreads;
+    }
     const int threads = m_Config.threadCount < 1 ? 1 : m_Config.threadCount;
     const size_t depthCells = static_cast<size_t>(tile) * tile;
     if (static_cast<int>(m_TileDepth.size()) != threads)
@@ -624,9 +635,19 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::
             buffer.resize(depthCells);
         }
     }
-    if (m_VertexCache.size() != static_cast<size_t>(kVertexCacheSize))
+    // And one geometry lane per thread, each with its own vertex cache.
+    if (static_cast<int>(m_Lanes.size()) != threads)
     {
-        m_VertexCache.resize(kVertexCacheSize);
+        m_Lanes.resize(static_cast<size_t>(threads));
+    }
+    for (GeometryLane& lane : m_Lanes)
+    {
+        lane.tris.Clear();
+        lane.staging = false;
+        if (lane.cache.size() != static_cast<size_t>(kVertexCacheSize))
+        {
+            lane.cache.resize(kVertexCacheSize);
+        }
     }
 
     if (static_cast<int>(m_Workers.size()) != threads - 1)
@@ -673,20 +694,19 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
         }
     } timer{ m_Stats, started, fillBefore };
 
-    const VertexLayout& layout = mesh.layout;
     PickLights(mesh, model);
-    const Deki::Vector3 ambient = m_Config.ambient;
 
     for (uint16_t s = 0; s < mesh.submeshCount; ++s)
     {
         const Submesh3D& sub = mesh.submeshes[s];
+        const uint32_t triangles = sub.indexCount / 3;
         // A part out of view, as a whole mesh is: a model of many parts
         // (a building, a level) seen from inside has most of them behind or
         // beside the camera.
         if (sub.hasBounds && BoxOutsideFrustum(sub.boundsMin, sub.boundsMax, mvp))
         {
             ++m_Stats.submeshesCulled;
-            m_Stats.trianglesIn += sub.indexCount / 3;
+            m_Stats.trianglesIn += triangles;
             continue;
         }
         // Copy the material now: the span loop reads it in EndFrame, when the
@@ -698,138 +718,194 @@ void Raster3D::DrawMesh(const Mesh3D& mesh, const Material3D* materials, uint16_
         const uint16_t materialIndex = static_cast<uint16_t>(m_Materials.size());
         m_Materials.push_back((materials && sub.materialIndex < materialCount) ? materials[sub.materialIndex]
                                                                                : Material3D{});
-        // By value: m_Materials can reallocate on the next submesh.
-        const ShadingModel shading = m_Materials.back().shading;
+        const Material3D& material = m_Materials.back();
+        m_Stats.trianglesIn += triangles;
 
-        const bool cullBack = m_Config.backfaceCull && !m_Materials.back().doubleSided;
-        const bool vertexLit = shading == ShadingModel::VertexLit && layout.HasNormals();
-        for (CachedVertex& cached : m_VertexCache)
+        MeshPart part;
+        part.mesh = &mesh;
+        part.mvp = &mvp;
+        part.normalMatrix = &normalMatrix;
+        part.model = &model;
+        part.ambient = m_Config.ambient;
+        part.firstIndex = sub.firstIndex;
+        part.materialIndex = materialIndex;
+        part.shading = material.shading;
+        part.cullBack = m_Config.backfaceCull && !material.doubleSided;
+        part.vertexLit = material.shading == ShadingModel::VertexLit && mesh.layout.HasNormals();
+
+        // Shared out between the threads where there are several and the
+        // part is large enough to be worth waking them, in pieces that fit
+        // the batch: a triangle makes at most two once near-clipped, so a
+        // piece of half the batch's room never fills it, and the batch fills
+        // where it would have on one thread. The rest, and a frame whose
+        // batch is nearly full, go triangle by triangle, as on one thread.
+        // The same triangles reach the same tiles in the same order either
+        // way, so the picture does not depend on the threads.
+        for (GeometryLane& lane : m_Lanes)
         {
-            cached.index = UINT32_MAX;
+            lane.EmptyCache();
         }
-
-        const uint32_t end = sub.firstIndex + sub.indexCount;
-        for (uint32_t i = sub.firstIndex; i + 2 < end; i += 3)
+        uint32_t done = 0;
+        while (done < triangles)
         {
-            ++m_Stats.trianglesIn;
-
-            CachedVertex* corner[3];
-            for (int k = 0; k < 3; ++k)
+            const uint32_t left = triangles - done;
+            const size_t batch = static_cast<size_t>(m_Config.batchTriangles);
+            const size_t room = batch - std::min(m_BatchCount, batch);
+            const uint32_t piece = static_cast<uint32_t>(std::min<size_t>(left, room / 2));
+            if (m_Lanes.size() > 1 && !m_Workers.empty() && !m_FrameFull && piece >= kParallelTriangles &&
+                ShadeInLanes(part, done, piece))
             {
-                const uint32_t index = mesh.IndexAt(i + k);
-                CachedVertex& cached = m_VertexCache[index & (kVertexCacheSize - 1)];
-                if (cached.index != index)
-                {
-                    const void* vtx = mesh.VertexAt(index);
-                    cached.index = index;
-                    cached.lit = false;
-                    cached.position = ReadVec3(vtx, layout.positionOffset);
-                    ClipVertex& cv = cached.clip;
-                    float w = 1.0f;
-                    const Deki::Vector3 clip = Deki3D::TransformPoint(mvp, cached.position, w);
-                    cv.x = clip.x;
-                    cv.y = clip.y;
-                    cv.z = clip.z;
-                    cv.w = w;
-                    if (layout.HasUVs())
-                    {
-                        ReadUV(vtx, layout.uvOffset, cv.u, cv.v);
-                    }
-                    else
-                    {
-                        cv.u = cv.v = 0.0f;
-                    }
-                    cv.color = layout.HasColors() ? ReadColor(vtx, layout.colorOffset) : 0xFFFFFFFFu;
-                    cv.lightR = cv.lightG = cv.lightB = 1.0f;
-                    if (layout.HasNormals())
-                    {
-                        cached.normal = ReadVec3(vtx, layout.normalOffset);
-                    }
-                    cached.inFront = cv.z + cv.w >= 0.0f;  // as EmitTriangle's clip decides it
-                    cached.screen = Project(cv);
-                }
-                corner[k] = &cached;
+                done += piece;
+                continue;
             }
-            const ClipVertex& c0 = corner[0]->clip;
-            const ClipVertex& c1 = corner[1]->clip;
-            const ClipVertex& c2 = corner[2]->clip;
+            const uint32_t step = std::min(left, kParallelTriangles);
+            ShadeTriangles(part, done, done + step, m_Lanes[0]);
+            done += step;
+        }
+    }
+}
 
-            // Wholly outside one side of the view: nothing to light or bin.
-            if ((c0.x < -c0.w && c1.x < -c1.w && c2.x < -c2.w) || (c0.x > c0.w && c1.x > c1.w && c2.x > c2.w) ||
-                (c0.y < -c0.w && c1.y < -c1.w && c2.y < -c2.w) || (c0.y > c0.w && c1.y > c1.w && c2.y > c2.w) ||
-                (c0.z > c0.w && c1.z > c1.w && c2.z > c2.w) || (c0.z < -c0.w && c1.z < -c1.w && c2.z < -c2.w))
+void Raster3D::GeometryLane::EmptyCache()
+{
+    for (CachedVertex& cached : cache)
+    {
+        cached.index = UINT32_MAX;
+    }
+}
+
+void Raster3D::ShadeTriangles(const MeshPart& part, uint32_t first, uint32_t end, GeometryLane& lane)
+{
+    const Mesh3D& mesh = *part.mesh;
+    const VertexLayout& layout = mesh.layout;
+    const Deki::Mat4& mvp = *part.mvp;
+    const Deki::Mat4& normalMatrix = *part.normalMatrix;
+    const Deki::Mat4& model = *part.model;
+    const Deki::Vector3 ambient = part.ambient;
+    const uint16_t materialIndex = part.materialIndex;
+    const ShadingModel shading = part.shading;
+    const bool cullBack = part.cullBack;
+    const bool vertexLit = part.vertexLit;
+    CachedVertex* const cache = lane.cache.data();
+
+    const uint32_t endIndex = part.firstIndex + end * 3;
+    for (uint32_t i = part.firstIndex + first * 3; i < endIndex; i += 3)
+    {
+        CachedVertex* corner[3];
+        for (int k = 0; k < 3; ++k)
+        {
+            const uint32_t index = mesh.IndexAt(i + k);
+            CachedVertex& cached = cache[index & (kVertexCacheSize - 1)];
+            if (cached.index != index)
+            {
+                const void* vtx = mesh.VertexAt(index);
+                cached.index = index;
+                cached.lit = false;
+                cached.position = ReadVec3(vtx, layout.positionOffset);
+                ClipVertex& cv = cached.clip;
+                float w = 1.0f;
+                const Deki::Vector3 clip = Deki3D::TransformPoint(mvp, cached.position, w);
+                cv.x = clip.x;
+                cv.y = clip.y;
+                cv.z = clip.z;
+                cv.w = w;
+                if (layout.HasUVs())
+                {
+                    ReadUV(vtx, layout.uvOffset, cv.u, cv.v);
+                }
+                else
+                {
+                    cv.u = cv.v = 0.0f;
+                }
+                cv.color = layout.HasColors() ? ReadColor(vtx, layout.colorOffset) : 0xFFFFFFFFu;
+                cv.lightR = cv.lightG = cv.lightB = 1.0f;
+                if (layout.HasNormals())
+                {
+                    cached.normal = ReadVec3(vtx, layout.normalOffset);
+                }
+                cached.inFront = cv.z + cv.w >= 0.0f;  // as EmitTriangle's clip decides it
+                cached.screen = Project(cv);
+            }
+            corner[k] = &cached;
+        }
+        const ClipVertex& c0 = corner[0]->clip;
+        const ClipVertex& c1 = corner[1]->clip;
+        const ClipVertex& c2 = corner[2]->clip;
+
+        // Wholly outside one side of the view: nothing to light or bin.
+        if ((c0.x < -c0.w && c1.x < -c1.w && c2.x < -c2.w) || (c0.x > c0.w && c1.x > c1.w && c2.x > c2.w) ||
+            (c0.y < -c0.w && c1.y < -c1.w && c2.y < -c2.w) || (c0.y > c0.w && c1.y > c1.w && c2.y > c2.w) ||
+            (c0.z > c0.w && c1.z > c1.w && c2.z > c2.w) || (c0.z < -c0.w && c1.z < -c1.w && c2.z < -c2.w))
+        {
+            continue;
+        }
+        // Facing away, decided from the projected corners when all three
+        // are in front of the eye, as BinFan decides it, but before the
+        // lighting is paid for. One crossing the near plane is left to
+        // BinFan, after the clip.
+        if (cullBack && c0.w > 0.0f && c1.w > 0.0f && c2.w > 0.0f)
+        {
+            const ScreenVertex& s0 = corner[0]->screen;
+            const ScreenVertex& s1 = corner[1]->screen;
+            const ScreenVertex& s2 = corner[2]->screen;
+            if ((s1.x - s0.x) * (s2.y - s0.y) - (s2.x - s0.x) * (s1.y - s0.y) >= 0.0f)
             {
                 continue;
             }
-            // Facing away, decided from the projected corners when all three
-            // are in front of the eye, as BinFan decides it, but before the
-            // lighting is paid for. One crossing the near plane is left to
-            // BinFan, after the clip.
-            if (cullBack && c0.w > 0.0f && c1.w > 0.0f && c2.w > 0.0f)
+        }
+
+        // Lighting is computed here, at vertex rate, so the span loop
+        // needs no normals or dot products.
+        if (vertexLit)
+        {
+            for (CachedVertex* v : corner)
             {
-                const ScreenVertex& s0 = corner[0]->screen;
-                const ScreenVertex& s1 = corner[1]->screen;
-                const ScreenVertex& s2 = corner[2]->screen;
-                if ((s1.x - s0.x) * (s2.y - s0.y) - (s2.x - s0.x) * (s1.y - s0.y) >= 0.0f)
+                if (v->lit)
                 {
                     continue;
                 }
-            }
-
-            // Lighting is computed here, at vertex rate, so the span loop
-            // needs no normals or dot products.
-            if (vertexLit)
-            {
-                for (CachedVertex* v : corner)
+                Deki::Vector3 n = Deki3D::TransformDirection(normalMatrix, v->normal);
+                if (n.LengthSquared() > 0.0f)
                 {
-                    if (v->lit)
-                    {
-                        continue;
-                    }
-                    Deki::Vector3 n = Deki3D::TransformDirection(normalMatrix, v->normal);
-                    if (n.LengthSquared() > 0.0f)
-                    {
-                        n.Normalize();
-                    }
-                    float w = 1.0f;
-                    const Deki::Vector3 at = Deki3D::TransformPoint(model, v->position, w);
-                    const Deki::Vector3 light = LightAt(ambient, m_MeshLights, m_MeshLightCount, at, n);
-                    v->clip.lightR = light.x;
-                    v->clip.lightG = light.y;
-                    v->clip.lightB = light.z;
-                    v->lit = true;
+                    n.Normalize();
                 }
-                EmitCorners(corner, c0, c1, c2, materialIndex);
-            }
-            else if (shading == ShadingModel::Flat)
-            {
-                const Deki::Vector3& p0 = corner[0]->position;
-                const Deki::Vector3& p1 = corner[1]->position;
-                const Deki::Vector3& p2 = corner[2]->position;
-                Deki::Vector3 faceNormal = (p1 - p0).Cross(p2 - p0);
-                faceNormal = Deki3D::TransformDirection(normalMatrix, faceNormal);
-                if (faceNormal.LengthSquared() > 0.0f)
-                {
-                    faceNormal.Normalize();
-                }
-                // At the face's middle, with its normal.
                 float w = 1.0f;
-                const Deki::Vector3 middle = (p0 + p1 + p2) * (1.0f / 3.0f);
-                const Deki::Vector3 at = Deki3D::TransformPoint(model, middle, w);
-                const Deki::Vector3 light = LightAt(ambient, m_MeshLights, m_MeshLightCount, at, faceNormal);
-                ClipVertex cv[3] = { c0, c1, c2 };
-                for (ClipVertex& v : cv)
-                {
-                    v.lightR = light.x;
-                    v.lightG = light.y;
-                    v.lightB = light.z;
-                }
-                EmitCorners(corner, cv[0], cv[1], cv[2], materialIndex);
+                const Deki::Vector3 at = Deki3D::TransformPoint(model, v->position, w);
+                const Deki::Vector3 light = LightAt(ambient, m_MeshLights, m_MeshLightCount, at, n);
+                v->clip.lightR = light.x;
+                v->clip.lightG = light.y;
+                v->clip.lightB = light.z;
+                v->lit = true;
             }
-            else
+            EmitCorners(corner, c0, c1, c2, materialIndex, lane);
+        }
+        else if (shading == ShadingModel::Flat)
+        {
+            const Deki::Vector3& p0 = corner[0]->position;
+            const Deki::Vector3& p1 = corner[1]->position;
+            const Deki::Vector3& p2 = corner[2]->position;
+            Deki::Vector3 faceNormal = (p1 - p0).Cross(p2 - p0);
+            faceNormal = Deki3D::TransformDirection(normalMatrix, faceNormal);
+            if (faceNormal.LengthSquared() > 0.0f)
             {
-                EmitCorners(corner, c0, c1, c2, materialIndex);
+                faceNormal.Normalize();
             }
+            // At the face's middle, with its normal.
+            float w = 1.0f;
+            const Deki::Vector3 middle = (p0 + p1 + p2) * (1.0f / 3.0f);
+            const Deki::Vector3 at = Deki3D::TransformPoint(model, middle, w);
+            const Deki::Vector3 light = LightAt(ambient, m_MeshLights, m_MeshLightCount, at, faceNormal);
+            ClipVertex cv[3] = { c0, c1, c2 };
+            for (ClipVertex& v : cv)
+            {
+                v.lightR = light.x;
+                v.lightG = light.y;
+                v.lightB = light.z;
+            }
+            EmitCorners(corner, cv[0], cv[1], cv[2], materialIndex, lane);
+        }
+        else
+        {
+            EmitCorners(corner, c0, c1, c2, materialIndex, lane);
         }
     }
 }
@@ -873,11 +949,11 @@ void Raster3D::PickLights(const Mesh3D& mesh, const Deki::Mat4& model)
 }
 
 void Raster3D::EmitCorners(const CachedVertex* const corner[3], const ClipVertex& a, const ClipVertex& b,
-                           const ClipVertex& c, uint16_t materialIndex)
+                           const ClipVertex& c, uint16_t materialIndex, GeometryLane& lane)
 {
     if (!corner[0]->inFront || !corner[1]->inFront || !corner[2]->inFront)
     {
-        EmitTriangle(a, b, c, materialIndex);
+        EmitTriangle(a, b, c, materialIndex, lane);
         return;
     }
     // What the clip would pass through unchanged, projected once per vertex.
@@ -891,10 +967,11 @@ void Raster3D::EmitCorners(const CachedVertex* const corner[3], const ClipVertex
         sv[k].lightG = clip[k]->lightG;
         sv[k].lightB = clip[k]->lightB;
     }
-    BinFan(sv, 3, materialIndex);
+    BinFan(sv, 3, materialIndex, lane);
 }
 
-void Raster3D::EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c, uint16_t materialIndex)
+void Raster3D::EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c, uint16_t materialIndex,
+                            GeometryLane& lane)
 {
     // Near-clip only. Clamping the screen bounding box handles the other
     // four planes, which is cheaper and just as correct for a rasteriser that
@@ -941,7 +1018,7 @@ void Raster3D::EmitTriangle(const ClipVertex& a, const ClipVertex& b, const Clip
 
     if (outCount >= 3)
     {
-        ProjectAndBin(out, outCount, materialIndex);
+        ProjectAndBin(out, outCount, materialIndex, lane);
     }
 }
 
@@ -970,17 +1047,17 @@ Raster3D::ScreenVertex Raster3D::Project(const ClipVertex& c) const
     return sv;
 }
 
-void Raster3D::ProjectAndBin(const ClipVertex* poly, int count, uint16_t materialIndex)
+void Raster3D::ProjectAndBin(const ClipVertex* poly, int count, uint16_t materialIndex, GeometryLane& lane)
 {
     ScreenVertex sv[4];
     for (int i = 0; i < count; ++i)
     {
         sv[i] = Project(poly[i]);
     }
-    BinFan(sv, count, materialIndex);
+    BinFan(sv, count, materialIndex, lane);
 }
 
-void Raster3D::BinFan(ScreenVertex* sv, int count, uint16_t materialIndex)
+void Raster3D::BinFan(ScreenVertex* sv, int count, uint16_t materialIndex, GeometryLane& lane)
 {
     // Fan the clipped polygon back into triangles.
     for (int i = 1; i + 1 < count; ++i)
@@ -1021,12 +1098,24 @@ void Raster3D::BinFan(ScreenVertex* sv, int count, uint16_t materialIndex)
             std::swap(tri.v[1], tri.v[2]);
         }
 
-        ++m_Stats.trianglesClipped;
-        Bin(tri);
+        if (!lane.staging)
+        {
+            ++m_Stats.trianglesClipped;
+            Bin(tri);
+            continue;
+        }
+        // Into the lane's reserved room, for ShadeInLanes to bin in order.
+        ++lane.trianglesClipped;
+        TileRect rect;
+        if (TilesOf(tri, rect))
+        {
+            lane.tris.PushReserved(tri);
+            lane.rects.PushReserved(rect);
+        }
     }
 }
 
-void Raster3D::Bin(const RasterTri& tri)
+bool Raster3D::TilesOf(const RasterTri& tri, TileRect& rect) const
 {
     float minXf = tri.v[0].x, maxXf = tri.v[0].x;
     float minYf = tri.v[0].y, maxYf = tri.v[0].y;
@@ -1038,62 +1127,165 @@ void Raster3D::Bin(const RasterTri& tri)
         maxYf = std::max(maxYf, tri.v[i].y);
     }
 
-    int minX = std::max(0, FloorToInt(minXf));
-    int minY = std::max(0, FloorToInt(minYf));
-    int maxX = std::min(static_cast<int>(m_Width) - 1, CeilToInt(maxXf));
-    int maxY = std::min(static_cast<int>(m_Height) - 1, CeilToInt(maxYf));
+    const int minX = std::max(0, FloorToInt(minXf));
+    const int minY = std::max(0, FloorToInt(minYf));
+    const int maxX = std::min(static_cast<int>(m_Width) - 1, CeilToInt(maxXf));
+    const int maxY = std::min(static_cast<int>(m_Height) - 1, CeilToInt(maxYf));
     if (minX > maxX || minY > maxY)
     {
-        return;
+        return false;
     }
-
     const int tile = m_Config.tileSize;
-    const int t0x = minX / tile, t1x = maxX / tile;
-    const int t0y = minY / tile, t1y = maxY / tile;
+    rect.x0 = static_cast<int16_t>(minX / tile);
+    rect.x1 = static_cast<int16_t>(maxX / tile);
+    rect.y0 = static_cast<int16_t>(minY / tile);
+    rect.y1 = static_cast<int16_t>(maxY / tile);
+    return true;
+}
 
+bool Raster3D::Room(const TileRect& rect, bool withTri)
+{
     // Room for the triangle and an entry in each tile it touches, or the
     // batch so far is filled first: a full batch, or memory that will not
     // stretch to one.
-    auto room = [&]
+    if (m_BatchCount >= static_cast<size_t>(m_Config.batchTriangles))
     {
-        if (m_Tris.Size() >= static_cast<size_t>(m_Config.batchTriangles) || !m_Tris.Reserve(m_Tris.Size() + 1))
+        return false;
+    }
+    RegionArray<RasterTri>& tris = m_Lanes[0].tris;
+    if (withTri && !tris.Reserve(tris.Size() + 1))
+    {
+        return false;
+    }
+    for (int ty = rect.y0; ty <= rect.y1; ++ty)
+    {
+        for (int tx = rect.x0; tx <= rect.x1; ++tx)
         {
-            return false;
-        }
-        for (int ty = t0y; ty <= t1y; ++ty)
-        {
-            for (int tx = t0x; tx <= t1x; ++tx)
+            RegionArray<uint32_t>& bin = m_Bins[static_cast<size_t>(ty) * m_TilesX + tx];
+            if (!bin.Reserve(bin.Size() + 1))
             {
-                RegionArray<uint32_t>& bin = m_Bins[static_cast<size_t>(ty) * m_TilesX + tx];
-                if (!bin.Reserve(bin.Size() + 1))
-                {
-                    return false;
-                }
+                return false;
             }
         }
-        return true;
-    };
-    if (m_FrameFull || (!room() && (!FlushBatch() || !room())))
-    {
-        ++m_Stats.trianglesDropped;
-        return;
     }
+    return true;
+}
 
-    const uint32_t index = static_cast<uint32_t>(m_Tris.Size());
-    m_Tris.PushReserved(tri);
-    for (int ty = t0y; ty <= t1y; ++ty)
+void Raster3D::PushEntries(uint32_t entry, const TileRect& rect)
+{
+    ++m_BatchCount;
+    for (int ty = rect.y0; ty <= rect.y1; ++ty)
     {
-        for (int tx = t0x; tx <= t1x; ++tx)
+        for (int tx = rect.x0; tx <= rect.x1; ++tx)
         {
-            m_Bins[static_cast<size_t>(ty) * m_TilesX + tx].PushReserved(index);
+            m_Bins[static_cast<size_t>(ty) * m_TilesX + tx].PushReserved(entry);
             ++m_Stats.trianglesBinned;
         }
     }
 }
 
+void Raster3D::Bin(const RasterTri& tri)
+{
+    TileRect rect;
+    if (!TilesOf(tri, rect))
+    {
+        return;
+    }
+    if (m_FrameFull || (!Room(rect, true) && (!FlushBatch() || !Room(rect, true))))
+    {
+        ++m_Stats.trianglesDropped;
+        return;
+    }
+    RegionArray<RasterTri>& tris = m_Lanes[0].tris;
+    const size_t index = tris.Size();
+    tris.PushReserved(tri);
+    PushEntries(Entry(0, index), rect);
+}
+
+void Raster3D::BinStaged(int lane, size_t index)
+{
+    const GeometryLane& from = m_Lanes[static_cast<size_t>(lane)];
+    const TileRect rect = from.rects[index - from.stagedFrom];
+    if (m_FrameFull || (!Room(rect, false) && (!FlushBatch() || !Room(rect, false))))
+    {
+        ++m_Stats.trianglesDropped;
+        return;
+    }
+    PushEntries(Entry(lane, index), rect);
+}
+
+bool Raster3D::ShadeInLanes(const MeshPart& part, uint32_t first, uint32_t count)
+{
+    // Every lane's room first, here: the lanes must not allocate (the
+    // allocator's bookkeeping is the calling thread's), and a triangle makes
+    // at most two.
+    const uint32_t lanes = static_cast<uint32_t>(m_Lanes.size());
+    const uint32_t block = std::min(kGeometryBlock, (count + lanes - 1) / lanes);
+    const uint32_t blocks = (count + block - 1) / block;
+    for (uint32_t l = 0; l < lanes; ++l)
+    {
+        GeometryLane& lane = m_Lanes[l];
+        const uint32_t own = blocks > l ? (blocks - l + lanes - 1) / lanes : 0;
+        const size_t most = static_cast<size_t>(own) * block * 2;
+        lane.rects.Clear();
+        if (!lane.tris.Reserve(lane.tris.Size() + most) || !lane.rects.Reserve(most))
+        {
+            return false;
+        }
+    }
+    if (m_BlockEnds.size() < blocks)
+    {
+        m_BlockEnds.resize(blocks);
+    }
+    for (GeometryLane& lane : m_Lanes)
+    {
+        lane.staging = true;
+        lane.stagedFrom = lane.tris.Size();
+        lane.trianglesClipped = 0;
+    }
+    m_ShadePart = &part;
+    m_ShadeFirst = first;
+    m_ShadeCount = count;
+    m_ShadeBlock = block;
+    RunOnAll(Job::Shade);
+
+    // Into the tiles in the order one thread would have put them: block by
+    // block, each from where its lane's last one ended.
+    for (uint32_t b = 0; b < blocks; ++b)
+    {
+        const uint32_t l = b % lanes;
+        const size_t start = b < lanes ? m_Lanes[l].stagedFrom : m_BlockEnds[b - lanes];
+        for (size_t index = start; index < m_BlockEnds[b]; ++index)
+        {
+            BinStaged(static_cast<int>(l), index);
+        }
+    }
+    for (GeometryLane& lane : m_Lanes)
+    {
+        lane.staging = false;
+        m_Stats.trianglesClipped += lane.trianglesClipped;
+    }
+    return true;
+}
+
+void Raster3D::ShadeLane(int index)
+{
+    GeometryLane& lane = m_Lanes[static_cast<size_t>(index)];
+    const uint32_t lanes = static_cast<uint32_t>(m_Lanes.size());
+    const uint32_t block = m_ShadeBlock;
+    const uint32_t blocks = (m_ShadeCount + block - 1) / block;
+    for (uint32_t b = static_cast<uint32_t>(index); b < blocks; b += lanes)
+    {
+        const uint32_t start = m_ShadeFirst + b * block;
+        const uint32_t end = std::min(start + block, m_ShadeFirst + m_ShadeCount);
+        ShadeTriangles(*m_ShadePart, start, end, lane);
+        m_BlockEnds[b] = static_cast<uint32_t>(lane.tris.Size());
+    }
+}
+
 bool Raster3D::FlushBatch()
 {
-    if (m_Tris.Empty())
+    if (m_BatchCount == 0)
     {
         return true;  // nothing to make room from: the memory is not there
     }
@@ -1126,10 +1318,19 @@ bool Raster3D::FlushBatch()
         m_FrameDepthActive = true;
     }
     FillAll();
-    m_Tris.Clear();
+    m_BatchCount = 0;
     for (RegionArray<uint32_t>& bin : m_Bins)
     {
         bin.Clear();
+    }
+    // Mid-way through binning what the lanes made, the lanes keep it: what
+    // is still to bin is there.
+    if (!m_Lanes[0].staging)
+    {
+        for (GeometryLane& lane : m_Lanes)
+        {
+            lane.tris.Clear();
+        }
     }
     return true;
 }
@@ -1141,8 +1342,10 @@ size_t Raster3D::WorkingBytes(int32_t width, int32_t height, const RasterConfig&
     const size_t tiles = static_cast<size_t>((width + tile - 1) / tile) * ((height + tile - 1) / tile);
     const int threads = std::max(config.threadCount, 1);
     // A triangle's tile entries: most touch one or two tiles; four each is
-    // the bound for one no larger than a tile, and larger ones are few.
-    return batch * sizeof(RasterTri) + batch * 4 * sizeof(uint32_t) + tiles * sizeof(RegionArray<uint32_t>) +
+    // the bound for one no larger than a tile, and larger ones are few. And
+    // its tiles while the threads share the geometry out (ShadeInLanes).
+    return batch * sizeof(RasterTri) + batch * 4 * sizeof(uint32_t) + batch * sizeof(TileRect) +
+           tiles * sizeof(RegionArray<uint32_t>) +
            static_cast<size_t>(width) * height * sizeof(uint16_t) +
            static_cast<size_t>(threads) * tile * tile * sizeof(uint16_t);
 }
@@ -1176,6 +1379,8 @@ void Raster3D::StartWorkers(int count)
         cfg.pin_to_core = (xPortGetCoreID() + 1 + i) % portNUM_PROCESSORS;
         cfg.prio = uxTaskPriorityGet(nullptr);
         cfg.thread_name = "deki_fill";
+        // Room for the geometry's clip and lighting as well as the fill.
+        cfg.stack_size = std::max<size_t>(cfg.stack_size, 4096);
         esp_pthread_set_cfg(&cfg);
 #endif
         m_Workers.emplace_back([this, i] { WorkerLoop(i); });
@@ -1217,10 +1422,18 @@ void Raster3D::WorkerLoop(int index)
             m_WorkerHasWork[static_cast<size_t>(index)] = 0;
         }
 
-        // Outside the lock. Worker `index` takes every stride-th tile and
-        // touches nothing another worker touches. The stride is fixed before
-        // any worker starts; m_Workers.size() may still be growing.
-        FillTileRange(index, m_FillStride, index, m_WorkerStats[index]);
+        // Outside the lock. Worker `index` takes every stride-th tile, or
+        // lane index + 1, and touches nothing another worker touches. The
+        // stride is fixed before any worker starts; m_Workers.size() may
+        // still be growing.
+        if (m_Job == Job::Fill)
+        {
+            FillTileRange(index, m_FillStride, index, m_WorkerStats[index]);
+        }
+        else
+        {
+            ShadeLane(index + 1);
+        }
 
         {
             std::lock_guard<std::mutex> lock(m_WorkMutex);
@@ -1303,14 +1516,26 @@ void Raster3D::FillAll()
     // Interleaved, not contiguous: geometry clusters, so solid blocks of
     // screen would give one thread the empty tiles and another all the work.
     // Striding spreads a cluster across all threads.
-    const int workerCount = static_cast<int>(m_Workers.size());
     for (RasterStats& s : m_WorkerStats)
     {
         s.Reset();
     }
 
+    RunOnAll(Job::Fill);
+
+    for (const RasterStats& s : m_WorkerStats)
+    {
+        m_Stats.pixelsTested += s.pixelsTested;
+        m_Stats.pixelsWritten += s.pixelsWritten;
+    }
+}
+
+void Raster3D::RunOnAll(Job job)
+{
+    const int workerCount = static_cast<int>(m_Workers.size());
     {
         std::lock_guard<std::mutex> lock(m_WorkMutex);
+        m_Job = job;
         m_WorkersBusy = workerCount;
         for (char& hasWork : m_WorkerHasWork)
         {
@@ -1319,19 +1544,19 @@ void Raster3D::FillAll()
     }
     m_WorkReady.notify_all();
 
-    // The calling thread takes the last share instead of idling.
-    FillTileRange(workerCount, m_FillStride, workerCount, m_Stats);
-
+    // The calling thread takes a share instead of idling: the last tiles, or
+    // lane 0.
+    if (job == Job::Fill)
     {
-        std::unique_lock<std::mutex> lock(m_WorkMutex);
-        m_WorkDone.wait(lock, [this] { return m_WorkersBusy == 0; });
+        FillTileRange(workerCount, m_FillStride, workerCount, m_Stats);
+    }
+    else
+    {
+        ShadeLane(0);
     }
 
-    for (const RasterStats& s : m_WorkerStats)
-    {
-        m_Stats.pixelsTested += s.pixelsTested;
-        m_Stats.pixelsWritten += s.pixelsWritten;
-    }
+    std::unique_lock<std::mutex> lock(m_WorkMutex);
+    m_WorkDone.wait(lock, [this] { return m_WorkersBusy == 0; });
 }
 
 Raster3D::~Raster3D()
@@ -1384,9 +1609,9 @@ void Raster3D::FillTile(int tileX, int tileY, int thread, RasterStats& stats)
     {
         FillBackground(originX, originY, maxX, maxY);
     }
-    for (uint32_t index : bin)
+    for (uint32_t entry : bin)
     {
-        FillTriangleInTile(m_Tris[index], originX, originY, maxX, maxY, depth, depthStride, originX, originY, stats);
+        FillTriangleInTile(TriAt(entry), originX, originY, maxX, maxY, depth, depthStride, originX, originY, stats);
     }
 }
 

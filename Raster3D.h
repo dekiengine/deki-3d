@@ -8,7 +8,8 @@
 //
 // How a frame works:
 //   BeginFrame  target, size, format, configuration
-//   DrawMesh    per mesh: transform, near-clip, project, bin into tiles
+//   DrawMesh    per mesh: transform, near-clip, project, bin into tiles; a
+//               large part shared out between the threads, binned in order
 //   EndFrame    per tile: clear its depth, fill the triangles binned to it
 //
 // Binning first and filling per tile keeps the depth buffer small. A
@@ -137,56 +138,6 @@ private:
         float lightR, lightG, lightB;
     };
 
-    void EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c, uint16_t materialIndex);
-    /// `c` in screen pixels, with its attributes.
-    ScreenVertex Project(const ClipVertex& c) const;
-
-    // The vertices DrawMesh transformed most recently, by index: a vertex is
-    // shared by about six triangles, and neighbouring triangles mostly come
-    // close together, so most corners are found here rather than read from
-    // the mesh (PSRAM on a board) and transformed again. Lit only when a
-    // front-facing triangle needs it. Emptied at each submesh, whose
-    // material decides the lighting.
-    struct CachedVertex
-    {
-        uint32_t index = UINT32_MAX;
-        bool lit = false;
-        // In front of the near plane, so a triangle of three such corners
-        // needs no clip and takes `screen`, its projection, as it is.
-        bool inFront = false;
-        ClipVertex clip;
-        ScreenVertex screen;     // its colour and light are the clip's, set when it is emitted
-        Deki::Vector3 position;  // object space, for the lighting
-        Deki::Vector3 normal;
-    };
-    static constexpr int kVertexCacheSize = 128;  // a power of two
-    std::vector<CachedVertex> m_VertexCache;
-    void ProjectAndBin(const ClipVertex* poly, int count, uint16_t materialIndex);
-    /// A triangle of three cached corners, with the clip vertices that carry
-    /// their light: projected from the cache when no corner is behind the
-    /// near plane, and clipped first otherwise.
-    void EmitCorners(const CachedVertex* const corner[3], const ClipVertex& a, const ClipVertex& b, const ClipVertex& c,
-                     uint16_t materialIndex);
-    /// Fans a projected polygon into triangles and bins the ones that face
-    /// the camera, or are double-sided.
-    void BinFan(ScreenVertex* sv, int count, uint16_t materialIndex);
-    void Bin(const RasterTri& tri);
-    /// Fills every `stride`-th tile of the row-major grid starting at `start`,
-    /// using `tileDepth` as scratch depth buffer and adding to `stats`. Both
-    /// are per thread, which makes concurrent calls safe.
-    void FillTileRange(int start, int stride, int thread, RasterStats& stats);
-    void FillTile(int tileX, int tileY, int thread, RasterStats& stats);
-    /// `depth` is the depth of pixel (tileOriginX, tileOriginY), rows
-    /// `depthStride` apart: the tile's scratch buffer, or the frame's.
-    void FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY, uint16_t* depth,
-                            int depthStride, int tileOriginX, int tileOriginY, RasterStats& stats);
-    /// Fills every tile from the triangles binned so far.
-    void FillAll();
-    /// Fills the batch so far and empties it, keeping the frame's depth: false
-    /// when the whole-screen depth buffer cannot be had, and the frame stops
-    /// taking triangles.
-    bool FlushBatch();
-
     /// A growing array in Memory::External, which on a board without PSRAM
     /// is internal RAM: Reserve says when it cannot grow, where a std::vector
     /// would abort the board. For trivially copyable T. Its capacity is kept
@@ -267,6 +218,139 @@ private:
         size_t m_Capacity = 0;
     };
 
+    /// `c` in screen pixels, with its attributes.
+    ScreenVertex Project(const ClipVertex& c) const;
+
+    // The vertices DrawMesh transformed most recently, by index: a vertex is
+    // shared by about six triangles, and neighbouring triangles mostly come
+    // close together, so most corners are found here rather than read from
+    // the mesh (PSRAM on a board) and transformed again. Lit only when a
+    // front-facing triangle needs it. Emptied at each submesh, whose
+    // material decides the lighting.
+    struct CachedVertex
+    {
+        uint32_t index = UINT32_MAX;
+        bool lit = false;
+        // In front of the near plane, so a triangle of three such corners
+        // needs no clip and takes `screen`, its projection, as it is.
+        bool inFront = false;
+        ClipVertex clip;
+        ScreenVertex screen;     // its colour and light are the clip's, set when it is emitted
+        Deki::Vector3 position;  // object space, for the lighting
+        Deki::Vector3 normal;
+    };
+    static constexpr int kVertexCacheSize = 128;  // a power of two
+
+    // The tiles a triangle touches, inclusive.
+    struct TileRect
+    {
+        int16_t x0, x1, y0, y1;
+    };
+
+    // A thread's share of the geometry. Lane 0 is the calling thread's and
+    // also holds every triangle binned as it is made; lane k > 0 is worker
+    // k - 1's. A tile list entry names the lane of its triangle in its top
+    // bits (Entry, TriAt).
+    struct GeometryLane
+    {
+        std::vector<CachedVertex> cache;
+        RegionArray<RasterTri> tris;
+        // While staging, the triangles it makes wait here, and in `tris`
+        // from `stagedFrom`, for the calling thread to bin them in order.
+        bool staging = false;
+        size_t stagedFrom = 0;
+        RegionArray<TileRect> rects;
+        uint32_t trianglesClipped = 0;
+        void EmptyCache();
+    };
+    std::vector<GeometryLane> m_Lanes;
+    static constexpr int kLaneShift = 28;
+    static constexpr uint32_t kIndexMask = (1u << kLaneShift) - 1;
+    static_assert(RasterConfig::kMaxThreads <= (1 << (32 - kLaneShift)), "every lane must fit an entry's top bits");
+    static uint32_t Entry(int lane, size_t index)
+    {
+        return (static_cast<uint32_t>(lane) << kLaneShift) | static_cast<uint32_t>(index);
+    }
+    const RasterTri& TriAt(uint32_t entry) const { return m_Lanes[entry >> kLaneShift].tris[entry & kIndexMask]; }
+    // Triangles binned since the last fill, against batchTriangles.
+    size_t m_BatchCount = 0;
+
+    // One submesh as DrawMesh draws it: what every lane reads, and nothing
+    // any lane writes.
+    struct MeshPart
+    {
+        const Mesh3D* mesh;
+        const Deki::Mat4* mvp;
+        const Deki::Mat4* normalMatrix;
+        const Deki::Mat4* model;
+        Deki::Vector3 ambient;
+        uint32_t firstIndex;
+        uint16_t materialIndex;
+        ShadingModel shading;
+        bool cullBack;
+        bool vertexLit;
+    };
+    /// Triangles [first, end) of the part, numbered from its first index,
+    /// into `lane`.
+    void ShadeTriangles(const MeshPart& part, uint32_t first, uint32_t end, GeometryLane& lane);
+    /// The part's triangles [first, first + count) across every lane, then
+    /// binned in their order; false, with nothing done, when the lanes'
+    /// memory cannot be had.
+    bool ShadeInLanes(const MeshPart& part, uint32_t first, uint32_t count);
+    /// The calling thread's (0) or a worker's share of ShadeInLanes.
+    void ShadeLane(int lane);
+    // A part, or a piece of one, shared between the threads only from this
+    // many triangles: waking them costs tens of microseconds, about what a
+    // few dozen triangles take.
+    static constexpr uint32_t kParallelTriangles = 256;
+    // ShadeInLanes' work, as the lanes read it: blocks of m_ShadeBlock
+    // triangles, block b on lane b % lanes, and where each block's triangles
+    // end in its lane. A block is kGeometryBlock triangles (on a T-Deck 256
+    // beat 64), or a lane's even share of a piece too small to give every
+    // lane one.
+    static constexpr uint32_t kGeometryBlock = 256;
+    const MeshPart* m_ShadePart = nullptr;
+    uint32_t m_ShadeFirst = 0;
+    uint32_t m_ShadeCount = 0;
+    uint32_t m_ShadeBlock = kGeometryBlock;
+    std::vector<uint32_t> m_BlockEnds;
+
+    void EmitTriangle(const ClipVertex& a, const ClipVertex& b, const ClipVertex& c, uint16_t materialIndex,
+                      GeometryLane& lane);
+    void ProjectAndBin(const ClipVertex* poly, int count, uint16_t materialIndex, GeometryLane& lane);
+    /// A triangle of three cached corners, with the clip vertices that carry
+    /// their light: projected from the cache when no corner is behind the
+    /// near plane, and clipped first otherwise.
+    void EmitCorners(const CachedVertex* const corner[3], const ClipVertex& a, const ClipVertex& b, const ClipVertex& c,
+                     uint16_t materialIndex, GeometryLane& lane);
+    /// Fans a projected polygon into triangles and bins the ones that face
+    /// the camera, or are double-sided, or stages them in a staging lane.
+    void BinFan(ScreenVertex* sv, int count, uint16_t materialIndex, GeometryLane& lane);
+    /// False for a triangle wholly off the screen.
+    bool TilesOf(const RasterTri& tri, TileRect& rect) const;
+    void Bin(const RasterTri& tri);
+    /// A staged triangle into its tiles, as Bin puts one.
+    void BinStaged(int lane, size_t index);
+    /// Room in the batch, and in each tile list the rect covers, for one more
+    /// triangle; `withTri` also for its record in lane 0.
+    bool Room(const TileRect& rect, bool withTri);
+    void PushEntries(uint32_t entry, const TileRect& rect);
+    /// Fills every `stride`-th tile of the row-major grid starting at `start`,
+    /// using `tileDepth` as scratch depth buffer and adding to `stats`. Both
+    /// are per thread, which makes concurrent calls safe.
+    void FillTileRange(int start, int stride, int thread, RasterStats& stats);
+    void FillTile(int tileX, int tileY, int thread, RasterStats& stats);
+    /// `depth` is the depth of pixel (tileOriginX, tileOriginY), rows
+    /// `depthStride` apart: the tile's scratch buffer, or the frame's.
+    void FillTriangleInTile(const RasterTri& tri, int minX, int minY, int maxX, int maxY, uint16_t* depth,
+                            int depthStride, int tileOriginX, int tileOriginY, RasterStats& stats);
+    /// Fills every tile from the triangles binned so far.
+    void FillAll();
+    /// Fills the batch so far and empties it, keeping the frame's depth: false
+    /// when the whole-screen depth buffer cannot be had, and the frame stops
+    /// taking triangles.
+    bool FlushBatch();
+
     uint8_t* m_Buffer = nullptr;
     // SetBackground's pixel, until the fill that writes it.
     bool m_HasBackground = false;
@@ -288,8 +372,7 @@ private:
     // Materials copied from each DrawMesh call, so a caller's materials need
     // only live for the call.
     std::vector<Material3D> m_Materials;
-    RegionArray<RasterTri> m_Tris;
-    std::vector<RegionArray<uint32_t>> m_Bins;  // one list of triangle indices per tile
+    std::vector<RegionArray<uint32_t>> m_Bins;  // one list of triangle entries per tile
 
     // The frame's depth once it is filled in batches: width x height, kept
     // allocated for the next such frame. m_FrameDepthActive says this frame
@@ -307,19 +390,28 @@ private:
 
     RasterStats m_Stats;
 
-    // --- the fill workers ---------------------------------------------------
+    // --- the workers -------------------------------------------------------
     //
     // Created once and parked on a condition variable between frames.
     // Creating a thread costs tens of microseconds, more than the whole fill
     // of a 320x240 frame, so spawning per frame is slower than one thread.
     //
-    // Workers run only FillTileRange, and each tile writes only its own
-    // framebuffer pixels and its own scratch depth buffer, so the fill needs
-    // no locking. The lock is for handing out a frame and learning when it is
-    // finished.
+    // Workers fill tiles (FillTileRange), each tile writing only its own
+    // framebuffer pixels and its own scratch depth buffer, or shade triangles
+    // (ShadeLane), each lane writing only its own lane, into memory the
+    // calling thread reserved first: neither needs locking. The lock is for
+    // handing out the work and learning when it is finished.
+    enum class Job
+    {
+        Fill,
+        Shade
+    };
     void StartWorkers(int count);
     void StopWorkers();
     void WorkerLoop(int index);
+    /// Runs `job` on every worker and the calling thread, and waits for all.
+    void RunOnAll(Job job);
+    Job m_Job = Job::Fill;
 
     std::vector<std::thread> m_Workers;
     std::mutex m_WorkMutex;

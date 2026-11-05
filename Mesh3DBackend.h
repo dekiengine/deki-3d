@@ -79,12 +79,17 @@ struct RasterConfig
     bool depthTest = true;
     bool depthWrite = true;
 
-    /// How many threads fill tiles. Tiles are independent and each owns its
-    /// depth buffer, so the fill scales without coordination. 1 starts no
-    /// threads, for a single-core target; 2 suits a dual-core microcontroller.
-    /// Transform, clipping and binning stay on the calling thread, because
-    /// they append to shared buffers. Software only.
+    /// How many threads draw. Tiles are independent and each owns its depth
+    /// buffer, so the fill scales without coordination. The geometry of a
+    /// part of at least a few hundred triangles (transform, lighting,
+    /// clipping, projection) is shared out too, each thread making its
+    /// triangles into its own memory, which the calling thread then bins in
+    /// their order: the picture is the same on any number. 1 starts no
+    /// threads, for a single-core target; 2 suits a dual-core
+    /// microcontroller. At most kMaxThreads, which more is held to, with a
+    /// warning. Software only.
     int threadCount = 1;
+    static constexpr int kMaxThreads = 16;
 
     /// How many triangles the software rasteriser collects before it fills
     /// them: a frame with more is drawn in batches of this many, against one

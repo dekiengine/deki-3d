@@ -66,6 +66,18 @@ alongside one that has them.
 - `fillThreads` 2 fills on the second core of an ESP32-S3: the fill worker is
   pinned to the core the engine is not on (it ran on the same one). deki-3d
   now needs ESP-IDF's `pthread` component.
+- `fillThreads` above 1 shares out the geometry too (transform, lighting,
+  clipping, projection) for a part of a mesh of 256 triangles or more: each
+  thread takes blocks of 256 triangles in turn, into its own vertex cache and
+  triangle list, and the calling thread bins them in their order, so the
+  picture, the batches and `RasterStats` are the same on any number of
+  threads. The memory is reserved on the calling thread first, since
+  `Deki::Memory`'s tracking is not thread-safe, and a board's worker gets a
+  4 KB stack for the clip and lighting. More than 16 threads
+  (`RasterConfig::kMaxThreads`) are held to 16, with a warning. On a T-Deck
+  (ESP32-S3, two cores) the 2k-triangle corridor's geometry drops from
+  11.8 ms to about 9.6; on a Miyoo Mini (two Cortex-A7s) the 13k-triangle
+  island scene runs at a steady 30 frames a second.
 - `RasterStats` counts batches, triangles dropped, parts skipped, and the time
   spent on geometry and on filling.
 - Sponza (Detail 10%, which keeps 82k triangles, one directional and one

@@ -105,7 +105,7 @@ depth buffer for the whole screen, so a mesh of any size draws in fixed
 memory, in PSRAM where the board has it. Parts of a mesh out of view are
 skipped, triangles facing away are dropped before they are lit, and each
 vertex is transformed once per part. Set the scene's 3D Settings
-`fillThreads` to 2 on a dual-core board to fill on both cores.
+`fillThreads` to 2 on a dual-core board to draw on both cores.
 
 Sponza at Detail 10% (82k triangles) draws at about 1 frame a second on a
 LilyGO T-Deck; `RasterStats` says where the time goes.
@@ -120,9 +120,13 @@ zooming scales both. Anything further back is smaller.
 
 ## Threads
 
-`Mesh3DSettings.fillThreads` splits the fill across cores on a device or
-simulator build. Tiles are independent, so the output is identical whatever the
-count; only the speed changes. The editor always previews with one thread,
+`Mesh3DSettings.fillThreads` splits the drawing across cores on a device or
+simulator build. Tiles are independent, so the fill needs no coordination. A
+part of a mesh with a few hundred triangles or more also has its geometry
+(transform, lighting, clipping, projection) shared out in blocks, each thread
+writing its triangles into its own memory, which the calling thread then bins
+in their original order. The output is identical whatever the count; only the
+speed changes. The editor always previews with one thread,
 because it loads packages as unloadable DLLs and joining a thread while one
 unloads deadlocks the Windows loader.
 
