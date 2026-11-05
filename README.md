@@ -111,6 +111,16 @@ vertex is transformed once per part. Set the scene's 3D Settings
 Sponza at Detail 10% (82k triangles) draws at about 1 frame a second on a
 LilyGO T-Deck; `RasterStats` says where the time goes.
 
+The pixels are filled by a loop chosen per triangle. An RGB565 framebuffer (a
+board's) with a flat colour, a palette or an RGB565 texture, and an ARGB8888
+one (a handheld's, a desktop's) with a flat colour or an RGB565, RGB888 or
+RGBA8888 texture, have loops of their own, with the shading, cutout and depth
+test picked once per triangle; any other pair takes a generic loop through
+8-bit channels. The pixels are the same either way, which the tests check.
+On a desktop the ARGB8888 loop fills a 640x480 frame of lit cubes in about a
+quarter less time textured, and about half untextured
+(`RasterSpans.DISABLED_Argb8888FillSpeed` measures it).
+
 ## Seeing it in the editor
 
 The editor's viewport has its own camera with no 3D settings, so the pass

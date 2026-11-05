@@ -32,6 +32,18 @@ alongside one that has them.
   its own (`FillSpan565`): the span's settings in registers, and its shading
   and cutout chosen once per span rather than tested per pixel. The same
   pixels; on a T-Deck a full screen of textured 3D fills about 8 ms sooner.
+- An ARGB8888 framebuffer (the Miyoo Mini's, a desktop's in software) with a
+  flat colour or an RGB565, RGB888 or RGBA8888 texture has one too
+  (`FillSpan8888`): the same structure, a pixel kept as its red and blue and
+  its green so a grey light shades it with two multiplies, and a flat colour
+  shaded once a span. The same pixels as the generic loop, which the new
+  `RasterSpans` test checks against an RGB888 framebuffer for every texture
+  kind, shading, cutout and depth setting (and in the big-endian build). On a
+  desktop a 640x480 frame of lit cubes at 128-pixel tiles fills in 0.50 ms
+  untextured (from 0.93), 1.07 with an RGB888 texture (from 1.41), 1.09 with
+  RGB565 (from 1.44) and 1.19 with a cut-out RGBA8888 one (from 1.43)
+  (`RasterSpans.DISABLED_Argb8888FillSpeed`). A palette, RGB565A8 or ALPHA8
+  texture still takes the generic loop.
 - A triangle's span settings and the loop that fills its spans are set once
   per triangle, not per span, and a span's step comes from a table of
   reciprocals. The same pixels.

@@ -255,11 +255,32 @@ inline void Shade8(uint8_t& r, uint8_t& g, uint8_t& b, uint32_t sr, uint32_t sg,
     b = static_cast<uint8_t>(std::min<uint32_t>((b * sb) >> 5, 255));
 }
 
+/// Scales a 32-bit pixel, held as its red and blue (0x00RR00BB) and its
+/// green (0x0000GG00), by shade in 0..32, as Shade8 does each channel, with
+/// two multiplies: red and blue are 16 bits apart, so each has room for the
+/// shade's 5 bits below the other, and neither carries into it. No clamp is
+/// needed, since a shade of 32 or less never brightens.
+inline void Shade8888(uint32_t& rb, uint32_t& g, uint32_t shade)
+{
+    rb = (rb * shade >> 5) & 0x00FF00FFu;
+    g = (g * shade >> 5) & 0x0000FF00u;
+}
+
+/// The same by a shade per channel in 0..64, clamped within each.
+inline void Shade8888RGB(uint32_t& rb, uint32_t& g, uint32_t sr, uint32_t sg, uint32_t sb)
+{
+    const uint32_t r = std::min<uint32_t>(((rb >> 16) * sr) >> 5, 255);
+    const uint32_t b = std::min<uint32_t>(((rb & 0xFFu) * sb) >> 5, 255);
+    rb = (r << 16) | b;
+    g = std::min<uint32_t>(((g >> 8) * sg) >> 5, 255) << 8;
+}
+
 /// Fills one span and returns how many pixels it wrote: any framebuffer
 /// format and texture, through 8-bit channels and the 2D blitter's pixel
 /// helpers. An RGB565 framebuffer with a flat, palette or RGB565 texture
-/// takes FillSpan565 instead. With alphaTest, a texel whose alpha is below
-/// half is a hole.
+/// takes FillSpan565 instead, and an ARGB8888 one with a flat, RGB565,
+/// RGB888 or RGBA8888 texture FillSpan8888. With alphaTest, a texel whose
+/// alpha is below half is a hole.
 template <TexKind K, Deki::ColorFormat F>
 uint32_t FillSpan(const SpanArgs& a)
 {
@@ -450,9 +471,123 @@ uint32_t FillSpan565(const SpanArgs& a)
     return a.x1 >= a.x0 ? static_cast<uint32_t>(a.x1 - a.x0 + 1) - skipped : 0;
 }
 
+/// An ARGB8888 framebuffer (a handheld's, the desktop's) with a flat, RGB565,
+/// RGB888 or RGBA8888 texture: FillSpan565's loop for 32-bit pixels, and
+/// pixel-identical to the generic one, which an RGB888 framebuffer still
+/// takes and the tests compare it against. A pixel is kept as its red and
+/// blue (0x00RR00BB) and its green (0x0000GG00), so a grey light shades it
+/// with two multiplies and it is put together with two ors. A flat colour is
+/// shaded once, before the loop, since it is the same at every pixel; it and
+/// an RGB888 texture have no holes, so they take no cutout. As in
+/// FillSpan565, the settings are read once into locals, the shading, cutout
+/// and depth are chosen per triangle, and it counts the pixels it skips.
+template <TexKind K, int Shade, bool Cutout, bool Depth>
+uint32_t FillSpan8888(const SpanArgs& a)
+{
+    uint32_t* const fb = reinterpret_cast<uint32_t*>(a.fbRow);
+    uint16_t* const depthRow = a.depthRow;
+    const bool depthTest = Depth || a.depthTest;
+    const bool depthWrite = Depth || a.depthWrite;
+    const uint8_t* const pixels = K != TexKind::Flat ? a.tex->pixels : nullptr;
+    const int uMask = a.uMask, vMask = a.vMask, wShift = a.wShift;
+    const int32_t du = a.du, dv = a.dv, dz = a.dz;
+    const uint32_t shadeR = a.shadeR, shadeG = a.shadeG, shadeB = a.shadeB;
+    uint32_t flat = 0;
+    if constexpr (K == TexKind::Flat)
+    {
+        uint32_t rb = (static_cast<uint32_t>(a.flatR) << 16) | a.flatB;
+        uint32_t g = static_cast<uint32_t>(a.flatG) << 8;
+        if constexpr (Shade == 1)
+        {
+            Shade8888(rb, g, shadeR);
+        }
+        else if constexpr (Shade == 2)
+        {
+            Shade8888RGB(rb, g, shadeR, shadeG, shadeB);
+        }
+        flat = 0xFF000000u | rb | g;
+    }
+    const int x1 = a.x1;
+    int32_t u = a.u, v = a.v, z = a.z;
+    uint32_t skipped = 0;
+    for (int x = a.x0; x <= x1; ++x)
+    {
+        const int32_t depth = z >> kDepthFrac;
+        if (depthTest && depth >= static_cast<int32_t>(depthRow[x]))
+        {
+            ++skipped;
+        }
+        else
+        {
+            uint32_t color = flat;
+            bool write = true;
+            if constexpr (K != TexKind::Flat)
+            {
+                const int texel = (((v >> kUvFrac) & vMask) << wShift) + ((u >> kUvFrac) & uMask);
+                uint32_t rb = 0, g = 0;
+                if constexpr (K == TexKind::RGB565)
+                {
+                    const uint32_t c = DekiPixel::FromMemory565(reinterpret_cast<const uint16_t*>(pixels)[texel]);
+                    if (Cutout && c == 0xF81Fu)  // magenta is the hole
+                    {
+                        write = false;
+                    }
+                    // Each channel shifted up to its top bits, as UnpackRGB565.
+                    rb = ((c & 0xF800u) << 8) | ((c & 0x001Fu) << 3);
+                    g = (c & 0x07E0u) << 5;
+                }
+                else if constexpr (K == TexKind::RGB888)
+                {
+                    const uint8_t* const p = pixels + texel * 3;
+                    rb = (static_cast<uint32_t>(p[0]) << 16) | p[2];
+                    g = static_cast<uint32_t>(p[1]) << 8;
+                }
+                else  // RGBA8888
+                {
+                    const uint8_t* const p = pixels + texel * 4;
+                    if (Cutout && p[3] < 128)
+                    {
+                        write = false;
+                    }
+                    rb = (static_cast<uint32_t>(p[0]) << 16) | p[2];
+                    g = static_cast<uint32_t>(p[1]) << 8;
+                }
+                if constexpr (Shade == 1)
+                {
+                    Shade8888(rb, g, shadeR);
+                }
+                else if constexpr (Shade == 2)
+                {
+                    Shade8888RGB(rb, g, shadeR, shadeG, shadeB);
+                }
+                color = 0xFF000000u | rb | g;
+            }
+            if (write)
+            {
+                fb[x] = color;
+                if (depthWrite)
+                {
+                    depthRow[x] = static_cast<uint16_t>(depth);
+                }
+            }
+            else
+            {
+                ++skipped;
+            }
+        }
+        if constexpr (K != TexKind::Flat)
+        {
+            u += du;
+            v += dv;
+        }
+        z += dz;
+    }
+    return a.x1 >= a.x0 ? static_cast<uint32_t>(a.x1 - a.x0 + 1) - skipped : 0;
+}
+
 /// The loop that fills a span, chosen once per triangle: its texture kind,
-/// the framebuffer's format, and for an RGB565 framebuffer its shading and
-/// cutout, which `a` already holds.
+/// the framebuffer's format, and for an RGB565 or ARGB8888 framebuffer its
+/// shading and cutout, which `a` already holds.
 using SpanFn = uint32_t (*)(const SpanArgs&);
 
 template <TexKind K, bool Cutout>
@@ -470,6 +605,21 @@ SpanFn Span565For(const SpanArgs& a)
     return depth ? &FillSpan565<K, 2, Cutout, true> : &FillSpan565<K, 2, Cutout, false>;
 }
 
+template <TexKind K, bool Cutout>
+SpanFn Span8888For(const SpanArgs& a)
+{
+    const bool depth = a.depthTest && a.depthWrite;
+    if (!a.lit)
+    {
+        return depth ? &FillSpan8888<K, 0, Cutout, true> : &FillSpan8888<K, 0, Cutout, false>;
+    }
+    if (a.grey)
+    {
+        return depth ? &FillSpan8888<K, 1, Cutout, true> : &FillSpan8888<K, 1, Cutout, false>;
+    }
+    return depth ? &FillSpan8888<K, 2, Cutout, true> : &FillSpan8888<K, 2, Cutout, false>;
+}
+
 template <TexKind K>
 SpanFn SpanFor(Deki::ColorFormat format, const SpanArgs& a)
 {
@@ -478,6 +628,20 @@ SpanFn SpanFor(Deki::ColorFormat format, const SpanArgs& a)
         if (format == Deki::ColorFormat::RGB565)
         {
             return a.alphaTest ? Span565For<K, true>(a) : Span565For<K, false>(a);
+        }
+    }
+    if constexpr (K == TexKind::Flat || K == TexKind::RGB888)
+    {
+        if (format == Deki::ColorFormat::ARGB8888)
+        {
+            return Span8888For<K, false>(a);  // nothing to cut out
+        }
+    }
+    if constexpr (K == TexKind::RGB565 || K == TexKind::RGBA8888)
+    {
+        if (format == Deki::ColorFormat::ARGB8888)
+        {
+            return a.alphaTest ? Span8888For<K, true>(a) : Span8888For<K, false>(a);
         }
     }
     switch (format)
