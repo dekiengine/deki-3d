@@ -669,6 +669,38 @@ SpanFn ChooseSpan(TexKind kind, Deki::ColorFormat format, const SpanArgs& a)
     return nullptr;
 }
 
+/// num / den rounded down, for num >= 0 and den > 0, where only answers up to
+/// `limit` (a pixel in the tile, so under 512) matter: anything past it is
+/// limit + 1. A row's edge values outgrow 32 bits on big triangles, and a
+/// 64-bit division is a slow library call on 32-bit ARM and on Xtensa, so the
+/// 64-bit case finds the few bits by shifting and subtracting instead: the
+/// same answer, no division.
+template <typename Edge>
+Edge PixelsUpTo(Edge num, Edge den, Edge limit)
+{
+    if constexpr (sizeof(Edge) <= 4)
+    {
+        return num / den;
+    }
+    else
+    {
+        if (num >= (limit + 1) * den)
+        {
+            return limit + 1;
+        }
+        Edge quotient = 0;
+        for (Edge bit = Edge(1) << 9; bit > 0; bit >>= 1)
+        {
+            if (bit <= limit && den * bit <= num)
+            {
+                num -= den * bit;
+                quotient += bit;
+            }
+        }
+        return quotient;
+    }
+}
+
 /// 1 / n for a span's steps, n up to kReciprocals: a span's length is at most
 /// its subdivision or its tile's width. Each entry is the division itself, so
 /// a span steps exactly as it did dividing.
@@ -2036,8 +2068,8 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     // Rises with x: from the first pixel where it reaches 0.
                     if (start < 0)
                     {
-                        Edge k = (-start) / step;
-                        if ((-start) % step != 0)
+                        Edge k = PixelsUpTo(-start, step, last);
+                        if (k <= last && k * step != -start)
                         {
                             ++k;
                         }
@@ -2053,7 +2085,7 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                     }
                     else
                     {
-                        const Edge k = start / (-step);
+                        const Edge k = PixelsUpTo(start, -step, last);
                         if (k < last)
                         {
                             spanEnd = std::min(spanEnd, bMinX + static_cast<int>(k));

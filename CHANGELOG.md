@@ -114,6 +114,14 @@ alongside one that has them.
   Fixed at any other size (a scene migration). The picture is the same at
   any size.
 
+### Fewer divisions on a 32-bit core
+- A row's covered span is found without 64-bit divisions: where the edge
+  values are 64-bit, a short shift-and-subtract finds the pixel count, which
+  never exceeds the tile's width. On the Miyoo Mini (built for the Cortex-A7,
+  whose hardware divide the compiler now uses) software division went from
+  8 to 12% of the CPU to 0.1%, and the 2k-triangle island from 11.8 to 11.1 ms
+  of render a frame; on the T-Deck the 2k corridor from 43.0 to 42.7 ms.
+
 ### Models at any size, built for each platform
 - A mesh of any size compiles: 16-bit indices up to 65535 vertices, 32-bit
   past that (`Mesh3D::indexBytes`, `Mesh3D::IndexAt`). Both renderers draw
