@@ -105,14 +105,22 @@ std::string Megabytes(uint64_t bytes)
 /// memory, which is where a mesh's vertices, indices and textures go, and on
 /// a target without OpenGL the software rasteriser's working memory beside it
 /// (a batch of triangles and a depth buffer for the screen). False, with why,
-/// when it cannot. A desktop or other target with an operating system is not
-/// checked; a board that names no external memory is said to be unchecked.
+/// when it cannot. Any target that states its memory is checked against it,
+/// a hosted one (an operating system runs the game as a program: a desktop,
+/// a Linux handheld) as well as a board. A hosted target that states none is
+/// not checked, as its memory is its operating system's; a board that states
+/// none is said to be unchecked.
 bool FitsTarget(const std::vector<uint8_t>& blob, const AssetExportTarget& target, const std::string& name,
                 std::string& why, std::vector<std::string>& warnings)
 {
     const PlatformConfig* platform =
         target.platformId.empty() ? nullptr : PlatformRegistry::Instance().GetPlatform(target.platformId);
-    if (!platform || platform->Capabilities().count("desktop-os") != 0 || blob.size() < sizeof(Deki3D::MeshFileHeader))
+    if (!platform || blob.size() < sizeof(Deki3D::MeshFileHeader))
+    {
+        return true;
+    }
+    const std::set<std::string> capabilities = platform->Capabilities();
+    if (platform->externalMemorySize == 0 && capabilities.count("hosted") != 0)
     {
         return true;
     }
@@ -121,7 +129,7 @@ bool FitsTarget(const std::vector<uint8_t>& blob, const AssetExportTarget& targe
     const uint64_t indexBytes = (header.flags & Deki3D::MeshFileIndex32) ? 4 : 2;
     const uint64_t mesh = static_cast<uint64_t>(header.vertexCount) * header.vertexStride +
                           static_cast<uint64_t>(header.indexCount) * indexBytes + header.texturePixelBytes;
-    const bool software = platform->Capabilities().count("opengl") == 0;
+    const bool software = capabilities.count("opengl") == 0;
     // Drawn as a scene that leaves the tiles to the platform draws.
     Deki3D::RasterConfig drawn;
     drawn.tileSize = Deki3D::PlatformTileSize(*platform);

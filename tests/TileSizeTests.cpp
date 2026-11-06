@@ -36,7 +36,7 @@ TEST(TileSize, APlatformFileSetsItsOwnWithADefine)
     EXPECT_EQ(PlatformTileSize(board), kUnnamedPlatformTileSize);
 
     DekiEditor::PlatformConfig handheld;
-    handheld.defines = { "SIMULATOR", "DEKI_3D_TILE_SIZE=64" };
+    handheld.defines = { "DEKI_HOSTED", "DEKI_3D_TILE_SIZE=64" };
     EXPECT_EQ(PlatformTileSize(handheld), 64);
 
     for (const char* wrong : { "DEKI_3D_TILE_SIZE", "DEKI_3D_TILE_SIZE=", "DEKI_3D_TILE_SIZE=big",

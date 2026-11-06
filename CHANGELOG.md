@@ -10,6 +10,13 @@ alongside one that has them.
 
 ## Unreleased
 
+### The memory check covers hosted targets that state their memory
+- A model is checked against `externalMemorySize` on any target that states
+  it. A target that provides `hosted` (an operating system runs the game: a
+  desktop, the Miyoo Mini) used to be skipped whatever it stated, as one that
+  provided `desktop-os`; it is skipped only when it states no memory, since
+  its memory is then its operating system's.
+
 ### The software rasteriser draws a model of any size, faster
 - A frame of more triangles than `RasterConfig::batchTriangles` (8192) is
   drawn in batches against one depth buffer for the screen, so any mesh draws
