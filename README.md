@@ -3,7 +3,7 @@
 > **Experimental.** Published so it can be tried and talked about, not because
 > it is settled. The component properties, the compiled mesh format and the
 > render pass hooks may all change without a migration path, and it has been
-> run on the desktop simulator and compiled for an ESP32-S3 but not yet run on
+> run on the desktop build and compiled for an ESP32-S3 but not yet run on
 > real hardware. Pin a version if you depend on it.
 
 Software-rasterised 3D for the Deki engine.
@@ -149,7 +149,7 @@ a define in its platform file, `"defines": ["DEKI_3D_TILE_SIZE=64"]`, and one
 that names none gets 32, whose depth buffer (2 KB a thread) a microcontroller
 keeps in its internal RAM. The Miyoo Mini's file names 64, which beat 32 there
 (a 6k-triangle scene from 52.8 to 56.6 frames a second in RGB565, 58.0 to
-59.7 in ARGB8888), and the desktop simulator's 128; the editor previews at
+59.7 in ARGB8888), and the desktop build's 128; the editor previews at
 128. The inspector shows what each of the project's targets uses. The picture
 is the same at any size; only the speed changes.
 
@@ -172,7 +172,7 @@ faster, and nothing to install. The backend (`GLMesh3DBackend`) is compiled
 only there (`DEKI_CAPABILITY_OPENGL`); a board without a GPU builds the
 software rasteriser alone. The pass talks to either through `Mesh3DBackend`.
 
-> **Experimental.** Run in the editor and a desktop simulator build on Windows
+> **Experimental.** Run in the editor and a desktop build on Windows
 > (desktop OpenGL 3.3); its tests compare it with the software rasteriser
 > picture for picture. Not yet run on a handheld.
 
@@ -183,7 +183,7 @@ rasteriser, and the scene format is unchanged. How the meshes reach the
 screen depends on the display:
 
 - **Into the presented frame.** Where the display presents through
-  deki-rendering's GL presenter (the desktop simulator does), the 2D drawn before a batch goes up as a layer at its first
+  deki-rendering's GL presenter (the desktop build does), the 2D drawn before a batch goes up as a layer at its first
   mesh, the meshes draw straight into the frame the presenter is building,
   and the CPU buffer starts over transparent for the 2D after them. Nothing
   is read back.
@@ -276,7 +276,7 @@ uploaded every draw.
 ### Platforms
 
 A platform gets the GPU backend when it provides `opengl`: its build then
-defines `DEKI_CAPABILITY_OPENGL`. The desktop simulator platform does; a
+defines `DEKI_CAPABILITY_OPENGL`. The Desktop platform does; a
 handheld platform will once it exists. A board without it compiles none of
 the GPU code.
 
