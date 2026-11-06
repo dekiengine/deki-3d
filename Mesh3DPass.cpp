@@ -259,7 +259,7 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
     // while a DLL unloads deadlocks on the Windows loader lock; the process
     // then cannot be killed, not even forcibly.
     //
-    // A device or simulator build links its packages, so nothing is unloaded
+    // A device or desktop build links its packages, so nothing is unloaded
     // and the workers are safe. The output is identical either way (the
     // rasteriser's tests assert it); only the speed differs.
     m_Config.threadCount = 1;

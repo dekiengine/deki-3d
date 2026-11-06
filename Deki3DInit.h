@@ -1,6 +1,6 @@
 #pragma once
 
-/// Starts the package on a static (firmware or simulator) build. Called from
+/// Starts the package on a static (firmware or desktop) build. Called from
 /// the generated DekiInitPackageSystems(). It registers the Mesh loader and
 /// keeps the render pass in the link. In a DLL the static registrars in
 /// MeshAssetLoader.cpp and Mesh3DPass.cpp do this, but a static link drops a

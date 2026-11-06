@@ -89,7 +89,7 @@ public:
     DEKI_EXPORT
     bool vertexSnap = false;
 
-    DEKI_TOOLTIP("Software only: how many threads draw on a device or simulator build: they fill the screen's tiles, "
+    DEKI_TOOLTIP("Software only: how many threads draw on a device or desktop build: they fill the screen's tiles, "
                  "and share out the geometry of each part of a mesh of a few hundred triangles or more. 1 starts no "
                  "threads at all, 2 suits a dual-core board, and above the core count it stops helping. The editor "
                  "always previews with one thread, since it loads packages as unloadable DLLs; the picture is "
