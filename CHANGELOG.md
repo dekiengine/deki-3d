@@ -10,6 +10,12 @@ alongside one that has them.
 
 ## Unreleased
 
+### Declares the capabilities it uses
+- `package.json` has `"capabilityDefines": ["opengl"]` and
+  `"filtersTexturesWith": ["opengl"]`: its GL mesh backend tests
+  `DEKI_CAPABILITY_OPENGL` and samples textures filtered. The editor reads
+  them instead of knowing `opengl` itself; needs the editor from this release.
+
 ### The memory check covers hosted targets that state their memory
 - A model is checked against `externalMemorySize` on any target that states
   it. A target that provides `hosted` (an operating system runs the game: a
