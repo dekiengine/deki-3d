@@ -8,7 +8,7 @@ breaking change bumps the minor across the editor, the engine and every
 package together, so a package with no changes of its own is still released
 alongside one that has them.
 
-## Unreleased
+## 0.30.3
 
 ### Changed
 - `Mesh3DRenderer::Gpu` is `Mesh3DRenderer::GPU`, so the Renderer list
