@@ -13,6 +13,9 @@ alongside one that has them.
 ### Changed
 - `minEngine` 0.30.0: built against engine 0.30.0. A build of this package
   from before does not load and is rebuilt.
+- The pass gathers lights only with deki-rendering's `lights` feature on
+  (`DEKI_FEATURE_LIGHTS`): a device build with no Light in its scenes leaves
+  Light out, and meshes draw unlit as in a scene without one.
 
 ### Declares the capabilities it uses
 - `package.json` has `"capabilityDefines": ["opengl"]` and

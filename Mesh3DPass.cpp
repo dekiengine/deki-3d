@@ -8,8 +8,11 @@
 #include "deki-rendering/CameraComponent.h"
 #include "deki-rendering/DekiRenderer.h"  // DekiRendering::RenderContext
 #include "deki-rendering/DekiRenderPassRegistry.h"
-#include "deki-rendering/Light.h"
 #include "deki-rendering/QuadBlit.h"  // NoteWritten
+#include "deki-rendering/RenderingFeatures.h"
+#ifdef DEKI_FEATURE_LIGHTS
+#include "deki-rendering/Light.h"
+#endif
 
 #include <deki/LogSystem.h>
 #include <deki/Object.h>
@@ -404,12 +407,17 @@ void Mesh3DPass::DrawShadows()
 
 void Mesh3DPass::GatherLights(const Deki::Object* sceneObject)
 {
-    static std::vector<const DekiRendering::Light*> s_Found;
-    DekiRendering::Light::InScene(sceneObject->GetOwnerScene(), s_Found);
-    m_Lit = !s_Found.empty();
     m_Config.ambient = Deki::Vector3(0.0f, 0.0f, 0.0f);
     m_Config.lightCount = 0;
     m_ShadowLights.clear();
+#ifndef DEKI_FEATURE_LIGHTS
+    // No scene of this build has a Light (deki-rendering's RenderingFeatures.h).
+    (void)sceneObject;
+    m_Lit = false;
+#else
+    static std::vector<const DekiRendering::Light*> s_Found;
+    DekiRendering::Light::InScene(sceneObject->GetOwnerScene(), s_Found);
+    m_Lit = !s_Found.empty();
 
     // The ambient adds up; the rest are lights of their own, the strongest
     // kMaxLights of them if there are more.
@@ -514,6 +522,7 @@ void Mesh3DPass::GatherLights(const Deki::Object* sceneObject)
         l.cosOuter = std::cos(half);
         l.cosInner = std::max(std::cos(half * (1.0f - soft)), l.cosOuter + 1e-4f);
     }
+#endif
 }
 
 void Mesh3DPass::EndBatch()
