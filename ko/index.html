@@ -57,7 +57,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">deki-3d<span id="projectnumber">&#160;0.22.0</span>
+   <div id="projectname">deki-3d<span id="projectnumber">&#160;0.30.0</span>
    </div>
    <div id="projectbrief">Deki 패키지 레퍼런스</div>
   </td>
@@ -115,7 +115,7 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('index.html',''
 <img src="deki-3d.png" alt=""/>
 </div>
     <p>렌더 패스로 동작하는 소프트웨어 래스터화 3D: 메시, 원근 카메라, .obj 임포트를 제공하며 2D와 하나의 프레임 버퍼를 공유합니다.</p>
-<p>저장소: <a href="https://github.com/dekiengine/deki-3d">github.com/dekiengine/deki-3d</a> · 최신 릴리스: 0.22.0 · 엔진 0.22.0 이상 필요 · 의존: <a href="https://dekiengine.github.io/deki-rendering/ko/">deki-rendering</a></p>
+<p>저장소: <a href="https://github.com/dekiengine/deki-3d">github.com/dekiengine/deki-3d</a> · 최신 릴리스: 0.30.0 · 엔진 0.30.0 이상 필요 · 의존: <a href="https://dekiengine.github.io/deki-rendering/ko/">deki-rendering</a></p>
 <p><span class="tt">DekiEditor --packages-add deki-3d &lt;project&gt;</span> 또는 패키지 관리자로 설치합니다. 엔진 자체의 컴포넌트와 C++ API는 <a href="https://dekiengine.github.io/docs/ko/">Deki 문서</a>에 있습니다.</p>
 <p>에디터에는 <b>3D</b>(으)로 표시됩니다.</p>
 <h1 class="doxsection"><a class="anchor" id="components"></a>
@@ -124,7 +124,7 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('index.html',''
 <tr class="markdownTableHead">
 <th class="markdownTableHeadNone">컴포넌트  </th><th class="markdownTableHeadNone">카테고리  </th><th class="markdownTableHeadNone">설명  </th></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyNone"><a class="el" href="#c-mesh3dsettings" title="Mesh3DSettings">Mesh3DSettings</a>  </td><td class="markdownTableBodyNone">3D  </td><td class="markdownTableBodyNone">3D 패스의 그리기 방식입니다. 타일, 텍스처와 버텍스 옵션, 라이트, 스레드를 설정합니다.  </td></tr>
+<td class="markdownTableBodyNone"><a class="el" href="#c-mesh3dsettings" title="Mesh3DSettings">Mesh3DSettings</a>  </td><td class="markdownTableBodyNone">3D  </td><td class="markdownTableBodyNone">How the 3D pass draws: tiles, texture and vertex switches, light and threads.  </td></tr>
 <tr class="markdownTableRowEven">
 <td class="markdownTableBodyNone"><a class="el" href="#c-meshcomponent" title="MeshComponent">MeshComponent</a>  </td><td class="markdownTableBodyNone">3D  </td><td class="markdownTableBodyNone">3D 메시를 그립니다. 오브젝트의 트랜스폼이 위치를 정하며, 메시를 보려면 씬 카메라가 원근이어야 합니다.  </td></tr>
 </table>
@@ -141,25 +141,25 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('index.html',''
 컴포넌트 레퍼런스</h1>
 <h2 class="doxsection"><a class="anchor" id="c-mesh3dsettings"></a>
 Mesh3DSettings</h2>
-<p>3D 패스의 그리기 방식입니다. 타일, 텍스처와 버텍스 옵션, 라이트, 스레드를 설정합니다.</p>
+<p>How the 3D pass draws: tiles, texture and vertex switches, light and threads.</p>
 <p>인스펙터 이름: Mesh3D 설정 · 카테고리: 3D · 유형: <span class="tt">Deki3D::Mesh3DSettings</span></p>
 <table class="markdownTable">
 <tr class="markdownTableHead">
 <th class="markdownTableHeadNone">속성  </th><th class="markdownTableHeadNone">유형  </th><th class="markdownTableHeadNone">기본값  </th><th class="markdownTableHeadNone">제약  </th><th class="markdownTableHeadNone">설명  </th></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyNone"><span class="tt">tileSize</span>  </td><td class="markdownTableBodyNone">int32  </td><td class="markdownTableBodyNone"><span class="tt">32</span>  </td><td class="markdownTableBodyNone">8~512  </td><td class="markdownTableBodyNone">타일 한 변의 길이(픽셀)입니다. 깊이 버퍼는 타일 하나 크기이므로 32는 2 KB로 마이크로컨트롤러에 적합하며, 데스크톱은 128 이상도 쓸 수 있습니다.  </td></tr>
+<td class="markdownTableBodyNone"><span class="tt">tileSize</span>  </td><td class="markdownTableBodyNone">int32  </td><td class="markdownTableBodyNone"><span class="tt">32</span>  </td><td class="markdownTableBodyNone">8~512  </td><td class="markdownTableBodyNone">Tile edge in pixels. The depth buffer is one tile, so 32 costs 2 KB and suits a microcontroller, while a desktop can afford 128 or more.  </td></tr>
 <tr class="markdownTableRowEven">
 <td class="markdownTableBodyNone"><span class="tt">perspectiveCorrect</span>  </td><td class="markdownTableBodyNone">bool  </td><td class="markdownTableBodyNone"><span class="tt">true</span>  </td><td class="markdownTableBodyNone"></td><td class="markdownTableBodyNone">텍스처 원근을 보정합니다. 끄면 PlayStation 시대 하드웨어처럼 텍스처가 일그러지고, 채우기 비용이 약 10분의 1 줄어듭니다.  </td></tr>
 <tr class="markdownTableRowOdd">
 <td class="markdownTableBodyNone"><span class="tt">vertexSnap</span>  </td><td class="markdownTableBodyNone">bool  </td><td class="markdownTableBodyNone"><span class="tt">false</span>  </td><td class="markdownTableBodyNone"></td><td class="markdownTableBodyNone">투영된 버텍스를 정수 픽셀로 반올림하여, 고정 소수점 시대 하드웨어의 떨림을 냅니다.  </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyNone"><span class="tt">lightYaw</span>  </td><td class="markdownTableBodyNone">float  </td><td class="markdownTableBodyNone"><span class="tt">-25</span>  </td><td class="markdownTableBodyNone">-180~180  </td><td class="markdownTableBodyNone">씬 라이트가 들어오는 방향을 수직축을 중심으로 한 각도로 지정합니다. 0이면 카메라 뒤, 90이면 오른쪽입니다.  </td></tr>
+<td class="markdownTableBodyNone"><span class="tt">lightYaw</span>  </td><td class="markdownTableBodyNone">float  </td><td class="markdownTableBodyNone"><span class="tt">-25</span>  </td><td class="markdownTableBodyNone">-180~180  </td><td class="markdownTableBodyNone">Direction the scene light comes from, swept around the vertical axis. 0 puts it behind the camera, 90 to the right.  </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyNone"><span class="tt">lightPitch</span>  </td><td class="markdownTableBodyNone">float  </td><td class="markdownTableBodyNone"><span class="tt">55</span>  </td><td class="markdownTableBodyNone">-90~90  </td><td class="markdownTableBodyNone">씬 라이트의 높이입니다. 90은 바로 위, 0은 지평선과 같은 높이입니다.  </td></tr>
+<td class="markdownTableBodyNone"><span class="tt">lightPitch</span>  </td><td class="markdownTableBodyNone">float  </td><td class="markdownTableBodyNone"><span class="tt">55</span>  </td><td class="markdownTableBodyNone">-90~90  </td><td class="markdownTableBodyNone">How high the scene light sits. 90 is directly overhead, 0 level with the horizon.  </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyNone"><span class="tt">ambient</span>  </td><td class="markdownTableBodyNone">float  </td><td class="markdownTableBodyNone"><span class="tt">0.25</span>  </td><td class="markdownTableBodyNone">0~1  </td><td class="markdownTableBodyNone">라이트 반대쪽을 향한 면이 얼마나 밝게 남는지 지정합니다. 0이면 완전히 검게 되어 극적인 느낌이 나고, 높일수록 음영이 평평해집니다.  </td></tr>
+<td class="markdownTableBodyNone"><span class="tt">ambient</span>  </td><td class="markdownTableBodyNone">float  </td><td class="markdownTableBodyNone"><span class="tt">0.25</span>  </td><td class="markdownTableBodyNone">0~1  </td><td class="markdownTableBodyNone">How lit the faces turned away from the light still are. 0 leaves them black, which is dramatic; higher flattens the shading out.  </td></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyNone"><span class="tt">fillThreads</span>  </td><td class="markdownTableBodyNone">int32  </td><td class="markdownTableBodyNone"><span class="tt">1</span>  </td><td class="markdownTableBodyNone">1~16  </td><td class="markdownTableBodyNone">장치나 시뮬레이터 빌드에서 화면을 채우는 스레드 수입니다. 타일은 서로 독립적이므로 코어 수에 따라 빨라지는 유일한 부분입니다. 1이면 스레드를 전혀 시작하지 않고, 2는 듀얼 코어 보드에 적합하며, 코어 수를 넘기면 더 이상 도움이 되지 않습니다. 에디터는 패키지를 언로드 가능한 DLL로 로드하므로 항상 스레드 하나로 미리 보기합니다. 어느 쪽이든 그림은 같습니다.  </td></tr>
+<td class="markdownTableBodyNone"><span class="tt">fillThreads</span>  </td><td class="markdownTableBodyNone">int32  </td><td class="markdownTableBodyNone"><span class="tt">1</span>  </td><td class="markdownTableBodyNone">1~16  </td><td class="markdownTableBodyNone">How many threads fill the screen on a device or simulator build. Tiles are independent, so this is the one part that scales with cores: 1 starts no threads at all, 2 suits a dual-core board, and above the core count it stops helping. The editor always previews with one thread, since it loads packages as unloadable DLLs; the picture is identical either way.  </td></tr>
 </table>
 <h2 class="doxsection"><a class="anchor" id="c-meshcomponent"></a>
 MeshComponent</h2>
@@ -169,13 +169,13 @@ MeshComponent</h2>
 <tr class="markdownTableHead">
 <th class="markdownTableHeadNone">속성  </th><th class="markdownTableHeadNone">유형  </th><th class="markdownTableHeadNone">기본값  </th><th class="markdownTableHeadNone">제약  </th><th class="markdownTableHeadNone">설명  </th></tr>
 <tr class="markdownTableRowOdd">
-<td class="markdownTableBodyNone"><span class="tt">mesh</span>  </td><td class="markdownTableBodyNone">AssetRef (MeshAsset)  </td><td class="markdownTableBodyNone"><span class="tt">""</span>  </td><td class="markdownTableBodyNone"></td><td class="markdownTableBodyNone">컴파일된 메시 에셋입니다. 임포트한 모델을 여기에 할당합니다. 비워 두면 대신 아래의 프리미티브를 그립니다.  </td></tr>
+<td class="markdownTableBodyNone"><span class="tt">mesh</span>  </td><td class="markdownTableBodyNone">AssetRef (Mesh)  </td><td class="markdownTableBodyNone"><span class="tt">""</span>  </td><td class="markdownTableBodyNone"></td><td class="markdownTableBodyNone">컴파일된 메시 에셋입니다. 임포트한 모델을 여기에 할당합니다. 비워 두면 대신 아래의 프리미티브를 그립니다.  </td></tr>
 <tr class="markdownTableRowEven">
 <td class="markdownTableBodyNone"><span class="tt">primitive</span>  </td><td class="markdownTableBodyNone">enum  </td><td class="markdownTableBodyNone"><span class="tt">"Cube"</span>  </td><td class="markdownTableBodyNone"><span class="tt">Cube</span>, <span class="tt">Quad</span>, <span class="tt">Pyramid</span>  </td><td class="markdownTableBodyNone">메시 에셋이 할당되지 않았을 때 그릴 내장 도형입니다.  </td></tr>
 <tr class="markdownTableRowOdd">
 <td class="markdownTableBodyNone"><span class="tt">tintColor</span>  </td><td class="markdownTableBodyNone">Color  </td><td class="markdownTableBodyNone"><span class="tt">"#000000FF"</span>  </td><td class="markdownTableBodyNone"></td><td class="markdownTableBodyNone">메시 자체의 색상에 곱해집니다. 흰색이면 그대로 표시됩니다.  </td></tr>
 <tr class="markdownTableRowEven">
-<td class="markdownTableBodyNone"><span class="tt">shading</span>  </td><td class="markdownTableBodyNone">enum  </td><td class="markdownTableBodyNone"><span class="tt">"VertexLit"</span>  </td><td class="markdownTableBodyNone"><span class="tt">Unlit</span>, <span class="tt">VertexLit</span>, <span class="tt">Flat</span>  </td><td class="markdownTableBodyNone">언릿은 단색입니다. 버텍스 릿은 씬 라이트를 기준으로 버텍스마다 음영을 줍니다. 플랫은 삼각형 전체에 음영을 주어 각진 면이 드러나는 모습이 됩니다.  </td></tr>
+<td class="markdownTableBodyNone"><span class="tt">shading</span>  </td><td class="markdownTableBodyNone">enum  </td><td class="markdownTableBodyNone"><span class="tt">"VertexLit"</span>  </td><td class="markdownTableBodyNone"><span class="tt">Unlit</span>, <span class="tt">VertexLit</span>, <span class="tt">Flat</span>  </td><td class="markdownTableBodyNone">Unlit is flat colour. Vertex lit shades each vertex against the scene light. Flat shades whole triangles, which is the faceted look.  </td></tr>
 <tr class="markdownTableRowOdd">
 <td class="markdownTableBodyNone"><span class="tt">doubleSided</span>  </td><td class="markdownTableBodyNone">bool  </td><td class="markdownTableBodyNone"><span class="tt">false</span>  </td><td class="markdownTableBodyNone"></td><td class="markdownTableBodyNone">메시의 바깥쪽뿐 아니라 안쪽도 그립니다. 채우기 비용이 약 두 배가 됩니다.  </td></tr>
 </table>
@@ -184,28 +184,104 @@ MeshComponent</h2>
 변경 내역</h1>
 <p>변경 내역은 영어로 되어 있습니다.</p>
 <h2 class="doxsection"><a class="anchor" id="autotoc_md0"></a>
-0.22.0</h2>
+0.30.0</h2>
 <h2 class="doxsection"><a class="anchor" id="autotoc_md1"></a>
+Changed</h2>
+<ul>
+<li><span class="tt">minEngine</span> 0.30.0: built against engine 0.30.0. A build of this package from before does not load and is rebuilt.</li>
+<li>The pass gathers lights only with deki-rendering's <span class="tt">lights</span> feature on (<span class="tt">DEKI_FEATURE_LIGHTS</span>): a device build with no Light in its scenes leaves Light out, and meshes draw unlit as in a scene without one.</li>
+</ul>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md2"></a>
+Declares the capabilities it uses</h2>
+<ul>
+<li><span class="tt">package.json</span> has <span class="tt">"capabilityDefines": ["opengl"]</span> and <span class="tt">"filtersTexturesWith": ["opengl"]</span>: its GL mesh backend tests <span class="tt">DEKI_CAPABILITY_OPENGL</span> and samples textures filtered. The editor reads them instead of knowing <span class="tt">opengl</span> itself; needs the editor from this release.</li>
+</ul>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md3"></a>
+The memory check covers hosted targets that state their memory</h2>
+<ul>
+<li>A model is checked against <span class="tt">externalMemorySize</span> on any target that states it. A target that provides <span class="tt">hosted</span> (an operating system runs the game: a desktop, the Miyoo Mini) used to be skipped whatever it stated, as one that provided <span class="tt">desktop-os</span>; it is skipped only when it states no memory, since its memory is then its operating system's.</li>
+</ul>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md4"></a>
+The software rasteriser draws a model of any size, faster</h2>
+<ul>
+<li>A frame of more triangles than <span class="tt">RasterConfig::batchTriangles</span> (8192) is drawn in batches against one depth buffer for the screen, so any mesh draws in fixed memory; a frame within one batch fills tile by tile as before. The triangles and tile lists are in PSRAM where the board has it (<span class="tt">RegionArray</span>): as std::vectors they took a board's internal heap and, with Sponza, aborted the T-Deck. With no memory for another batch the frame draws what it has and says so once. The build's memory check counts this working memory (<span class="tt">Raster3D::WorkingBytes</span>) beside each model on a board without OpenGL.</li>
+<li>A part of a mesh out of view is skipped (<span class="tt">Submesh3D</span> bounds, worked out when the mesh loads), and a triangle outside the view or facing away is dropped before it is lit.</li>
+<li>Each vertex is transformed and lit once per part, not once per triangle using it (a 128-vertex cache).</li>
+<li>Each row of a triangle is filled from where its edges cross the row, not by testing every pixel of its box; setup and the edge walk are 32-bit for a triangle near the screen. The same pixels as before.</li>
+<li>An RGB565 framebuffer with a flat, palette or RGB565 texture has a loop of its own (<span class="tt">FillSpan565</span>): the span's settings in registers, and its shading and cutout chosen once per span rather than tested per pixel. The same pixels; on a T-Deck a full screen of textured 3D fills about 8 ms sooner.</li>
+<li>An ARGB8888 framebuffer (the Miyoo Mini's, a desktop's in software) with a flat colour or an RGB565, RGB888 or RGBA8888 texture has one too (<span class="tt">FillSpan8888</span>): the same structure, a pixel kept as its red and blue and its green so a grey light shades it with two multiplies, and a flat colour shaded once a span. The same pixels as the generic loop, which the new <span class="tt">RasterSpans</span> test checks against an RGB888 framebuffer for every texture kind, shading, cutout and depth setting (and in the big-endian build). On a desktop a 640x480 frame of lit cubes at 128-pixel tiles fills in 0.50 ms untextured (from 0.93), 1.07 with an RGB888 texture (from 1.41), 1.09 with RGB565 (from 1.44) and 1.19 with a cut-out RGBA8888 one (from 1.43) (<span class="tt">RasterSpans.DISABLED_Argb8888FillSpeed</span>). A palette, RGB565A8 or ALPHA8 texture still takes the generic loop.</li>
+<li>A triangle's span settings and the loop that fills its spans are set once per triangle, not per span, and a span's step comes from a table of reciprocals. The same pixels.</li>
+<li>Each vertex is projected once, in the vertex cache: a triangle wholly in front of the near plane is binned from its corners' projections without the clip's copies, and the early backface test reads them instead of dividing six times. The same pixels.</li>
+<li>A binned triangle keeps its colour and light once, its first corner's, the only ones the fill reads: 92 bytes, not 124, written to PSRAM once and read back once a tile. The same pixels.</li>
+<li>On an Xtensa FPU (ESP32-S3) that divide, and a triangle's 1/area, are the FPU's reciprocal estimate and two Newton steps, inline, where a divide is a library call: within an ulp, and the T-Deck's corridor frames come out pixel for pixel the same.</li>
+<li>A row of a triangle is bounded by two of its edges, not three: above its middle corner by the two from the top corner, below by the two to the bottom one (the same pixels). Its spans step from the row's values at x = 0, with u and v already in texels and z in depth units, so a span keeps four bases and four steps, which the FPU holds, instead of reading the whole gradients back from the stack. Depth can round an ulp differently, which settles a tie between two surfaces at the same depth the other way: about 0.5% of Sponza's pixels, in the distance.</li>
+<li>One divide per span finds the w at both its ends (a divide is a library call on a microcontroller's FPU). w can differ by an ulp, which moves a texel only where its edge falls within about a millionth of a texel of a pixel's centre.</li>
+<li>The frame's clear is drawn by the rasteriser, under each tile as its first fill reaches it (<span class="tt">Raster3D::SetBackground</span>, from <span class="tt">QuadBlit::TakePendingClear</span>), rather than over the whole screen first; a frame lit the same all over gets it lit (deki-rendering). Otherwise the clear is made before a mesh can write (<span class="tt">QuadBlit::BeforeWriting</span>).</li>
+<li><span class="tt">fillThreads</span> 2 fills on the second core of an ESP32-S3: the fill worker is pinned to the core the engine is not on (it ran on the same one). deki-3d now needs ESP-IDF's <span class="tt">pthread</span> component.</li>
+<li><span class="tt">fillThreads</span> above 1 shares out the geometry too (transform, lighting, clipping, projection) for a part of a mesh of 256 triangles or more: each thread takes blocks of 256 triangles in turn, into its own vertex cache and triangle list, and the calling thread bins them in their order, so the picture, the batches and <span class="tt">RasterStats</span> are the same on any number of threads. The memory is reserved on the calling thread first, since <span class="tt">Deki::Memory</span>'s tracking is not thread-safe, and a board's worker gets a 4 KB stack for the clip and lighting. More than 16 threads (<span class="tt">RasterConfig::kMaxThreads</span>) are held to 16, with a warning. On a T-Deck (ESP32-S3, two cores) the 2k-triangle corridor's geometry drops from 11.8 ms to about 9.6; on a Miyoo Mini (two Cortex-A7s) the 13k-triangle island scene runs at a steady 30 frames a second.</li>
+<li><span class="tt">RasterStats</span> counts batches, triangles dropped, parts skipped, and the time spent on geometry and on filling.</li>
+<li>Sponza (Detail 10%, which keeps 82k triangles, one directional and one ambient light) on a LilyGO T-Deck: 1 frame a second, from a reboot loop. Now 1.3. A textured corridor of 2,000 triangles at 320x240: 20.4 frames a second (21.1 unlit), from 11; of 1,000, 26.7, from 14 (drawn in strips, the frame in PSRAM).</li>
+<li><span class="tt">DISABLED_DrawACompiledMesh</span> (by hand) draws a compiled mesh file, or an .obj at a Detail, as a T-Deck does (320x240 RGB565, one and two threads), to compare a board's picture with the desktop's.</li>
+<li>The tile size is the platform's unless the scene fixes one: the new <span class="tt">Mesh3DSettings.tiles</span> is Platform (the default) or Fixed, and Fixed uses <span class="tt">tileSize</span> everywhere. A platform names its own with <span class="tt">DEKI_3D_TILE_SIZE=&lt;n&gt;</span> in its platform file's <span class="tt">defines</span>; one that names none gets 32, which a microcontroller's internal RAM holds. The Miyoo Mini (deki-miyoo-boards) names 64, which beat 32 there (a 6k-triangle scene from 52.8 to 56.6 frames a second in RGB565, 58.0 to 59.7 in ARGB8888), and the desktop simulator (deki-desktop-integration) 128; the editor previews at<ol type="1">
+<li>The inspector shows each target's, and the build's memory check counts a target's own. A scene saved before, which had one size for every platform, takes the platform's if it kept the old default of 32 and stays Fixed at any other size (a scene migration). The picture is the same at any size.</li>
+</ol>
+</li>
+</ul>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md5"></a>
+Fewer divisions on a 32-bit core</h2>
+<ul>
+<li>A row's covered span is found without 64-bit divisions: where the edge values are 64-bit, a short shift-and-subtract finds the pixel count, which never exceeds the tile's width. On the Miyoo Mini (built for the Cortex-A7, whose hardware divide the compiler now uses) software division went from 8 to 12% of the CPU to 0.1%, and the 2k-triangle island from 11.8 to 11.1 ms of render a frame; on the T-Deck the 2k corridor from 43.0 to 42.7 ms.</li>
+</ul>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md6"></a>
+Models at any size, built for each platform</h2>
+<ul>
+<li>A mesh of any size compiles: 16-bit indices up to 65535 vertices, 32-bit past that (<span class="tt">Mesh3D::indexBytes</span>, <span class="tt">Mesh3D::IndexAt</span>). Both renderers draw either. Mesh files are version 5 (the header ends in <span class="tt">flags</span>); version 4 files still load.</li>
+<li>Each platform's build keeps what it can use. A model's own setting is Detail, per platform: the share of triangles kept (<span class="tt">editor/MeshSimplify.h</span>: edge collapse by quadric error, never moving a seam, an open edge or a material border, never turning a triangle over).</li>
+<li>A model's textures follow their images' own settings for the platform: Format, Max Size and Filter (Point, Bilinear, Trilinear; <span class="tt">Texture3D::filter</span>, from the engine's <span class="tt">TextureFilter</span>), set in the image's inspector, several at once. There is no cap of the model's own: a board's build says when a model does not fit. On the GPU Bilinear is linear, and Trilinear linear between mipmaps; the software rasteriser draws Point. <span class="tt">MeshCompileOptions::textureFor</span> gives each texture's settings by its image's path.</li>
+<li>What a model is compiled from (<span class="tt">ObjSourceFiles</span>: its material library and images) is part of its cache stamp, so a change to one rebuilds it.</li>
+<li>The Model inspector (<span class="tt">.obj</span>): what the editor's build holds, and the Targets cards for Detail, Default and per platform. Settings in <span class="tt">editor/ModelSettings.h</span>; a model's <span class="tt">.data</span> from before, with texture settings of its own, loses them when saved.</li>
+<li>A board build stops when a model needs more external memory than the board has, naming its images' Max Size and its Detail, and warns when Detail stops above what it asks.</li>
+<li>A mesh loads from its file part by part, each straight into its own buffer (<span class="tt">MeshAsset::LoadFromFile</span>), so loading takes the mesh's size in memory. The loader read the whole file in first and then copied it, so a load held twice the mesh (8.6 MB for a 4.3 MB one), and a mesh the build check let through could still not load on the board.</li>
+<li>The importer reads <span class="tt">map_d</span> as a texture's cutout and paths written with backslashes. <span class="tt">CompileObjToMesh</span> takes a <span class="tt">MeshCompileOptions</span> (each texture's settings, detail, and a report of what it did) in place of its last two arguments.</li>
+<li>Breaking: <span class="tt">Mesh3D::indices</span> is a <span class="tt">const void*</span> read through <span class="tt">IndexAt</span>.</li>
+<li>Tests: <span class="tt">BigMeshTests.cpp</span>, <span class="tt">MeshSimplifyTests.cpp</span>, the GPU drawing past 65535 vertices, bilinear and trilinear textures, and an off-centre shadow, which the centred cube test could not catch a mirrored lookup with. By hand: <span class="tt">DISABLED_CompileAModel</span> and <span class="tt">DISABLED_AModelUnderTheSun</span> take a real model (<span class="tt">DEKI_TEST_OBJ</span>).</li>
+</ul>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md7"></a>
+Lights and shadows</h2>
+<ul>
+<li>Meshes are lit by the scene's <span class="tt">DekiRendering::Light</span> components: an ambient colour and up to 8 directional, point and spot lights, in colour, by distance, cone and facing, up to twice a colour (<span class="tt">LightAt</span>, <span class="tt">Light3D</span>, <span class="tt">RasterConfig::lights</span>). The software rasteriser lights a mesh by the 4 lights that reach it most and shades per channel.</li>
+<li>Shadows on the GPU, from up to two directional or spot lights a frame (<span class="tt">ShadowMap</span>, <span class="tt">Mesh3DBackend::DrawShadowCaster</span>), cast by every mesh with the new <span class="tt">MeshComponent::castShadows</span> (on by default). The software rasteriser draws without them and says so.</li>
+<li>A scene without a Light draws its lit meshes unlit and says so once per mesh; a lit mesh <span class="tt">LightsItself()</span>, so the 2D light goes under it.</li>
+<li>Breaking: <span class="tt">Mesh3DSettings</span> loses <span class="tt">lightYaw</span>, <span class="tt">lightPitch</span> and <span class="tt">ambient</span>; a scene saved with them opens with an Ambient and a Directional Light that light it as before. <span class="tt">RasterConfig::lightDirection</span> and <span class="tt">ambient</span> (a float) become <span class="tt">ambient</span> (a colour) and <span class="tt">lights</span>. <span class="tt">DrawMesh</span> takes the model matrix, <span class="tt">Identity</span> by default.</li>
+<li>Breaking, for shaders: <span class="tt">Fragment.light</span> is a <span class="tt">float3</span>, one light per channel; <span class="tt">Fragment.position</span> (world space) and <span class="tt">LightAt(position, normal)</span> are new. <span class="tt">uLightDir</span> is gone.</li>
+<li><span class="tt">Ortho</span> in Math3D.h.</li>
+</ul>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md8"></a>
+Added</h2>
+<ul>
+<li><span class="tt">Mesh3DBackend</span>: what draws the pass's meshes. <span class="tt">Raster3D</span> is one; <span class="tt">GLMesh3DBackend</span> draws them on the GPU, through OpenGL ES 3.0 or desktop OpenGL 3.3, where the platform provides <span class="tt">opengl</span> (<span class="tt">DEKI_CAPABILITY_OPENGL</span>). A board without it compiles none of it. <span class="tt">RasterConfig</span> and <span class="tt">RasterStats</span> moved to its header (<span class="tt">Raster3D.h</span> still includes it).</li>
+<li><span class="tt">Mesh3DSettings.renderer</span>: Auto (the GPU where the platform has OpenGL), Software or GPU.</li>
+<li><span class="tt">MeshComponent.shader</span>, <span class="tt">shaderParams</span> and <span class="tt">shaderColor</span>, and the same on <span class="tt">Material3D</span>: a GPU shader for the mesh (deki-rendering's <span class="tt">ShaderAsset</span>), in HLSL with <span class="tt">Displace()</span> and <span class="tt">Shade()</span> hooks (<span class="tt">editor/MeshShaderUse.cpp</span>, which the built-in program is generated from too). The software rasteriser draws the shading model and warns once.</li>
+<li><span class="tt">Mesh3DSettings.composeOnGpu</span> and <span class="tt">RasterConfig::composeOnGpu</span>: a GPU backend may draw straight into a frame the display builds on the GPU, leaving the CPU buffer with only the 2D drawn after the meshes. On by default; off for a scene that reads the whole frame back.</li>
+<li><span class="tt">Mesh3D::revision</span> and <span class="tt">Texture3D::revision</span>, which change with the data so a GPU backend can keep its uploads. Mesh assets and the built-in primitives set them (<span class="tt">NextRevision()</span>).</li>
+<li><span class="tt">Mesh3DBackend::WritesBuffer</span>: whether a batch reached the frame through the buffer. Where the 2D is drawn on the GPU too (deki-rendering's <span class="tt">QuadBlit::BlitSink</span>), <span class="tt">Mesh3DPass</span> tells it after a batch that did (the software rasteriser, a GPU backend reading back), so the meshes stay between the 2D drawn before and after them. The pass itself says it writes nothing (<span class="tt">RenderPass::WritesBuffer</span>).</li>
+</ul>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md9"></a>
+Fixed</h2>
+<ul>
+<li>Tint colours were packed in the wrong byte order (<span class="tt">ToRGBA8888</span> where materials keep 0xAABBGGRR), so any tint but white came out with its channels swapped. With the default tint, opaque black, that turned every mesh red. The default is now white, as its tooltip always said; a scene that saved the old default now draws its meshes black, as it asks.</li>
+<li>Big-endian boards (<span class="tt">DEKI_RGB565_BIG_ENDIAN</span>): RGB565 into an RGB565 framebuffer came out byte-swapped, while every other framebuffer format was right. Meshes now hold RGB565 and RGB565A8 textures in memory's byte order once loaded, as images do, and the rasteriser reads and writes 565 values in that order. Nothing changes on little-endian boards.</li>
+</ul>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md10"></a>
+0.22.0</h2>
+<h2 class="doxsection"><a class="anchor" id="autotoc_md11"></a>
 Changed</h2>
 <ul>
 <li><span class="tt">minEngine</span> 0.22.0: built against engine 0.22.0. A build of this package from before does not load and is rebuilt.</li>
 </ul>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md2"></a>
-0.19.0</h2>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md3"></a>
-Changed</h2>
-<ul>
-<li><span class="tt">minEngine</span> 0.19.0: built against engine 0.19.0, whose component metadata records the package each class is in. A build of this package from before does not load and is rebuilt.</li>
-</ul>
-<h2 class="doxsection"><a class="anchor" id="autotoc_md4"></a>
-Added</h2>
-<ul>
-<li>Japanese, Simplified Chinese and Korean: <span class="tt">editor/lang/ja.json</span>, <span class="tt">zh.json</span> and <span class="tt">ko.json</span> translate the names, tooltips and enum values this package's components show in the Inspector.</li>
-<li>The package's editor text goes through the editor's translation (<span class="tt">Tr</span>), so it shows in the editor's language. Needs the editor release that adds <span class="tt">Localization.h</span>; raise <span class="tt">minEngine</span> to it when releasing.</li>
-</ul>
 <p>이전 릴리스: <a href="https://github.com/dekiengine/deki-3d/blob/master/CHANGELOG.md">CHANGELOG.md</a></p>
 <hr  />
-<p>패키지의 리플렉션 데이터에서 생성했습니다(엔진 0.22.0). 속성 이름은 씬 파일에서 쓰는 키입니다. 이름을 바꿔도 별칭이 유지됩니다(<a href="https://github.com/dekiengine/deki-editor/blob/master/COMPATIBILITY.md">호환성</a>). </p>
+<p>패키지의 리플렉션 데이터에서 생성했습니다(엔진 0.30.0). 속성 이름은 씬 파일에서 쓰는 키입니다. 이름을 바꿔도 별칭이 유지됩니다(<a href="https://github.com/dekiengine/deki-editor/blob/master/COMPATIBILITY.md">호환성</a>). </p>
 </div></div><!-- PageDoc -->
 <a href="doxygen_crawl.html"></a>
 </div><!-- contents -->
