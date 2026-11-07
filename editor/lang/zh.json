@@ -37,7 +37,7 @@
     "Each is an image of the project, stored and drawn as that image's own settings say: its Format, Max Size and Filter, per platform, in the image's inspector.": "每一张都是项目中的图像，按该图像自己的设置存储和绘制：各平台的格式、最大尺寸和滤波方式，在图像的检查器中设置。",
     "Fixed": "固定",
     "GPU only: build the frame on the GPU where the display presents through it, drawing the meshes straight into it between layers of 2D instead of reading them back. Much faster on a handheld. Turn it off if something later in the frame reads the whole picture back from the frame buffer (a full-screen effect pass); with it on, that buffer holds only the 2D drawn after the meshes.": "仅 GPU：显示通过 GPU 呈现时，在 GPU 上构建帧，把网格直接画进 2D 图层之间，而不读回。在掌机上快得多。如果帧中之后有东西要从帧缓冲区读回整个画面（全屏效果通道），请关闭它；开启时，该缓冲区只包含网格之后绘制的 2D。",
-    "Gpu": "GPU",
+    "GPU": "GPU",
     "How the 3D pass draws: renderer, tiles, texture and vertex switches, threads.": "3D 通道的绘制方式：渲染器、图块、纹理和顶点开关、线程。",
     "Materials": "材质",
     "Model": "模型",

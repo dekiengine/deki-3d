@@ -37,7 +37,7 @@
     "Each is an image of the project, stored and drawn as that image's own settings say: its Format, Max Size and Filter, per platform, in the image's inspector.": "それぞれがプロジェクトの画像で、その画像自身の設定どおりに保存・描画されます。プラットフォームごとのフォーマット、最大サイズ、フィルターは画像のインスペクターにあります。",
     "Fixed": "固定",
     "GPU only: build the frame on the GPU where the display presents through it, drawing the meshes straight into it between layers of 2D instead of reading them back. Much faster on a handheld. Turn it off if something later in the frame reads the whole picture back from the frame buffer (a full-screen effect pass); with it on, that buffer holds only the 2D drawn after the meshes.": "GPU のみ: ディスプレイが GPU で表示する場合、フレームを GPU 上で組み立て、メッシュを読み戻さずに 2D のレイヤーの間へ直接描きます。携帯機ではずっと速くなります。フレームの後のほうで画面全体をフレームバッファーから読み戻すもの (全画面エフェクトのパス) があるならオフにしてください。オンのときそのバッファーには、メッシュの後に描いた 2D しか入りません。",
-    "Gpu": "GPU",
+    "GPU": "GPU",
     "How the 3D pass draws: renderer, tiles, texture and vertex switches, threads.": "3D パスの描画方法: レンダラー、タイル、テクスチャーと頂点の切り替え、スレッド。",
     "Materials": "マテリアル",
     "Model": "モデル",

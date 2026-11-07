@@ -15,7 +15,7 @@ enum class Mesh3DRenderer : uint8_t
 {
     Auto = 0,      // the GPU where the build has one, software elsewhere
     Software = 1,  // always the software rasteriser
-    Gpu = 2,       // the GPU; software, with a warning, where there is none
+    GPU = 2,       // the GPU; software, with a warning, where there is none
 };
 
 /// Where the software rasteriser's tile size comes from.

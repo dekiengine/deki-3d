@@ -280,7 +280,7 @@ void Mesh3DPass::Start(const Deki::Object* sceneObject)
         {
             m_Backend = gpu;
         }
-        else if (cam3d.renderer == Mesh3DRenderer::Gpu)
+        else if (cam3d.renderer == Mesh3DRenderer::GPU)
         {
             static bool s_Warned = false;
             if (!s_Warned)

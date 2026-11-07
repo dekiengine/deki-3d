@@ -8,6 +8,15 @@ breaking change bumps the minor across the editor, the engine and every
 package together, so a package with no changes of its own is still released
 alongside one that has them.
 
+## Unreleased
+
+### Changed
+- `Mesh3DRenderer::Gpu` is `Mesh3DRenderer::GPU`, so the Renderer list
+  shows "GPU" in English as in the other languages. Scenes keep the value,
+  which is stored as a number; code naming `Mesh3DRenderer::Gpu` changes to
+  `GPU`.
+- The README says where it has run: the desktop, a T-Deck and a Miyoo Mini.
+
 ## 0.30.0
 
 ### Changed

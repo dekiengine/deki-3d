@@ -37,7 +37,7 @@
     "Each is an image of the project, stored and drawn as that image's own settings say: its Format, Max Size and Filter, per platform, in the image's inspector.": "각각은 프로젝트의 이미지이며, 그 이미지 자체의 설정대로 저장되고 그려집니다. 플랫폼별 포맷, 최대 크기, 필터는 이미지의 인스펙터에 있습니다.",
     "Fixed": "고정",
     "GPU only: build the frame on the GPU where the display presents through it, drawing the meshes straight into it between layers of 2D instead of reading them back. Much faster on a handheld. Turn it off if something later in the frame reads the whole picture back from the frame buffer (a full-screen effect pass); with it on, that buffer holds only the 2D drawn after the meshes.": "GPU 전용: 디스플레이가 GPU로 표시할 때 프레임을 GPU에서 구성하고, 메시를 다시 읽어 오지 않고 2D 레이어 사이에 바로 그립니다. 휴대용 기기에서 훨씬 빠릅니다. 프레임 뒤쪽에서 프레임 버퍼의 전체 화면을 다시 읽는 것(전체 화면 효과 패스)이 있으면 끄세요. 켜면 그 버퍼에는 메시 뒤에 그린 2D만 들어 있습니다.",
-    "Gpu": "GPU",
+    "GPU": "GPU",
     "How the 3D pass draws: renderer, tiles, texture and vertex switches, threads.": "3D 패스가 그리는 방식: 렌더러, 타일, 텍스처와 버텍스 스위치, 스레드.",
     "Materials": "머티리얼",
     "Model": "모델",
