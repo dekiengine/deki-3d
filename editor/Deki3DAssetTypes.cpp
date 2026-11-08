@@ -12,6 +12,7 @@
 #ifdef DEKI_EDITOR
 
 #include "ModelSettings.h"
+#include "GltfImporter.h"
 #include "ObjImporter.h"
 #include "PlatformTileSize.h"
 #include "../Raster3D.h"
@@ -59,7 +60,7 @@ class MeshAssetType : public AssetTypeEditor
 public:
     const char* GetTypeName() const override { return "Mesh"; }
     const char* GetDisplayName() const override { return TrMark("Mesh"); }
-    std::vector<std::string> GetExtensions() const override { return { ".obj" }; }
+    std::vector<std::string> GetExtensions() const override { return { ".obj", ".gltf", ".glb" }; }
 };
 
 REGISTER_EDITOR(MeshAssetType)
@@ -157,6 +158,29 @@ bool FitsTarget(const std::vector<uint8_t>& blob, const AssetExportTarget& targe
     return true;
 }
 
+const char* const kModelExtensions[] = { ".obj", ".gltf", ".glb" };
+
+bool IsGltf(const std::string& path)
+{
+    const std::string extension = fs::path(path).extension().string();
+    return extension == ".gltf" || extension == ".glb";
+}
+
+// A folder for what converting one glTF writes, gone when the compile is.
+struct GltfTempDirectory
+{
+    fs::path path;
+    explicit GltfTempDirectory(const std::string& model)
+        : path(fs::temp_directory_path() / ("deki_gltf_" + std::to_string(std::hash<std::string>{}(model))))
+    {
+    }
+    ~GltfTempDirectory()
+    {
+        std::error_code ec;
+        fs::remove_all(path, ec);
+    }
+};
+
 /// Compiles one .obj as `target` stores it and writes it to `outPath`. False,
 /// with why, when it cannot; what the target does without that it still
 /// allows goes in `warnings`.
@@ -175,7 +199,25 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
     // The material library and texture are named relative to the model, and
     // decoding an image is the editor's job, so the parser gets both from
     // here.
-    const std::string baseDirectory = fs::path(absolutePath).parent_path().string();
+    std::string baseDirectory = fs::path(absolutePath).parent_path().string();
+    std::string objText = text.str();
+
+    // A glTF arrives as the text an .obj is, with its material library and
+    // embedded images in a folder of their own.
+    const GltfTempDirectory gltfDirectory(absolutePath);
+    if (IsGltf(absolutePath))
+    {
+        Deki3D::GltfConversion conversion;
+        std::string gltfError;
+        if (!Deki3D::ConvertGltfToObj(absolutePath, gltfDirectory.path.string(), conversion, gltfError))
+        {
+            why = name + " did not compile: " + gltfError;
+            return false;
+        }
+        objText = std::move(conversion.objText);
+        baseDirectory = gltfDirectory.path.string();
+    }
+
     auto decodeImage = [](const std::string& imagePath, int& width, int& height, std::vector<uint8_t>& rgba)
     {
         DecodedImage decoded;
@@ -197,7 +239,7 @@ bool CompileObjFile(const std::string& absolutePath, const AssetExportTarget& ta
 
     std::vector<uint8_t> blob;
     std::string error;
-    if (!Deki3D::CompileObjToMesh(text.str(), baseDirectory, decodeImage, blob, error, options))
+    if (!Deki3D::CompileObjToMesh(objText, baseDirectory, decodeImage, blob, error, options))
     {
         why = name + " did not compile: " + error;
         return false;
@@ -289,7 +331,8 @@ void RegisterCompiledMeshes(AssetPipeline* pipeline, const std::string& projectP
     for (const auto& entry : pipeline->GetAllAssets())
     {
         const std::string& relativePath = entry.first;
-        if (relativePath.size() < 4 || relativePath.compare(relativePath.size() - 4, 4, ".obj") != 0)
+        const std::string extension = fs::path(relativePath).extension().string();
+        if (extension != ".obj" && extension != ".gltf" && extension != ".glb")
         {
             continue;
         }
@@ -310,12 +353,36 @@ struct Deki3DAssetRegistrar
 {
     Deki3DAssetRegistrar()
     {
-        AssetTypeRegistry::Instance().RegisterCategory(".obj", AssetCategory::Data);
+        for (const char* extension : kModelExtensions)
+        {
+            AssetTypeRegistry::Instance().RegisterCategory(extension, AssetCategory::Data);
+        }
         Deki3D::RegisterModelInspector();
 
         AssetPipeline::OnStarted(
             [](AssetPipeline* pipeline)
             {
+                for (const char* extension : { ".gltf", ".glb" })
+                {
+                    pipeline->RegisterSyncHandler(extension, HandleObjSync);
+                    pipeline->RegisterSourceFilesReporter(
+                        extension,
+                        [](const std::string& absolutePath)
+                        {
+                            const GltfTempDirectory directory(absolutePath);
+                            Deki3D::GltfConversion conversion;
+                            std::string error;
+                            Deki3D::ConvertGltfToObj(absolutePath, directory.path.string(), conversion, error);
+                            return conversion.sourceFiles;
+                        });
+                    pipeline->RegisterExportEncoder(extension,
+                                                    [](const AssetExportContext& ctx)
+                                                    {
+                                                        return CompileObjFile(ctx.absolutePath, ctx.target, ctx.outPath,
+                                                                              ctx.relativePath, true, *ctx.error,
+                                                                              *ctx.warnings);
+                                                    });
+                }
                 pipeline->RegisterSyncHandler(".obj", HandleObjSync);
                 // Its material library and texture images: a change to one,
                 // or to an image's settings, rebuilds the model.

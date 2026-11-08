@@ -8,6 +8,13 @@ breaking change bumps the minor across the editor, the engine and every
 package together, so a package with no changes of its own is still released
 alongside one that has them.
 
+## Unreleased
+
+### Added
+- **glTF models.** `.gltf` and `.glb` files compile like `.obj` files, with their
+  node transforms, base colours and base colour textures. Animation and
+  skinning are not imported yet.
+
 ## 0.30.3
 
 ### Changed

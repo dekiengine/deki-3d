@@ -55,7 +55,7 @@ one and a Directional one, that light it exactly as before.
 
 ## Models
 
-Drop a `.obj` into the project. The editor compiles it to a flat binary in the
+Drop a `.obj`, `.gltf` or `.glb` into the project. The editor compiles it to a flat binary in the
 asset cache and a `MeshComponent` can then point at it. The `mtllib` it names
 is read too: each material's `map_Kd` becomes its texture, and a `map_d`
 beside it the texture's cutout. Faces may be polygons, indices may be

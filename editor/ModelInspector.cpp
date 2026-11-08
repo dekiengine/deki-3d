@@ -108,7 +108,7 @@ class ModelInspector : public DekiEditor::FileInspector
 public:
     const char** GetExtensions() const override
     {
-        static const char* s_Extensions[] = { ".obj" };
+        static const char* s_Extensions[] = { ".obj", ".gltf", ".glb" };
         return s_Extensions;
     }
     int GetExtensionCount() const override { return 1; }
