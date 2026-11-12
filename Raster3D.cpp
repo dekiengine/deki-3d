@@ -1053,8 +1053,12 @@ void Raster3D::ShadeTriangles(const MeshPart& part, uint32_t first, uint32_t end
         // needs no normals or dot products.
         if (vertexLit)
         {
-            for (CachedVertex* v : corner)
+            // A triangle wholly in front of the eye takes its first corner's
+            // light (BinFan); only one the near plane cuts mixes all three.
+            const bool cut = !corner[0]->inFront || !corner[1]->inFront || !corner[2]->inFront;
+            for (int k = 0; k < (cut ? 3 : 1); ++k)
             {
+                CachedVertex* v = corner[k];
                 if (v->lit)
                 {
                     continue;
@@ -1541,8 +1545,7 @@ size_t Raster3D::WorkingBytes(int32_t width, int32_t height, const RasterConfig&
     // the bound for one no larger than a tile, and larger ones are few. And
     // its tiles while the threads share the geometry out (ShadeInLanes).
     return batch * sizeof(RasterTri) + batch * 4 * sizeof(uint32_t) + batch * sizeof(TileRect) +
-           tiles * sizeof(RegionArray<uint32_t>) +
-           static_cast<size_t>(width) * height * sizeof(uint16_t) +
+           tiles * sizeof(RegionArray<uint32_t>) + static_cast<size_t>(width) * height * sizeof(uint16_t) +
            static_cast<size_t>(threads) * tile * tile * sizeof(uint16_t);
 }
 
@@ -1660,6 +1663,13 @@ void Raster3D::FillBackground(int originX, int originY, int maxX, int maxY)
             uint16_t pixel;
             std::memcpy(&pixel, m_Background, 2);
             std::fill_n(reinterpret_cast<uint16_t*>(row), count, pixel);
+            continue;
+        }
+        if (m_BytesPerPixel == 4)
+        {
+            uint32_t pixel;
+            std::memcpy(&pixel, m_Background, 4);
+            std::fill_n(reinterpret_cast<uint32_t*>(row), count, pixel);
             continue;
         }
         for (int x = 0; x < count; ++x)
@@ -1796,8 +1806,10 @@ void Raster3D::FillTile(int tileX, int tileY, int thread, RasterStats& stats)
         depth = m_FrameDepth + static_cast<size_t>(originY) * m_Width + originX;
         depthStride = m_Width;
     }
-    else
+    else if (!bin.Empty())
     {
+        // Only for a tile with triangles: one with none draws its background
+        // and reads no depth.
         std::fill(depth, depth + static_cast<size_t>(tile) * tile, static_cast<uint16_t>(kDepthMax));
     }
 

@@ -135,7 +135,8 @@ private:
         float x, y, z, w;
         float u, v;
         uint32_t color;
-        float lightR, lightG, lightB;
+        // Set by the lighting, for the corners a triangle's light comes from.
+        float lightR = 0.0f, lightG = 0.0f, lightB = 0.0f;
     };
 
     /// A growing array in Memory::External, which on a board without PSRAM
@@ -360,7 +361,7 @@ private:
     int32_t m_Height = 0;
     Deki::ColorFormat m_Format = Deki::ColorFormat::RGB565;
     size_t m_BytesPerPixel = 2;  // of m_Format
-    RasterConfig m_Config;  // its lights' directions normalised
+    RasterConfig m_Config;       // its lights' directions normalised
     // The lights of the mesh DrawMesh is on: the frame's that reach it most.
     Light3D m_MeshLights[kLightsPerMesh];
     int m_MeshLightCount = 0;

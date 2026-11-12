@@ -15,6 +15,17 @@ alongside one that has them.
   node transforms, base colours and base colour textures. Animation and
   skinning are not imported yet.
 
+### Changed
+- A lit triangle wholly in front of the eye lights only its first corner,
+  the one its light is taken from; all three were lit. Geometry of a scene
+  of small lit cubes is about 9% cheaper on a desktop.
+- A background fills 4-byte pixels a row at a time, as it did 2-byte ones:
+  the fill of a 320x240 ARGB8888 frame went from 560 to 300 microseconds on
+  a desktop.
+- A tile with no triangle draws its background without resetting a depth
+  buffer it never reads.
+- The pixels are the same: `RasterCost` draws the scene in RGB565 and
+  ARGB8888 and prints its times and a hash of the frame.
 ## 0.30.3
 
 ### Changed
