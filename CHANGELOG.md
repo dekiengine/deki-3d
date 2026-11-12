@@ -26,6 +26,17 @@ alongside one that has them.
   buffer it never reads.
 - The pixels are the same: `RasterCost` draws the scene in RGB565 and
   ARGB8888 and prints its times and a hash of the frame.
+### Fixed
+- Texture coordinates far round a texture (32 turns of a 1024-texel texture,
+  2048 of a 16-texel one) overflowed the fixed point a span steps them in,
+  and each processor drew its own smear. They are brought back by whole
+  turns first; nearer coordinates draw exactly as before.
+- The table of reciprocals a span reads is made before the fill threads
+  start. It was made by the first thread to need it, which another could
+  read half made.
+- **Vertex Lit** is described as what it does: a triangle is shaded by the
+  scene's lights from the normals of its corners, where the tooltip and a
+  comment said each vertex was shaded.
 ## 0.30.3
 
 ### Changed

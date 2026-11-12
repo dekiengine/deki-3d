@@ -45,8 +45,9 @@ public:
     DEKI_EXPORT
     Deki::Color tintColor = Deki::Color(255, 255, 255);
 
-    DEKI_TOOLTIP("Unlit is flat colour. Vertex lit shades each vertex by the scene's lights. Flat shades whole "
-                 "triangles, which is the faceted look. A scene without a Light draws every mesh unlit.")
+    DEKI_TOOLTIP("Unlit is flat colour. Vertex lit shades each triangle by the scene's lights, from the normals of "
+                 "its corners. Flat shades each triangle from its own face, which is the faceted look. A scene without "
+                 "a Light draws every mesh unlit.")
     DEKI_EXPORT
     Deki3D::ShadingModel shading = Deki3D::ShadingModel::VertexLit;
 

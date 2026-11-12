@@ -703,7 +703,9 @@ Edge PixelsUpTo(Edge num, Edge den, Edge limit)
 
 /// 1 / n for a span's steps, n up to kReciprocals: a span's length is at most
 /// its subdivision or its tile's width. Each entry is the division itself, so
-/// a span steps exactly as it did dividing.
+/// a span steps exactly as it did dividing. Filled by the first call, which
+/// BeginFrame makes before any thread fills a tile: two threads filling it at
+/// once could read it half made.
 constexpr int kReciprocals = 256;
 const float* Reciprocals()
 {
@@ -718,6 +720,29 @@ const float* Reciprocals()
         filled = true;
     }
     return table;
+}
+
+/// Brings a span's texel coordinates (16.16) back by whole turns of a texture
+/// that repeats, when they are too far round it to fit the int32 a span steps
+/// them in: both ends by the same turns, so the step between them is kept.
+/// Coordinates that fit are left exactly as they are. (Past what an int32
+/// holds the conversion is undefined, and each processor made its own
+/// picture of it.)
+inline void WrapToFit(float& start, float& end, float period)
+{
+    constexpr float kFits = 1.0e9f;
+    if (std::fabs(start) < kFits && std::fabs(end) < kFits)
+    {
+        return;
+    }
+    if (!std::isfinite(start) || !std::isfinite(end))
+    {
+        start = end = 0.0f;
+        return;
+    }
+    const float turns = std::floor(start / period) * period;
+    start -= turns;
+    end = std::clamp(end - turns, -kFits, kFits);
 }
 
 TexKind KindOfTexture(const Texture3D* tex)
@@ -757,6 +782,7 @@ void Raster3D::BeginFrame(uint8_t* buffer, int32_t width, int32_t height, Deki::
     m_BytesPerPixel = Deki::FrameBufferBytes(format, 1, 1);
     m_HasBackground = false;
     m_Config = config;
+    Reciprocals();  // made here, on this thread, before the fill threads read it
     if (m_Config.tileSize < 8)
     {
         m_Config.tileSize = 8;
@@ -2162,6 +2188,8 @@ void Raster3D::FillTriangleInTile(const RasterTri& tri, int minX, int minY, int 
                             uE *= w1;
                             vE *= w1;
                         }
+                        WrapToFit(uS, uE, uScale);
+                        WrapToFit(vS, vE, vScale);
                         u = static_cast<int32_t>(uS);
                         v = static_cast<int32_t>(vS);
                         du = (chunkLen > 1) ? static_cast<int32_t>((static_cast<int32_t>(uE) - u) * inv) : 0;

@@ -65,7 +65,7 @@ inline VertexLayout LayoutPNTC()
 enum class ShadingModel : uint8_t
 {
     Unlit = 0,      // texture and/or vertex colour, no lighting
-    VertexLit = 1,  // lambert against a single directional light, per vertex
+    VertexLit = 1,  // the scene's lights at a corner's normal; the software renderer shades a triangle by its first
     Flat = 2,       // lambert per triangle from the face normal
 };
 

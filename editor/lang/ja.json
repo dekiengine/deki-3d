@@ -60,7 +60,7 @@
     "Tile edge in pixels, on every platform. Software only. The depth buffer is one tile, so 32 costs 2 KB and suits a microcontroller, while a desktop can afford 128 or more.": "タイルの一辺のピクセル数で、すべてのプラットフォームに適用されます。ソフトウェアのみ。深度バッファーは 1 タイル分なので、32 なら 2 KB でマイコンに向き、デスクトップなら 128 以上でも問題ありません。",
     "Tiles": "タイル",
     "Triangles": "三角形",
-    "Unlit is flat colour. Vertex lit shades each vertex by the scene's lights. Flat shades whole triangles, which is the faceted look. A scene without a Light draws every mesh unlit.": "ライティングなしは単色です。頂点ライティングはシーンのライトで頂点ごとに陰影を付けます。フラットは三角形ごとに陰影を付け、角ばった見た目になります。Light のないシーンではすべてのメッシュがライティングなしで描画されます。",
+    "Unlit is flat colour. Vertex lit shades each triangle by the scene's lights, from the normals of its corners. Flat shades each triangle from its own face, which is the faceted look. A scene without a Light draws every mesh unlit.": "ライティングなしは単色です。頂点ライティングはシーンのライトで、頂点の法線から三角形ごとに陰影を付けます。フラットは面そのものの向きから三角形ごとに陰影を付け、角ばった見た目になります。Light のないシーンではすべてのメッシュがライティングなしで描画されます。",
     "Up to 65535, so its indices are 16-bit": "65535 以下のため、インデックスは 16 ビット",
     "Vertices": "頂点",
     "What draws the meshes. Auto uses the GPU where the platform has OpenGL and the software rasteriser everywhere else. Software is the exact picture a board without a GPU shows, so choose it to preview one in the editor; GPU is far faster where there is one.": "メッシュを描画するものです。自動はプラットフォームに OpenGL があれば GPU を、なければソフトウェアラスタライザーを使います。ソフトウェアは GPU のないボードが表示するのとまったく同じ画像なので、エディターでそれをプレビューするときに選びます。GPU があるところでは GPU のほうがはるかに速くなります。",
