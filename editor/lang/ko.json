@@ -60,10 +60,10 @@
     "Tile edge in pixels, on every platform. Software only. The depth buffer is one tile, so 32 costs 2 KB and suits a microcontroller, while a desktop can afford 128 or more.": "타일 한 변의 픽셀 수이며 모든 플랫폼에 적용됩니다. 소프트웨어 전용. 깊이 버퍼는 타일 하나이므로 32는 2 KB로 마이크로컨트롤러에 맞고, 데스크톱은 128 이상도 괜찮습니다.",
     "Tiles": "타일",
     "Triangles": "삼각형",
-    "Unlit is flat colour. Vertex lit shades each triangle by the scene's lights, from the normals of its corners. Flat shades each triangle from its own face, which is the faceted look. A scene without a Light draws every mesh unlit.": "언릿은 단색입니다. 버텍스 릿은 씬의 라이트로, 꼭짓점의 노멀에 따라 삼각형마다 음영을 줍니다. 플랫은 면 자체의 방향에 따라 삼각형마다 음영을 주어 각진 모습이 됩니다. Light가 없는 씬에서는 모든 메시를 언릿으로 그립니다.",
     "Up to 65535, so its indices are 16-bit": "65535 이하이므로 인덱스는 16비트",
     "Vertices": "버텍스",
     "What draws the meshes. Auto uses the GPU where the platform has OpenGL and the software rasteriser everywhere else. Software is the exact picture a board without a GPU shows, so choose it to preview one in the editor; GPU is far faster where there is one.": "메시를 그리는 것입니다. 자동은 플랫폼에 OpenGL이 있으면 GPU를, 그 밖에는 소프트웨어 래스터라이저를 씁니다. 소프트웨어는 GPU가 없는 보드가 보여 주는 그림과 똑같으므로, 에디터에서 그것을 미리 볼 때 고르세요. GPU가 있는 곳에서는 GPU가 훨씬 빠릅니다.",
     "What every target uses, unless its own card overrides it": "모든 타깃이 쓰는 값으로, 해당 타깃의 카드에서 덮어쓰지 않는 한 적용됩니다",
-    "all targets": "모든 타깃"
+    "all targets": "모든 타깃",
+    "Unlit is flat colour. Vertex lit shades each vertex by the scene's lights. Flat shades whole triangles, which is the faceted look. A scene without a Light draws every mesh unlit.": "언릿은 단색입니다. 버텍스 릿은 씬의 라이트로 버텍스마다 음영을 줍니다. 플랫은 삼각형 전체에 음영을 주어 각진 모습이 됩니다. Light가 없는 씬에서는 모든 메시를 언릿으로 그립니다."
 }

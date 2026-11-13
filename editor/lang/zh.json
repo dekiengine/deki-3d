@@ -60,10 +60,10 @@
     "Tile edge in pixels, on every platform. Software only. The depth buffer is one tile, so 32 costs 2 KB and suits a microcontroller, while a desktop can afford 128 or more.": "图块边长（像素），适用于所有平台。仅软件。深度缓冲区是一个图块，所以 32 只占 2 KB，适合微控制器；桌面可以用 128 或更大。",
     "Tiles": "图块",
     "Triangles": "三角形",
-    "Unlit is flat colour. Vertex lit shades each triangle by the scene's lights, from the normals of its corners. Flat shades each triangle from its own face, which is the faceted look. A scene without a Light draws every mesh unlit.": "无光照是纯色。顶点光照按场景的光源，根据顶点的法线为每个三角形着色。平面着色根据面自身的朝向为每个三角形着色，呈现多面体外观。没有 Light 的场景中，所有网格都以无光照绘制。",
     "Up to 65535, so its indices are 16-bit": "不超过 65535，因此索引为 16 位",
     "Vertices": "顶点",
     "What draws the meshes. Auto uses the GPU where the platform has OpenGL and the software rasteriser everywhere else. Software is the exact picture a board without a GPU shows, so choose it to preview one in the editor; GPU is far faster where there is one.": "由什么绘制网格。自动在平台有 OpenGL 时使用 GPU，其他情况使用软件光栅化器。软件正是没有 GPU 的开发板显示的画面，所以要在编辑器中预览它时选它；有 GPU 的地方 GPU 快得多。",
     "What every target uses, unless its own card overrides it": "所有目标使用的值，除非其自己的卡片覆盖它",
-    "all targets": "所有目标"
+    "all targets": "所有目标",
+    "Unlit is flat colour. Vertex lit shades each vertex by the scene's lights. Flat shades whole triangles, which is the faceted look. A scene without a Light draws every mesh unlit.": "无光照是纯色。顶点光照按场景的光源为每个顶点着色。平面着色为整个三角形着色，呈现多面体外观。没有 Light 的场景中，所有网格都以无光照绘制。"
 }
