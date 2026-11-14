@@ -32,18 +32,12 @@ var NAVTREE =
       [ "MeshComponent", "index.html#c-meshcomponent", null ]
     ] ],
     [ "Changelog", "index.html#changelog", [
-      [ "0.30.3", "index.html#autotoc_md0", null ],
-      [ "Changed", "index.html#autotoc_md1", null ],
-      [ "0.30.0", "index.html#autotoc_md2", null ],
-      [ "Changed", "index.html#autotoc_md3", null ],
-      [ "Declares the capabilities it uses", "index.html#autotoc_md4", null ],
-      [ "The memory check covers hosted targets that state their memory", "index.html#autotoc_md5", null ],
-      [ "The software rasteriser draws a model of any size, faster", "index.html#autotoc_md6", null ],
-      [ "Fewer divisions on a 32-bit core", "index.html#autotoc_md7", null ],
-      [ "Models at any size, built for each platform", "index.html#autotoc_md8", null ],
-      [ "Lights and shadows", "index.html#autotoc_md9", null ],
-      [ "Added", "index.html#autotoc_md10", null ],
-      [ "Fixed", "index.html#autotoc_md11", null ]
+      [ "0.40.0", "index.html#autotoc_md0", null ],
+      [ "Added", "index.html#autotoc_md1", null ],
+      [ "Changed", "index.html#autotoc_md2", null ],
+      [ "Fixed", "index.html#autotoc_md3", null ],
+      [ "0.30.3", "index.html#autotoc_md4", null ],
+      [ "Changed", "index.html#autotoc_md5", null ]
     ] ]
   ] ]
 ];
