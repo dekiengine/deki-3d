@@ -8,7 +8,7 @@ breaking change bumps the minor across the editor, the engine and every
 package together, so a package with no changes of its own is still released
 alongside one that has them.
 
-## Unreleased
+## 0.40.0
 
 ### Added
 - **glTF models.** `.gltf` and `.glb` files compile like `.obj` files, with their
@@ -16,6 +16,8 @@ alongside one that has them.
   skinning are not imported yet.
 
 ### Changed
+- `minEngine` 0.40.0: built against engine 0.40.0. A build of this package
+  from before does not load and is rebuilt.
 - A lit triangle wholly in front of the eye lights only its first corner,
   the one its light is taken from; all three were lit. Geometry of a scene
   of small lit cubes is about 9% cheaper on a desktop.
